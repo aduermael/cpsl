@@ -11,7 +11,49 @@ const configDir = ".cpsl"
 const configFile = "config.json"
 
 type Config struct {
-	PasteCollapseMinChars int `json:"paste_collapse_min_chars"`
+	PasteCollapseMinChars int    `json:"paste_collapse_min_chars"`
+	AnthropicAPIKey       string `json:"anthropic_api_key,omitempty"`
+	GrokAPIKey            string `json:"grok_api_key,omitempty"`
+	OpenAIAPIKey          string `json:"openai_api_key,omitempty"`
+	ActiveModel           string `json:"active_model,omitempty"`
+}
+
+// configuredProviders returns a set of provider names that have API keys configured.
+func (c Config) configuredProviders() map[string]bool {
+	providers := make(map[string]bool)
+	if c.AnthropicAPIKey != "" {
+		providers[ProviderAnthropic] = true
+	}
+	if c.GrokAPIKey != "" {
+		providers[ProviderGrok] = true
+	}
+	if c.OpenAIAPIKey != "" {
+		providers[ProviderOpenAI] = true
+	}
+	return providers
+}
+
+// availableModels returns the models whose provider has a configured API key.
+func (c Config) availableModels() []ModelDef {
+	return filterModelsByProviders(c.configuredProviders())
+}
+
+// resolveActiveModel returns a valid active model ID. If the current ActiveModel
+// is invalid or its provider has no key, it falls back to the first available
+// model, or empty string if no keys are configured.
+func (c Config) resolveActiveModel() string {
+	available := c.availableModels()
+	if len(available) == 0 {
+		return ""
+	}
+	// Check if current active model is in the available list
+	for _, m := range available {
+		if m.ID == c.ActiveModel {
+			return c.ActiveModel
+		}
+	}
+	// Fall back to first available
+	return available[0].ID
 }
 
 func defaultConfig() Config {

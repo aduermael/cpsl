@@ -20,7 +20,7 @@
 ## Phase 1: Model Registry & Config Expansion
 
 - [x] 1a: Create `models.go` with provider constants, `ModelDef` struct (provider, ID, display name), and the static model registry. Add a helper to filter models by available providers (given a set of configured API keys).
-- [ ] 1b: Expand `Config` struct with `AnthropicAPIKey`, `GrokAPIKey`, `OpenAIAPIKey` (string) and `ActiveModel` (string). Defaults are empty strings. Add a `configuredProviders()` method that returns which providers have keys set. Add an `availableModels()` helper that returns models filtered to configured providers. Add a `resolveActiveModel()` method that validates `ActiveModel` against available models and falls back if needed.
+- [x] 1b: Expand `Config` struct with `AnthropicAPIKey`, `GrokAPIKey`, `OpenAIAPIKey` (string) and `ActiveModel` (string). Defaults are empty strings. Add a `configuredProviders()` method that returns which providers have keys set. Add an `availableModels()` helper that returns models filtered to configured providers. Add a `resolveActiveModel()` method that validates `ActiveModel` against available models and falls back if needed.
 - [ ] 1c: Add tests for model registry filtering, `configuredProviders`, `resolveActiveModel` (valid model, missing key fallback, empty config).
 
 ## Phase 2: API Key Fields in Config Form
