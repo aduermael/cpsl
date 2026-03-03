@@ -59,9 +59,10 @@ var borderGradientColors = []color.Color{
 }
 
 type message struct {
-	content  string
-	isPaste  bool
-	charCount int
+	content     string
+	isPaste     bool
+	charCount   int
+	pasteNumber int
 }
 
 type model struct {
@@ -73,6 +74,7 @@ type model struct {
 	ready        bool
 	config       Config
 	pendingPaste bool
+	pasteCount   int
 }
 
 func initialModel() model {
@@ -248,6 +250,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					isPaste:   m.pendingPaste,
 					charCount: len(val),
 				}
+				if m.pendingPaste {
+					m.pasteCount++
+					msg.pasteNumber = m.pasteCount
+				}
 				m.pendingPaste = false
 				m.messages = append(m.messages, msg)
 				m.textarea.Reset()
@@ -335,9 +341,17 @@ func (m *model) updateViewportContent() {
 			Foreground(lipgloss.Color("#E0E0E0")).
 			PaddingLeft(2)
 
+		pasteHeaderStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#666666")).
+			PaddingLeft(2)
+
 		var parts []string
 		parts = append(parts, centeredLogo, "")
 		for _, msg := range m.messages {
+			if msg.isPaste && msg.charCount >= m.config.PasteCollapseMinChars {
+				header := fmt.Sprintf("[pasted text #%d | %d chars]", msg.pasteNumber, msg.charCount)
+				parts = append(parts, pasteHeaderStyle.Render(header))
+			}
 			wrapped := lipgloss.NewStyle().Width(m.width - 4).Render(msg.content)
 			parts = append(parts, msgStyle.Render(wrapped), "")
 		}

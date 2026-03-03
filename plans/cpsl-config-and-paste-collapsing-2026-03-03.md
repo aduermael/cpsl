@@ -38,7 +38,7 @@ Detect long pastes in the textarea and display them collapsed in the message fee
 
 - [x] 2a: Introduce a `message` struct to replace the plain `[]string` in the model. Fields: `content string`, `isPaste bool`, `charCount int`. Update all existing code that reads/writes `m.messages` and the viewport content renderer.
 - [x] 2b: Handle paste detection in `Update`. Listen for bubbletea's paste message type. When a paste arrives with char count ≥ config threshold, set a flag on the model (e.g., `pendingPaste bool`). When the user sends (Enter), check the flag to construct the message struct appropriately. Reset the flag after send.
-- [ ] 2c: Update `updateViewportContent()` to render paste messages with the collapsed style: a muted `[pasted text #N | M chars]` header line above the content. Non-paste messages render as before.
+- [x] 2c: Update `updateViewportContent()` to render paste messages with the collapsed style: a muted `[pasted text #N | M chars]` header line above the content. Non-paste messages render as before.
 - [ ] 2d: Add tests for paste collapsing — test paste detection (above/below threshold), message struct creation, viewport rendering of collapsed vs normal messages, paste counter incrementing, and config threshold respected.
 
 ---
