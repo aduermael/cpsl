@@ -65,13 +65,14 @@ type message struct {
 }
 
 type model struct {
-	textarea textarea.Model
-	viewport viewport.Model
-	width    int
-	height   int
-	messages []message
-	ready    bool
-	config   Config
+	textarea     textarea.Model
+	viewport     viewport.Model
+	width        int
+	height       int
+	messages     []message
+	ready        bool
+	config       Config
+	pendingPaste bool
 }
 
 func initialModel() model {
@@ -230,6 +231,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.recalcTextareaHeight()
 		m.updateViewportContent()
 
+	case tea.PasteMsg:
+		if len(msg.Content) >= m.config.PasteCollapseMinChars {
+			m.pendingPaste = true
+		}
+
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "ctrl+c":
@@ -239,8 +245,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if val != "" {
 				msg := message{
 					content:   val,
+					isPaste:   m.pendingPaste,
 					charCount: len(val),
 				}
+				m.pendingPaste = false
 				m.messages = append(m.messages, msg)
 				m.textarea.Reset()
 				m.textarea.SetHeight(minInputHeight)
