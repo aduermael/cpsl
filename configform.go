@@ -24,6 +24,33 @@ type configForm struct {
 	height  int
 }
 
+// purpleInputStyles returns the shared purple-themed textinput styles.
+func purpleInputStyles() textinput.Styles {
+	var s textinput.Styles
+	s.Focused.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0"))
+	s.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#5B1A99"))
+	s.Focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("#9B82F5"))
+	s.Blurred.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+	s.Blurred.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
+	s.Blurred.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
+	s.Cursor.Color = lipgloss.Color("#B88AFF")
+	return s
+}
+
+// newAPIKeyInput creates a masked textinput for an API key field.
+func newAPIKeyInput(value string) textinput.Model {
+	ti := textinput.New()
+	ti.Placeholder = "sk-..."
+	ti.SetValue(value)
+	ti.Prompt = "  "
+	ti.EchoMode = textinput.EchoPassword
+	ti.EchoCharacter = '*'
+	ti.CharLimit = 256
+	ti.SetWidth(40)
+	ti.SetStyles(purpleInputStyles())
+	return ti
+}
+
 func newConfigForm(cfg Config, width, height int) configForm {
 	pasteInput := textinput.New()
 	pasteInput.Placeholder = "200"
@@ -32,21 +59,14 @@ func newConfigForm(cfg Config, width, height int) configForm {
 	pasteInput.Focus()
 	pasteInput.CharLimit = 10
 	pasteInput.SetWidth(20)
-
-	// Purple-themed textinput styles
-	s := pasteInput.Styles()
-	s.Focused.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0"))
-	s.Focused.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#5B1A99"))
-	s.Focused.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("#9B82F5"))
-	s.Blurred.Text = lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
-	s.Blurred.Placeholder = lipgloss.NewStyle().Foreground(lipgloss.Color("#444444"))
-	s.Blurred.Prompt = lipgloss.NewStyle().Foreground(lipgloss.Color("#555555"))
-	s.Cursor.Color = lipgloss.Color("#B88AFF")
-	pasteInput.SetStyles(s)
+	pasteInput.SetStyles(purpleInputStyles())
 
 	return configForm{
 		fields: []configField{
 			{label: "Paste collapse min chars", desc: "minimum characters to trigger paste collapsing", input: pasteInput},
+			{label: "Anthropic API Key", desc: "key for Claude models", input: newAPIKeyInput(cfg.AnthropicAPIKey)},
+			{label: "Grok API Key", desc: "key for Grok models", input: newAPIKeyInput(cfg.GrokAPIKey)},
+			{label: "OpenAI API Key", desc: "key for GPT models", input: newAPIKeyInput(cfg.OpenAIAPIKey)},
 		},
 		width:  width,
 		height: height,
@@ -95,6 +115,9 @@ func (f *configForm) validate() bool {
 func (f configForm) applyTo(cfg *Config) {
 	n, _ := strconv.Atoi(strings.TrimSpace(f.fields[0].input.Value()))
 	cfg.PasteCollapseMinChars = n
+	cfg.AnthropicAPIKey = strings.TrimSpace(f.fields[1].input.Value())
+	cfg.GrokAPIKey = strings.TrimSpace(f.fields[2].input.Value())
+	cfg.OpenAIAPIKey = strings.TrimSpace(f.fields[3].input.Value())
 }
 
 func (f configForm) View() string {
