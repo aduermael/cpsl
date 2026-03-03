@@ -83,7 +83,7 @@ type message struct {
 }
 
 // commands is the list of available slash commands.
-var commands = []string{"/config"}
+var commands = []string{"/config", "/model"}
 
 // filterCommands returns commands matching the given prefix.
 func filterCommands(prefix string) []string {
@@ -271,6 +271,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateConfigMode(msg)
 	}
 
+	// Model selection mode: delegate to model list
+	if m.mode == modeModel {
+		return m.updateModelMode(msg)
+	}
+
 	var cmds []tea.Cmd
 	taMsg := tea.Msg(msg) // message forwarded to textarea (may be modified)
 
@@ -451,6 +456,87 @@ func (m model) updateConfigMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// enterModelMode switches to the model selection mode.
+func (m model) enterModelMode() (tea.Model, tea.Cmd) {
+	available := m.config.availableModels()
+	if len(available) == 0 {
+		m.messages = append(m.messages, message{
+			content: "No API keys configured. Use /config to add a key first.",
+			kind:    msgError,
+		})
+		m.textarea.Reset()
+		m.textarea.SetHeight(minInputHeight)
+		if m.ready {
+			m.viewport.SetHeight(m.viewportHeight())
+			m.updateViewportContent()
+			m.viewport.GotoBottom()
+		}
+		return m, nil
+	}
+	m.mode = modeModel
+	activeModel := m.config.resolveActiveModel()
+	m.modelList = newModelList(available, activeModel, m.width, m.height)
+	m.textarea.Reset()
+	m.textarea.SetHeight(minInputHeight)
+	m.textarea.Blur()
+	return m, nil
+}
+
+// exitModelMode returns to chat mode, optionally saving the selected model.
+func (m model) exitModelMode(save bool) (tea.Model, tea.Cmd) {
+	m.mode = modeChat
+	if save {
+		selected := m.modelList.selected()
+		m.config.ActiveModel = selected.ID
+		if err := saveConfig(m.config); err != nil {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Error saving model: %v", err),
+				kind:    msgError,
+			})
+		} else {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Model set to %s.", selected.DisplayName),
+				kind:    msgSuccess,
+			})
+		}
+	} else {
+		m.messages = append(m.messages, message{
+			content: "Model selection cancelled.",
+			kind:    msgInfo,
+		})
+	}
+	if m.ready {
+		m.viewport.SetHeight(m.viewportHeight())
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+	}
+	return m, m.textarea.Focus()
+}
+
+// updateModelMode handles input while the model list is active.
+func (m model) updateModelMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.modelList.width = msg.Width
+		m.modelList.height = msg.Height
+		return m, nil
+
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			return m.exitModelMode(false)
+		case "enter":
+			return m.exitModelMode(true)
+		}
+	}
+
+	var cmd tea.Cmd
+	m.modelList, cmd = m.modelList.Update(msg)
+	return m, cmd
+}
+
 // handleCommand processes slash commands and returns the updated model.
 func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	cmd := strings.Fields(input)[0] // e.g. "/config"
@@ -458,6 +544,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	switch cmd {
 	case "/config":
 		return m.enterConfigMode()
+	case "/model":
+		return m.enterModelMode()
 	default:
 		m.messages = append(m.messages, message{
 			content: fmt.Sprintf("Unknown command: %s", cmd),
@@ -609,6 +697,10 @@ func (m model) View() tea.View {
 		return m.viewConfig()
 	}
 
+	if m.mode == modeModel {
+		return m.viewModel()
+	}
+
 	inputBorderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForegroundBlend(borderGradientColors...).
@@ -647,6 +739,28 @@ func (m model) viewConfig() tea.View {
 		Padding(1, 0)
 
 	formContent := m.configForm.View()
+	rendered := formBorder.Render(formContent)
+
+	// Center vertically
+	formHeight := lipgloss.Height(rendered)
+	padding := (m.height - formHeight) / 2
+	if padding < 0 {
+		padding = 0
+	}
+
+	v := tea.NewView(strings.Repeat("\n", padding) + rendered)
+	v.AltScreen = true
+	return v
+}
+
+func (m model) viewModel() tea.View {
+	formBorder := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForegroundBlend(borderGradientColors...).
+		Width(m.width).
+		Padding(1, 0)
+
+	formContent := m.modelList.View()
 	rendered := formBorder.Render(formContent)
 
 	// Center vertically
