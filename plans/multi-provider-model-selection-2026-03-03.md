@@ -26,7 +26,7 @@
 ## Phase 2: API Key Fields in Config Form
 
 - [x] 2a: Add three API key `textinput` fields to `configForm` in `configform.go`. Use `EchoMode = EchoPassword` for masking. Pre-populate from current config values. Update `validate()` (keys are optional, no validation needed beyond trimming) and `applyTo()` to read/write the key fields.
-- [ ] 2b: Add tests for config form with API key fields — verify applyTo writes keys to config, verify masking is set, verify tab cycles through all fields (paste threshold + 3 key fields).
+- [x] 2b: Add tests for config form with API key fields — verify applyTo writes keys to config, verify masking is set, verify tab cycles through all fields (paste threshold + 3 key fields).
 
 ## Phase 3: /model Command & Selection UI
 
