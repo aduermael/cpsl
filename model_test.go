@@ -394,3 +394,164 @@ func TestCtrlCReturnsQuit(t *testing.T) {
 		t.Fatal("ctrl+c should return a command")
 	}
 }
+
+// paste simulates a bracketed paste event and returns the updated model.
+func paste(m model, content string) model {
+	result, _ := m.Update(tea.PasteMsg{Content: content})
+	return result.(model)
+}
+
+func TestPasteAboveThresholdMarksMessage(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	longText := strings.Repeat("x", m.config.PasteCollapseMinChars)
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages count = %d, want 1", len(m.messages))
+	}
+	if !m.messages[0].isPaste {
+		t.Error("message should be marked as paste")
+	}
+	if m.messages[0].charCount != m.config.PasteCollapseMinChars {
+		t.Errorf("charCount = %d, want %d", m.messages[0].charCount, m.config.PasteCollapseMinChars)
+	}
+	if m.messages[0].pasteNumber != 1 {
+		t.Errorf("pasteNumber = %d, want 1", m.messages[0].pasteNumber)
+	}
+}
+
+func TestPasteBelowThresholdNotMarked(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	shortText := strings.Repeat("x", m.config.PasteCollapseMinChars-1)
+	m = paste(m, shortText)
+	m = sendKey(m, tea.KeyEnter)
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages count = %d, want 1", len(m.messages))
+	}
+	if m.messages[0].isPaste {
+		t.Error("message below threshold should not be marked as paste")
+	}
+	if m.messages[0].pasteNumber != 0 {
+		t.Errorf("pasteNumber = %d, want 0 for non-paste", m.messages[0].pasteNumber)
+	}
+}
+
+func TestPasteCounterIncrements(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	longText := strings.Repeat("x", m.config.PasteCollapseMinChars)
+
+	// First paste
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	// Second paste
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	// Normal message (no paste)
+	m = typeString(m, "hello")
+	m = sendKey(m, tea.KeyEnter)
+
+	// Third paste
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	if len(m.messages) != 4 {
+		t.Fatalf("messages count = %d, want 4", len(m.messages))
+	}
+	if m.messages[0].pasteNumber != 1 {
+		t.Errorf("messages[0].pasteNumber = %d, want 1", m.messages[0].pasteNumber)
+	}
+	if m.messages[1].pasteNumber != 2 {
+		t.Errorf("messages[1].pasteNumber = %d, want 2", m.messages[1].pasteNumber)
+	}
+	if m.messages[2].isPaste {
+		t.Error("messages[2] should not be marked as paste")
+	}
+	if m.messages[3].pasteNumber != 3 {
+		t.Errorf("messages[3].pasteNumber = %d, want 3", m.messages[3].pasteNumber)
+	}
+	if m.pasteCount != 3 {
+		t.Errorf("pasteCount = %d, want 3", m.pasteCount)
+	}
+}
+
+func TestPasteViewportRendersCollapsedHeader(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	longText := strings.Repeat("a", 300)
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	v := m.View()
+	if !strings.Contains(v.Content, "[pasted text #1 | 300 chars]") {
+		t.Error("viewport should contain collapsed paste header")
+	}
+}
+
+func TestPasteViewportNormalMessageNoHeader(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	m = typeString(m, "hello world")
+	m = sendKey(m, tea.KeyEnter)
+
+	v := m.View()
+	if strings.Contains(v.Content, "[pasted text") {
+		t.Error("normal message should not have paste header")
+	}
+}
+
+func TestPasteResetAfterSend(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	longText := strings.Repeat("x", m.config.PasteCollapseMinChars)
+	m = paste(m, longText)
+	m = sendKey(m, tea.KeyEnter)
+
+	if m.pendingPaste {
+		t.Error("pendingPaste should be false after send")
+	}
+
+	// Next normal message should not be marked as paste
+	m = typeString(m, "normal")
+	m = sendKey(m, tea.KeyEnter)
+
+	if m.messages[1].isPaste {
+		t.Error("message after paste should not be marked as paste")
+	}
+}
+
+func TestPasteConfigThresholdRespected(t *testing.T) {
+	m := initialModel()
+	m.config.PasteCollapseMinChars = 50
+	m = resize(m, 80, 24)
+
+	// Paste exactly at custom threshold
+	text := strings.Repeat("x", 50)
+	m = paste(m, text)
+	m = sendKey(m, tea.KeyEnter)
+
+	if !m.messages[0].isPaste {
+		t.Error("paste at custom threshold should be marked")
+	}
+
+	// Paste below custom threshold
+	shortText := strings.Repeat("x", 49)
+	m = paste(m, shortText)
+	m = sendKey(m, tea.KeyEnter)
+
+	if m.messages[1].isPaste {
+		t.Error("paste below custom threshold should not be marked")
+	}
+}
