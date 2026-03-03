@@ -58,12 +58,18 @@ var borderGradientColors = []color.Color{
 	lipgloss.Color("#6B34B0"),
 }
 
+type message struct {
+	content  string
+	isPaste  bool
+	charCount int
+}
+
 type model struct {
 	textarea textarea.Model
 	viewport viewport.Model
 	width    int
 	height   int
-	messages []string
+	messages []message
 	ready    bool
 	config   Config
 }
@@ -102,7 +108,7 @@ func initialModel() model {
 
 	return model{
 		textarea: ta,
-		messages: []string{},
+		messages: []message{},
 		config:   cfg,
 	}
 }
@@ -231,7 +237,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "enter":
 			val := strings.TrimSpace(m.textarea.Value())
 			if val != "" {
-				m.messages = append(m.messages, val)
+				msg := message{
+					content:   val,
+					charCount: len(val),
+				}
+				m.messages = append(m.messages, msg)
 				m.textarea.Reset()
 				m.textarea.SetHeight(minInputHeight)
 				if m.ready {
@@ -320,7 +330,7 @@ func (m *model) updateViewportContent() {
 		var parts []string
 		parts = append(parts, centeredLogo, "")
 		for _, msg := range m.messages {
-			wrapped := lipgloss.NewStyle().Width(m.width - 4).Render(msg)
+			wrapped := lipgloss.NewStyle().Width(m.width - 4).Render(msg.content)
 			parts = append(parts, msgStyle.Render(wrapped), "")
 		}
 		content = strings.Join(parts, "\n")
