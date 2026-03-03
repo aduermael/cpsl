@@ -65,11 +65,35 @@ type appMode int
 const (
 	modeChat appMode = iota
 	modeConfig
+	modeModel
+)
+
+type msgKind int
+
+const (
+	msgUser    msgKind = iota // normal user message
+	msgError                  // error feedback (e.g. unknown command)
+	msgSuccess                // success feedback (e.g. config saved)
+	msgInfo                   // informational feedback (e.g. config discarded)
 )
 
 type message struct {
-	content  string
-	isSystem bool // system feedback (e.g. unknown command errors)
+	content string
+	kind    msgKind
+}
+
+// commands is the list of available slash commands.
+var commands = []string{"/config"}
+
+// filterCommands returns commands matching the given prefix.
+func filterCommands(prefix string) []string {
+	var matches []string
+	for _, cmd := range commands {
+		if strings.HasPrefix(cmd, prefix) {
+			matches = append(matches, cmd)
+		}
+	}
+	return matches
 }
 
 var pasteplaceholderRe = regexp.MustCompile(`\[pasted #(\d+) \| \d+ chars\]`)
@@ -104,6 +128,20 @@ type model struct {
 	pasteStore map[int]string // paste ID → actual content
 	mode       appMode
 	configForm configForm
+	modelList  modelList
+}
+
+// autocompleteMatches returns matching commands for the current textarea input,
+// or nil if autocomplete should not be shown.
+func (m model) autocompleteMatches() []string {
+	if m.mode != modeChat {
+		return nil
+	}
+	val := m.textarea.Value()
+	if !strings.HasPrefix(val, "/") {
+		return nil
+	}
+	return filterCommands(val)
 }
 
 func initialModel() model {
@@ -283,6 +321,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "ctrl+c":
 			return m, tea.Quit
+		case "tab":
+			if matches := m.autocompleteMatches(); len(matches) > 0 {
+				m.textarea.SetValue(matches[0])
+				m.textarea.CursorEnd()
+				m.recalcTextareaHeight()
+				if m.ready {
+					m.viewport.SetHeight(m.viewportHeight())
+				}
+			}
+			return m, nil
+		case "esc":
+			if strings.HasPrefix(m.textarea.Value(), "/") {
+				m.textarea.Reset()
+				m.textarea.SetHeight(minInputHeight)
+				if m.ready {
+					m.viewport.SetHeight(m.viewportHeight())
+				}
+			}
+			return m, nil
 		case "enter":
 			val := strings.TrimSpace(m.textarea.Value())
 			if val != "" {
@@ -343,19 +400,19 @@ func (m model) exitConfigMode(save bool) (tea.Model, tea.Cmd) {
 		m.configForm.applyTo(&m.config)
 		if err := saveConfig(m.config); err != nil {
 			m.messages = append(m.messages, message{
-				content:  fmt.Sprintf("Error saving config: %v", err),
-				isSystem: true,
+				content: fmt.Sprintf("Error saving config: %v", err),
+				kind:    msgError,
 			})
 		} else {
 			m.messages = append(m.messages, message{
-				content:  "Config saved.",
-				isSystem: true,
+				content: "Config saved.",
+				kind:    msgSuccess,
 			})
 		}
 	} else {
 		m.messages = append(m.messages, message{
-			content:  "Config changes discarded.",
-			isSystem: true,
+			content: "Config changes discarded.",
+			kind:    msgInfo,
 		})
 	}
 	if m.ready {
@@ -403,8 +460,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.enterConfigMode()
 	default:
 		m.messages = append(m.messages, message{
-			content:  fmt.Sprintf("Unknown command: %s", cmd),
-			isSystem: true,
+			content: fmt.Sprintf("Unknown command: %s", cmd),
+			kind:    msgError,
 		})
 		m.textarea.Reset()
 		m.textarea.SetHeight(minInputHeight)
@@ -435,8 +492,15 @@ func (m model) inputBoxHeight() int {
 	return m.textarea.Height() + 2 // top + bottom border
 }
 
+func (m model) autocompleteHeight() int {
+	if matches := m.autocompleteMatches(); len(matches) > 0 {
+		return len(matches)
+	}
+	return 0
+}
+
 func (m model) viewportHeight() int {
-	h := m.height - m.inputBoxHeight()
+	h := m.height - m.inputBoxHeight() - m.autocompleteHeight()
 	if h < 1 {
 		h = 1
 	}
@@ -467,8 +531,18 @@ func (m *model) updateViewportContent() {
 			Foreground(lipgloss.Color("#E0E0E0")).
 			PaddingLeft(2)
 
-		systemStyle := lipgloss.NewStyle().
+		errorStyle := lipgloss.NewStyle().
 			Foreground(lipgloss.Color("#FF6B6B")).
+			PaddingLeft(2).
+			Italic(true)
+
+		successStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6FE7B8")).
+			PaddingLeft(2).
+			Italic(true)
+
+		infoStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#8B7BA8")).
 			PaddingLeft(2).
 			Italic(true)
 
@@ -476,16 +550,52 @@ func (m *model) updateViewportContent() {
 		parts = append(parts, centeredLogo, "")
 		for _, msg := range m.messages {
 			wrapped := lipgloss.NewStyle().Width(m.width - 4).Render(msg.content)
-			if msg.isSystem {
-				parts = append(parts, systemStyle.Render(wrapped), "")
-			} else {
-				parts = append(parts, msgStyle.Render(wrapped), "")
+			var style lipgloss.Style
+			switch msg.kind {
+			case msgError:
+				style = errorStyle
+			case msgSuccess:
+				style = successStyle
+			case msgInfo:
+				style = infoStyle
+			default:
+				style = msgStyle
 			}
+			parts = append(parts, style.Render(wrapped), "")
 		}
 		content = strings.Join(parts, "\n")
 	}
 
 	m.viewport.SetContent(content)
+}
+
+func (m model) renderAutocomplete() string {
+	matches := m.autocompleteMatches()
+	if len(matches) == 0 {
+		return ""
+	}
+	highlightStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#B88AFF")).
+		Background(lipgloss.Color("#2A1545")).
+		Bold(true).
+		PaddingLeft(1).
+		PaddingRight(1).
+		Width(m.width)
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#E0E0E0")).
+		Background(lipgloss.Color("#2A1545")).
+		PaddingLeft(1).
+		PaddingRight(1).
+		Width(m.width)
+	var lines []string
+	for i, cmd := range matches {
+		if i == 0 {
+			lines = append(lines, highlightStyle.Render(cmd))
+		} else {
+			lines = append(lines, normalStyle.Render(cmd))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (m model) View() tea.View {
@@ -506,14 +616,22 @@ func (m model) View() tea.View {
 
 	inputBox := inputBorderStyle.Render(m.textarea.View())
 
-	fullView := m.viewport.View() + "\n" + inputBox
+	autocomplete := m.renderAutocomplete()
+	acHeight := m.autocompleteHeight()
+
+	var fullView string
+	if autocomplete != "" {
+		fullView = m.viewport.View() + "\n" + autocomplete + "\n" + inputBox
+	} else {
+		fullView = m.viewport.View() + "\n" + inputBox
+	}
 
 	v := tea.NewView(fullView)
 
 	c := m.textarea.Cursor()
 	if c != nil {
-		c.Y += m.viewport.Height() + 1 // +1 for top border
-		c.X += 1                        // +1 for left border
+		c.Y += m.viewport.Height() + acHeight + 1 // +1 for top border
+		c.X += 1                                    // +1 for left border
 		v.Cursor = c
 	}
 
