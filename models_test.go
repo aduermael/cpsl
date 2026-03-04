@@ -463,6 +463,30 @@ func TestMatchSWEScoresTakesBestScore(t *testing.T) {
 	}
 }
 
+// --- cleanDisplayName tests ---
+
+func TestCleanDisplayName(t *testing.T) {
+	tests := []struct {
+		name     string
+		provider string
+		want     string
+	}{
+		{"Anthropic: Claude Opus 4", ProviderAnthropic, "Claude Opus 4"},
+		{"OpenAI: GPT-4o", ProviderOpenAI, "GPT-4o"},
+		{"xAI: Grok 3", ProviderGrok, "Grok 3"},
+		{"X AI: Grok 3 Mini", ProviderGrok, "Grok 3 Mini"},
+		{"GPT-4o", ProviderOpenAI, "GPT-4o"},           // no prefix
+		{"Claude Sonnet 4", ProviderAnthropic, "Claude Sonnet 4"}, // no prefix
+		{"anthropic: lower case", ProviderAnthropic, "lower case"}, // case-insensitive
+	}
+	for _, tt := range tests {
+		got := cleanDisplayName(tt.name, tt.provider)
+		if got != tt.want {
+			t.Errorf("cleanDisplayName(%q, %q) = %q, want %q", tt.name, tt.provider, got, tt.want)
+		}
+	}
+}
+
 func TestMatchSWEScoresEmptyScores(t *testing.T) {
 	models := testModels()
 	matchSWEScores(models, map[string]float64{})

@@ -86,25 +86,21 @@ func TestWorktreeListCurrentMarked(t *testing.T) {
 	}
 }
 
-func TestWorktreeListCleanDirtyDisplay(t *testing.T) {
+func TestWorktreeListCurrentSessionMarker(t *testing.T) {
 	items := []WorktreeInfo{
-		{Path: "/wt/clean", Branch: "clean-branch", Clean: true},
-		{Path: "/wt/dirty", Branch: "dirty-branch", Clean: false},
+		{Path: "/wt/current", Branch: "current-branch", Clean: true},
+		{Path: "/wt/other", Branch: "other-branch", Clean: false},
 	}
-	wl := newWorktreeList(items, "", 80, 24)
+	wl := newWorktreeList(items, "/wt/current", 80, 24)
 	view := wl.View()
 
-	// Clean worktree should show checkmark
-	if !strings.Contains(view, "✓") {
-		t.Error("view should contain ✓ for clean worktree")
-	}
-	// Dirty worktree should show dot indicator
+	// Current session worktree should show green dot marker
 	if !strings.Contains(view, "●") {
-		t.Error("view should contain ● for dirty worktree")
+		t.Error("view should contain ● for current session worktree")
 	}
 }
 
-func TestWorktreeListActiveDisplay(t *testing.T) {
+func TestWorktreeListNoActiveLabel(t *testing.T) {
 	items := []WorktreeInfo{
 		{Path: "/wt/a", Branch: "branch-a", Clean: true, Active: true},
 		{Path: "/wt/b", Branch: "branch-b", Clean: true, Active: false},
@@ -112,8 +108,8 @@ func TestWorktreeListActiveDisplay(t *testing.T) {
 	wl := newWorktreeList(items, "", 80, 24)
 	view := wl.View()
 
-	if !strings.Contains(view, "[active]") {
-		t.Error("view should contain [active] for active worktree")
+	if strings.Contains(view, "[active]") {
+		t.Error("view should not contain [active] label")
 	}
 }
 

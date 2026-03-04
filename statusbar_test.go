@@ -209,7 +209,22 @@ func TestRenderStatusBarNoTruncateWide(t *testing.T) {
 	}
 }
 
-func TestContainerReadyChainsFetchStatus(t *testing.T) {
+func TestWorkspaceMsgChainsFetchStatusAndBoot(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	result, cmd := m.Update(workspaceMsg{worktreePath: "/tmp/test-wt"})
+	updated := result.(model)
+
+	if updated.worktreePath != "/tmp/test-wt" {
+		t.Fatalf("expected worktreePath = /tmp/test-wt, got %s", updated.worktreePath)
+	}
+	if cmd == nil {
+		t.Fatal("workspaceMsg should return a batched cmd (status + boot)")
+	}
+}
+
+func TestContainerReadyNoCmd(t *testing.T) {
 	m := initialModel()
 	m = resize(m, 80, 24)
 
@@ -218,9 +233,13 @@ func TestContainerReadyChainsFetchStatus(t *testing.T) {
 		running: true,
 	}
 
-	_, cmd := m.Update(containerReadyMsg{client: client, worktreePath: "/tmp/test-wt"})
+	result, cmd := m.Update(containerReadyMsg{client: client, worktreePath: "/tmp/test-wt"})
+	updated := result.(model)
 
-	if cmd == nil {
-		t.Fatal("containerReadyMsg should return a cmd to fetch status")
+	if !updated.containerReady {
+		t.Fatal("containerReady should be true")
+	}
+	if cmd != nil {
+		t.Fatal("containerReadyMsg should return nil cmd (status fetch moved to workspaceMsg)")
 	}
 }

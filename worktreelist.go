@@ -138,22 +138,7 @@ func (l worktreeList) View() string {
 		var row strings.Builder
 		row.WriteString(nameStyle.Render(wt.Branch))
 
-		// Clean/dirty badge
-		if wt.Clean {
-			badge := lipgloss.NewStyle().Foreground(lipgloss.Color("#6FE7B8")).Render(" ✓")
-			row.WriteString(badge)
-		} else {
-			badge := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B")).Render(" ●")
-			row.WriteString(badge)
-		}
-
-		// Active badge
-		if wt.Active {
-			badge := lipgloss.NewStyle().Foreground(lipgloss.Color("#B88AFF")).Render(" [active]")
-			row.WriteString(badge)
-		}
-
-		// Current session marker
+		// Current session marker (green dot)
 		if wt.Path == l.currentPath {
 			marker := lipgloss.NewStyle().Foreground(lipgloss.Color("#6FE7B8")).Bold(true).Render(" ●")
 			row.WriteString(marker)

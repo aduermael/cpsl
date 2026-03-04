@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -15,7 +16,7 @@ func TestLoadConfigCreatesDefault(t *testing.T) {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
 
-	if cfg != defaultConfig() {
+	if !reflect.DeepEqual(cfg, defaultConfig()) {
 		t.Errorf("config = %+v, want %+v", cfg, defaultConfig())
 	}
 
@@ -29,7 +30,7 @@ func TestLoadConfigCreatesDefault(t *testing.T) {
 	if err := json.Unmarshal(data, &ondisk); err != nil {
 		t.Fatalf("unmarshal on-disk config: %v", err)
 	}
-	if ondisk != defaultConfig() {
+	if !reflect.DeepEqual(ondisk, defaultConfig()) {
 		t.Errorf("on-disk config = %+v, want %+v", ondisk, defaultConfig())
 	}
 }
@@ -47,7 +48,7 @@ func TestLoadConfigRoundTrip(t *testing.T) {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
 
-	if loaded != original {
+	if !reflect.DeepEqual(loaded, original) {
 		t.Errorf("loaded = %+v, want %+v", loaded, original)
 	}
 }
@@ -61,7 +62,7 @@ func TestLoadConfigMissingFileFallback(t *testing.T) {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
 
-	if cfg != defaultConfig() {
+	if !reflect.DeepEqual(cfg, defaultConfig()) {
 		t.Errorf("config = %+v, want defaults %+v", cfg, defaultConfig())
 	}
 }
@@ -82,7 +83,7 @@ func TestLoadConfigMalformedJSON(t *testing.T) {
 		t.Fatalf("loadConfigFrom: %v", err)
 	}
 
-	if cfg != defaultConfig() {
+	if !reflect.DeepEqual(cfg, defaultConfig()) {
 		t.Errorf("config = %+v, want defaults %+v on malformed JSON", cfg, defaultConfig())
 	}
 }

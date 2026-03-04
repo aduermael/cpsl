@@ -13,25 +13,24 @@ import (
 type sortColumn int
 
 const (
-	colSWE      sortColumn = iota // SWE-bench score (default)
-	colName                       // Model name
+	colName     sortColumn = iota // Model name
 	colProvider                   // Provider
 	colPrice                      // Prompt price
 )
 
-const numSortColumns = 4
+const numSortColumns = 3
 
 // modelList is the UI component for the /model selection screen.
 type modelList struct {
 	models      []ModelDef
 	cursor      int
-	scroll      int        // index of first visible model row
-	activeModel string     // currently active model ID (for highlighting)
+	scroll      int                      // index of first visible model row
+	activeModel string                   // currently active model ID (for highlighting)
 	width       int
 	height      int
 	loading     bool
-	sortCol     sortColumn // active sort column
-	sortAsc     bool       // true = ascending, false = descending
+	sortCol     sortColumn               // active sort column
+	sortDirs    [numSortColumns]bool      // per-column sort direction (true = ascending)
 }
 
 // visibleRows returns how many model rows fit in the available height.
@@ -46,14 +45,22 @@ func (l modelList) visibleRows() int {
 	return rows
 }
 
-func newModelList(models []ModelDef, activeModel string, width, height int) modelList {
+func newModelList(models []ModelDef, activeModel string, width, height int, savedDirs map[string]bool) modelList {
 	ml := modelList{
 		models:      models,
 		activeModel: activeModel,
 		width:       width,
 		height:      height,
-		sortCol:     colSWE,
-		sortAsc:     false, // SWE-bench: highest first
+		sortCol:     colPrice,
+	}
+	// Initialize per-column defaults, then overlay any saved preferences
+	for c := sortColumn(0); int(c) < numSortColumns; c++ {
+		ml.sortDirs[c] = defaultAscending(c)
+	}
+	for c := sortColumn(0); int(c) < numSortColumns; c++ {
+		if dir, ok := savedDirs[columnKey(c)]; ok {
+			ml.sortDirs[c] = dir
+		}
 	}
 	ml.sortModels()
 
@@ -71,43 +78,60 @@ func newModelList(models []ModelDef, activeModel string, width, height int) mode
 // defaultAscending returns the natural sort direction for a column.
 func defaultAscending(col sortColumn) bool {
 	switch col {
-	case colSWE:
-		return false // highest score first
+	case colPrice:
+		return false // most expensive first
 	default:
-		return true // alphabetical / cheapest first
+		return true // alphabetical
 	}
+}
+
+// columnKey returns a stable string key for persisting a column's sort direction.
+func columnKey(col sortColumn) string {
+	switch col {
+	case colName:
+		return "name"
+	case colProvider:
+		return "provider"
+	case colPrice:
+		return "price"
+	}
+	return ""
 }
 
 // sortModels sorts the model slice by the current sort column and direction.
 func (l *modelList) sortModels() {
-	asc := l.sortAsc
+	asc := l.sortDirs[l.sortCol]
 	sort.SliceStable(l.models, func(i, j int) bool {
 		a, b := l.models[i], l.models[j]
-		var less bool
 		switch l.sortCol {
 		case colName:
-			less = strings.ToLower(a.DisplayName) < strings.ToLower(b.DisplayName)
+			an, bn := strings.ToLower(a.DisplayName), strings.ToLower(b.DisplayName)
+			if an == bn {
+				return false
+			}
+			if asc {
+				return an < bn
+			}
+			return an > bn
 		case colProvider:
-			less = strings.ToLower(a.Provider) < strings.ToLower(b.Provider)
+			ap, bp := strings.ToLower(a.Provider), strings.ToLower(b.Provider)
+			if ap == bp {
+				return false
+			}
+			if asc {
+				return ap < bp
+			}
+			return ap > bp
 		case colPrice:
-			less = a.PromptPrice < b.PromptPrice
-		case colSWE:
-			// Models with no score (0) sort to bottom regardless of direction
-			if a.SWEScore == 0 && b.SWEScore == 0 {
+			if a.PromptPrice == b.PromptPrice {
 				return false
 			}
-			if a.SWEScore == 0 {
-				return false
+			if asc {
+				return a.PromptPrice < b.PromptPrice
 			}
-			if b.SWEScore == 0 {
-				return true
-			}
-			less = a.SWEScore < b.SWEScore
+			return a.PromptPrice > b.PromptPrice
 		}
-		if asc {
-			return less
-		}
-		return !less
+		return false
 	})
 }
 
@@ -147,13 +171,16 @@ func (l modelList) Update(msg tea.Msg) (modelList, tea.Cmd) {
 		case "left", "h":
 			selectedID := l.models[l.cursor].ID
 			l.sortCol = sortColumn((int(l.sortCol) - 1 + numSortColumns) % numSortColumns)
-			l.sortAsc = defaultAscending(l.sortCol)
 			l.sortModels()
 			l.restoreCursor(selectedID)
 		case "right", "l":
 			selectedID := l.models[l.cursor].ID
 			l.sortCol = sortColumn((int(l.sortCol) + 1) % numSortColumns)
-			l.sortAsc = defaultAscending(l.sortCol)
+			l.sortModels()
+			l.restoreCursor(selectedID)
+		case "tab":
+			selectedID := l.models[l.cursor].ID
+			l.sortDirs[l.sortCol] = !l.sortDirs[l.sortCol]
 			l.sortModels()
 			l.restoreCursor(selectedID)
 		}
@@ -177,6 +204,15 @@ func (l modelList) selected() ModelDef {
 	return l.models[l.cursor]
 }
 
+// sortDirsMap returns the current per-column sort directions as a map for config persistence.
+func (l modelList) sortDirsMap() map[string]bool {
+	m := make(map[string]bool, numSortColumns)
+	for c := sortColumn(0); int(c) < numSortColumns; c++ {
+		m[columnKey(c)] = l.sortDirs[c]
+	}
+	return m
+}
+
 // columnLabel returns the header label for a sort column.
 func columnLabel(col sortColumn) string {
 	switch col {
@@ -186,18 +222,8 @@ func columnLabel(col sortColumn) string {
 		return "PROVIDER"
 	case colPrice:
 		return "PRICE"
-	case colSWE:
-		return "SWE-BENCH"
 	}
 	return ""
-}
-
-// formatSWEScore formats a SWE-bench score for display.
-func formatSWEScore(score float64) string {
-	if score == 0 {
-		return "—"
-	}
-	return fmt.Sprintf("%.1f", score)
 }
 
 // runeLen returns the number of runes in a string.
@@ -239,7 +265,6 @@ func (l modelList) View() string {
 	nameW := runeLen("MODEL") + arrowLen
 	provW := runeLen("PROVIDER") + arrowLen
 	priceW := runeLen("PRICE") + arrowLen
-	sweW := runeLen("SWE-BENCH") + arrowLen
 
 	for _, m := range l.models {
 		if runeLen(m.DisplayName) > nameW {
@@ -251,10 +276,6 @@ func (l modelList) View() string {
 		p := fmt.Sprintf("%s / %s", formatPrice(m.PromptPrice), formatPrice(m.CompletionPrice))
 		if runeLen(p) > priceW {
 			priceW = runeLen(p)
-		}
-		s := formatSWEScore(m.SWEScore)
-		if runeLen(s) > sweW {
-			sweW = runeLen(s)
 		}
 	}
 
@@ -274,10 +295,6 @@ func (l modelList) View() string {
 		Foreground(lipgloss.Color("#666666"))
 	priceStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#555555"))
-	sweStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9B6ADE"))
-	sweNoneStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#444444"))
 	activeMarkerStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6FE7B8")).
 		Bold(true)
@@ -300,7 +317,7 @@ func (l modelList) View() string {
 		if l.sortCol != col {
 			return ""
 		}
-		if l.sortAsc {
+		if l.sortDirs[col] {
 			return " ▲"
 		}
 		return " ▼"
@@ -322,12 +339,10 @@ func (l modelList) View() string {
 	b.WriteString(renderHeader(colProvider, provW))
 	b.WriteString(gap)
 	b.WriteString(renderHeader(colPrice, priceW))
-	b.WriteString(gap)
-	b.WriteString(renderHeader(colSWE, sweW))
 	b.WriteString("\n")
 
 	// Separator line
-	totalW := 2 + nameW + colGap + provW + colGap + priceW + colGap + sweW + 3
+	totalW := 2 + nameW + colGap + provW + colGap + priceW + 3
 	b.WriteString(sepStyle.Render("  " + strings.Repeat("─", totalW-2)))
 	b.WriteString("\n")
 
@@ -343,37 +358,45 @@ func (l modelList) View() string {
 		b.WriteString("\n")
 	}
 
+	selectedRowStyle := lipgloss.NewStyle().Background(lipgloss.Color("#2A1545"))
+
 	for i := l.scroll; i < end; i++ {
 		m := l.models[i]
-		cursorStr := "  "
-		labelStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		selected := i == l.cursor
 
-		if i == l.cursor {
+		var cursorStr string
+		nameStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#888888"))
+		rowProvStyle := providerStyle
+		rowPriceStyle := priceStyle
+
+		if selected {
 			cursorStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#B88AFF")).Render("▸ ")
-			labelStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0")).Bold(true)
+			nameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E0E0E0")).Bold(true)
+			rowProvStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#AAAAAA"))
+			rowPriceStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#999999"))
 		} else {
 			cursorStr = lipgloss.NewStyle().Foreground(lipgloss.Color("#3A0066")).Render("  ")
 		}
 
 		price := fmt.Sprintf("%s / %s", formatPrice(m.PromptPrice), formatPrice(m.CompletionPrice))
-		score := formatSWEScore(m.SWEScore)
 
-		b.WriteString(cursorStr)
-		b.WriteString(labelStyle.Render(padRight(m.DisplayName, nameW)))
-		b.WriteString(gap)
-		b.WriteString(providerStyle.Render(padRight(m.Provider, provW)))
-		b.WriteString(gap)
-		b.WriteString(priceStyle.Render(padRight(price, priceW)))
-		b.WriteString(gap)
-		if m.SWEScore == 0 {
-			b.WriteString(sweNoneStyle.Render(padRight(score, sweW)))
-		} else {
-			b.WriteString(sweStyle.Render(padRight(score, sweW)))
-		}
+		var row strings.Builder
+		row.WriteString(nameStyle.Render(padRight(m.DisplayName, nameW)))
+		row.WriteString(gap)
+		row.WriteString(rowProvStyle.Render(padRight(m.Provider, provW)))
+		row.WriteString(gap)
+		row.WriteString(rowPriceStyle.Render(padRight(price, priceW)))
 
 		if m.ID == l.activeModel {
-			b.WriteString(" ")
-			b.WriteString(activeMarkerStyle.Render("●"))
+			row.WriteString(" ")
+			row.WriteString(activeMarkerStyle.Render("●"))
+		}
+
+		b.WriteString(cursorStr)
+		if selected {
+			b.WriteString(selectedRowStyle.Render(row.String()))
+		} else {
+			b.WriteString(row.String())
 		}
 		b.WriteString("\n")
 	}
@@ -385,10 +408,11 @@ func (l modelList) View() string {
 	}
 
 	hint := fmt.Sprintf(
-		"  %s select  %s cancel  %s sort  %s in/out per 1M tokens",
+		"  %s select  %s cancel  %s sort  %s reverse  %s in/out per 1M tokens",
 		hintKeyStyle.Render("enter"),
 		hintKeyStyle.Render("esc"),
 		hintKeyStyle.Render("←/→"),
+		hintKeyStyle.Render("tab"),
 		hintKeyStyle.Render("$"),
 	)
 	b.WriteString(hintStyle.Render(hint))

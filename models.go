@@ -85,6 +85,28 @@ func parsePrice(s string) float64 {
 	return v * 1_000_000
 }
 
+// knownProviderNames lists display-name prefixes that OpenRouter prepends to
+// model names. These are stripped by cleanDisplayName to avoid duplicating the
+// PROVIDER column.
+var knownProviderNames = []string{
+	"Anthropic",
+	"OpenAI",
+	"xAI",
+	"X AI",
+}
+
+// cleanDisplayName strips a leading provider prefix (e.g. "Anthropic: ") from
+// an OpenRouter display name so it doesn't duplicate the PROVIDER column.
+func cleanDisplayName(name, provider string) string {
+	for _, prefix := range knownProviderNames {
+		// Match "Provider: rest" (colon-space separator)
+		if strings.HasPrefix(strings.ToLower(name), strings.ToLower(prefix)+": ") {
+			return name[len(prefix)+2:]
+		}
+	}
+	return name
+}
+
 // parseOpenRouterModels converts raw OpenRouter API models into ModelDefs,
 // filtering to only supported providers.
 func parseOpenRouterModels(data []openRouterModel) []ModelDef {
@@ -103,7 +125,7 @@ func parseOpenRouterModels(data []openRouterModel) []ModelDef {
 		result = append(result, ModelDef{
 			Provider:        provider,
 			ID:              m.ID,
-			DisplayName:     m.Name,
+			DisplayName:     cleanDisplayName(m.Name, provider),
 			PromptPrice:     parsePrice(m.Pricing.Prompt),
 			CompletionPrice: parsePrice(m.Pricing.Completion),
 		})
