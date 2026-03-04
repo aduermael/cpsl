@@ -69,6 +69,7 @@ const (
 	modeConfig
 	modeModel
 	modeWorktrees
+	modeBranches
 )
 
 type msgKind int
@@ -86,7 +87,7 @@ type message struct {
 }
 
 // commands is the list of available slash commands.
-var commands = []string{"/config", "/exec", "/model", "/worktrees"}
+var commands = []string{"/branches", "/config", "/exec", "/model", "/worktrees"}
 
 // filterCommands returns commands matching the given prefix.
 func filterCommands(prefix string) []string {
@@ -133,6 +134,7 @@ type model struct {
 	configForm   configForm
 	modelList    modelList
 	worktreeListC worktreeList
+	branchListC   branchList
 	models       []ModelDef
 	modelsErr    error
 	modelsLoaded bool
@@ -232,6 +234,19 @@ type statusInfoMsg struct {
 type worktreeListMsg struct {
 	items []WorktreeInfo
 	err   error
+}
+
+// branchListMsg carries the result of the async branch list fetch.
+type branchListMsg struct {
+	items         []string
+	currentBranch string
+	err           error
+}
+
+// branchCheckoutMsg carries the result of a git checkout operation.
+type branchCheckoutMsg struct {
+	branch string
+	err    error
 }
 
 // containerErrMsg signals that the container failed to start.
@@ -489,6 +504,48 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Handle async branch list result regardless of mode
+	if msg, ok := msg.(branchListMsg); ok {
+		if msg.err != nil {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Error listing branches: %v", msg.err),
+				kind:    msgError,
+			})
+			m.mode = modeChat
+			if m.ready {
+				m.viewport.SetHeight(m.viewportHeight())
+				m.updateViewportContent()
+				m.viewport.GotoBottom()
+			}
+			return m, m.textarea.Focus()
+		}
+		m.branchListC = newBranchList(msg.items, msg.currentBranch, m.width, m.height)
+		return m, nil
+	}
+
+	// Handle branch checkout result regardless of mode
+	if msg, ok := msg.(branchCheckoutMsg); ok {
+		if msg.err != nil {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Checkout failed: %v", msg.err),
+				kind:    msgError,
+			})
+		} else {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Switched to branch '%s'", msg.branch),
+				kind:    msgSuccess,
+			})
+			m.status.Branch = msg.branch
+		}
+		m.mode = modeChat
+		if m.ready {
+			m.viewport.SetHeight(m.viewportHeight())
+			m.updateViewportContent()
+			m.viewport.GotoBottom()
+		}
+		return m, m.textarea.Focus()
+	}
+
 	// Handle async container startup result regardless of mode
 	if msg, ok := msg.(containerReadyMsg); ok {
 		m.container = msg.client
@@ -553,6 +610,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Worktree list mode: delegate to worktree list
 	if m.mode == modeWorktrees {
 		return m.updateWorktreeMode(msg)
+	}
+
+	// Branch list mode: delegate to branch list
+	if m.mode == modeBranches {
+		return m.updateBranchMode(msg)
 	}
 
 	var cmds []tea.Cmd
@@ -923,11 +985,123 @@ func (m model) viewWorktrees() tea.View {
 	return v
 }
 
+// enterBranchMode switches to the branch list mode.
+func (m model) enterBranchMode() (tea.Model, tea.Cmd) {
+	m.mode = modeBranches
+	m.branchListC = newBranchList(nil, m.status.Branch, m.width, m.height)
+	m.textarea.Reset()
+	m.textarea.SetHeight(minInputHeight)
+	m.textarea.Blur()
+
+	// Fetch branch list async
+	wtPath := m.worktreePath
+	return m, func() tea.Msg {
+		dir := wtPath
+		if dir == "" {
+			dir = "."
+		}
+		// Get current branch
+		headCmd := exec.Command("git", "-C", dir, "rev-parse", "--abbrev-ref", "HEAD")
+		headOut, err := headCmd.Output()
+		if err != nil {
+			return branchListMsg{err: fmt.Errorf("not in a git repository")}
+		}
+		currentBranch := strings.TrimSpace(string(headOut))
+
+		// Get all branches
+		branchCmd := exec.Command("git", "-C", dir, "branch", "-a", "--format=%(refname:short)")
+		branchOut, err := branchCmd.Output()
+		if err != nil {
+			return branchListMsg{err: fmt.Errorf("failed to list branches: %w", err)}
+		}
+		var branches []string
+		for _, line := range strings.Split(strings.TrimSpace(string(branchOut)), "\n") {
+			line = strings.TrimSpace(line)
+			if line != "" {
+				branches = append(branches, line)
+			}
+		}
+		return branchListMsg{items: branches, currentBranch: currentBranch}
+	}
+}
+
+// exitBranchMode returns to chat mode.
+func (m model) exitBranchMode() (tea.Model, tea.Cmd) {
+	m.mode = modeChat
+	if m.ready {
+		m.viewport.SetHeight(m.viewportHeight())
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
+	}
+	return m, m.textarea.Focus()
+}
+
+// updateBranchMode handles input while the branch list is active.
+func (m model) updateBranchMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.branchListC.width = msg.Width
+		m.branchListC.height = msg.Height
+		return m, nil
+
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "esc", "ctrl+c":
+			return m.exitBranchMode()
+		}
+
+	case branchSelected:
+		// Run git checkout async
+		branch := msg.name
+		wtPath := m.worktreePath
+		return m, func() tea.Msg {
+			dir := wtPath
+			if dir == "" {
+				dir = "."
+			}
+			cmd := exec.Command("git", "-C", dir, "checkout", branch)
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return branchCheckoutMsg{
+					branch: branch,
+					err:    fmt.Errorf("%s", strings.TrimSpace(string(out))),
+				}
+			}
+			return branchCheckoutMsg{branch: branch}
+		}
+	}
+
+	var cmd tea.Cmd
+	m.branchListC, cmd = m.branchListC.Update(msg)
+	return m, cmd
+}
+
+// viewBranches renders the branch list screen.
+func (m model) viewBranches() tea.View {
+	formBorder := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForegroundBlend(borderGradientColors...).
+		Width(m.width).
+		Height(m.height - 2).
+		Padding(1, 0)
+
+	formContent := m.branchListC.View()
+	rendered := formBorder.Render(formContent)
+
+	v := tea.NewView(rendered)
+	v.AltScreen = true
+	return v
+}
+
 // handleCommand processes slash commands and returns the updated model.
 func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 	cmd := strings.Fields(input)[0] // e.g. "/config"
 
 	switch cmd {
+	case "/branches":
+		return m.enterBranchMode()
 	case "/config":
 		return m.enterConfigMode()
 	case "/exec":
@@ -1221,6 +1395,10 @@ func (m model) View() tea.View {
 
 	if m.mode == modeWorktrees {
 		return m.viewWorktrees()
+	}
+
+	if m.mode == modeBranches {
+		return m.viewBranches()
 	}
 
 	inputBorderStyle := lipgloss.NewStyle().

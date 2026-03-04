@@ -62,7 +62,7 @@ The status bar content is fetched once at startup (alongside container boot) and
 
 ## Phase 3: `/branches` Command with Filter and Selection
 
-- [ ] 3a: Add `branchlist.go` with `branchList` component: struct with `items []string` (all branches), `filtered []string`, `cursor int`, `filter string`, `filterInput textarea.Model` (or textinput), `width/height int`. `Update()` handles: typing updates filter and re-filters list, up/down navigates filtered results, Enter selects, Esc cancels. `View()` renders filter input at top + scrollable branch list below. Use `textinput` from bubbles for the filter (single-line input).
+- [x] 3a: Add `branchlist.go` with `branchList` component: struct with `items []string` (all branches), `filtered []string`, `cursor int`, `filter string`, `filterInput textarea.Model` (or textinput), `width/height int`. `Update()` handles: typing updates filter and re-filters list, up/down navigates filtered results, Enter selects, Esc cancels. `View()` renders filter input at top + scrollable branch list below. Use `textinput` from bubbles for the filter (single-line input).
 - [ ] 3b: Add `modeBranches` app mode. Wire `/branches` in `handleCommand()`. On enter, fetch branches via async cmd running `git branch -a --format='%(refname:short)'` in worktree dir. On branch selection (Enter), run `git checkout <branch>` in worktree dir (async cmd), show success/error, update status bar branch, return to chat. Add `branchListMsg` and `branchCheckoutMsg` message types.
 - [ ] 3c: Tests: branch list filtering narrows results, cursor navigation, Enter triggers checkout message, Esc returns to chat, checkout updates status bar branch.
 
