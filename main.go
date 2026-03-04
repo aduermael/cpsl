@@ -1400,17 +1400,17 @@ func (m model) renderStatusBar() string {
 			Bold(true)
 		left = shellStyle.Render("SHELL")
 		if m.status.Branch != "" {
-			left += dimStyle.Render(" " + m.status.Branch)
+			left += dimStyle.Render("  " + m.status.Branch)
 		}
 	} else {
-		left = leftStyle.Render(m.status.Branch)
+		left = leftStyle.Render(" " + m.status.Branch)
 		if m.status.PRNumber > 0 {
 			left += dimStyle.Render(fmt.Sprintf(" PR #%d", m.status.PRNumber))
 		}
 	}
 
 	// Right side: worktree name + active count
-	right := dimStyle.Render(m.status.WorktreeName)
+	right := dimStyle.Render(" " + m.status.WorktreeName)
 	if m.status.ActiveCount > 0 {
 		right += dimStyle.Render(fmt.Sprintf(" (%d active)", m.status.ActiveCount))
 	}
