@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -195,8 +196,8 @@ func TestFullFlowUnknownCommandThenValidCommand(t *testing.T) {
 	if m.mode != modeChat {
 		t.Error("should stay in chat mode after unknown command")
 	}
-	if len(m.messages) != 1 || !m.messages[0].isSystem {
-		t.Fatal("should have one system error message")
+	if len(m.messages) != 1 || m.messages[0].kind != msgError {
+		t.Fatal("should have one error message")
 	}
 	if !strings.Contains(m.messages[0].content, "/help") {
 		t.Errorf("error should mention /help, got %q", m.messages[0].content)
@@ -414,5 +415,253 @@ func TestFullFlowPasteCounterPersistsAcrossConfigVisits(t *testing.T) {
 	_ = expected // used by paste detection logic
 	if _, ok := m.pasteStore[3]; !ok {
 		t.Error("pasteStore should have entry for paste #3")
+	}
+}
+
+// TestFullFlowTabEnterExecutesCommand verifies the autocomplete flow:
+// type partial command → Tab completes → Enter executes.
+func TestFullFlowTabEnterExecutesCommand(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	// Type partial command
+	m = typeString(m, "/con")
+
+	// Autocomplete should show /config and /container-shell
+	matches := m.autocompleteMatches()
+	if len(matches) != 2 || matches[0] != "/config" {
+		t.Fatalf("autocompleteMatches = %v, want [/config /container-shell]", matches)
+	}
+
+	// Tab accepts the top match (/config)
+	m = sendKey(m, tea.KeyTab)
+	if m.textarea.Value() != "/config" {
+		t.Fatalf("textarea = %q, want /config after Tab", m.textarea.Value())
+	}
+
+	// Enter executes the command
+	m = sendKey(m, tea.KeyEnter)
+	if m.mode != modeConfig {
+		t.Errorf("mode = %d, want modeConfig after Tab+Enter", m.mode)
+	}
+
+	// Save and return to chat
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = result.(model)
+
+	if m.mode != modeChat {
+		t.Error("should return to chat mode after saving config")
+	}
+	// Should show success message
+	found := false
+	for _, msg := range m.messages {
+		if msg.kind == msgSuccess && strings.Contains(msg.content, "saved") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("should show saved message")
+	}
+}
+
+// TestFullFlowEscDismissesAutocomplete verifies that Esc clears the
+// slash input and returns to normal typing.
+func TestFullFlowEscDismissesAutocomplete(t *testing.T) {
+	m := initialModel()
+	m = resize(m, 80, 24)
+
+	// Type partial command — autocomplete should be visible
+	m = typeString(m, "/co")
+	if len(m.autocompleteMatches()) == 0 {
+		t.Fatal("autocomplete should show matches for /co")
+	}
+
+	// Esc dismisses
+	m = sendKey(m, tea.KeyEscape)
+	if m.textarea.Value() != "" {
+		t.Errorf("textarea = %q, want empty after Esc", m.textarea.Value())
+	}
+	if len(m.autocompleteMatches()) != 0 {
+		t.Error("autocomplete should not show after Esc clears input")
+	}
+
+	// Should still be in chat mode and able to type normally
+	m = typeString(m, "hello")
+	m = sendKey(m, tea.KeyEnter)
+
+	if len(m.messages) != 1 {
+		t.Fatalf("messages count = %d, want 1", len(m.messages))
+	}
+	if m.messages[0].content != "hello" {
+		t.Errorf("message = %q, want hello", m.messages[0].content)
+	}
+}
+
+// TestFullFlowAsyncModelsLoadAndSelect exercises the full async pattern:
+// startup → modelsMsg arrives → /model → navigate → select → persists.
+func TestFullFlowAsyncModelsLoadAndSelect(t *testing.T) {
+	m := initialModel()
+	m.config.AnthropicAPIKey = "sk-test"
+	m.config.GrokAPIKey = ""
+	m.config.OpenAIAPIKey = ""
+	m = resize(m, 80, 24)
+
+	// Models not loaded yet
+	if m.modelsLoaded {
+		t.Fatal("models should not be loaded initially")
+	}
+
+	// Try /model before models arrive — should show loading message
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+	if m.mode != modeChat {
+		t.Error("should stay in chat mode when models not loaded")
+	}
+	if len(m.messages) != 1 || m.messages[0].kind != msgInfo {
+		t.Fatal("should show loading info message")
+	}
+
+	// Simulate modelsMsg arriving
+	result, _ := m.Update(modelsMsg{models: testModels()})
+	m = result.(model)
+
+	if !m.modelsLoaded {
+		t.Fatal("modelsLoaded should be true after modelsMsg")
+	}
+
+	// Now /model should work
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+	if m.mode != modeModel {
+		t.Fatalf("mode = %d, want modeModel", m.mode)
+	}
+
+	// Should only show Anthropic models
+	for _, md := range m.modelList.models {
+		if md.Provider != ProviderAnthropic {
+			t.Errorf("should only show anthropic models, got %s", md.Provider)
+		}
+	}
+
+	// Navigate down and select
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m = result.(model)
+	selected := m.modelList.selected()
+
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = result.(model)
+
+	if m.mode != modeChat {
+		t.Error("should return to chat after selecting model")
+	}
+	if m.config.ActiveModel != selected.ID {
+		t.Errorf("ActiveModel = %q, want %q", m.config.ActiveModel, selected.ID)
+	}
+}
+
+// TestFullFlowAsyncModelsError exercises the error path:
+// modelsMsg with error → /model shows error message.
+func TestFullFlowAsyncModelsError(t *testing.T) {
+	m := initialModel()
+	m.config.AnthropicAPIKey = "key"
+	m = resize(m, 80, 24)
+
+	// Simulate fetch error
+	result, _ := m.Update(modelsMsg{err: errors.New("network timeout")})
+	m = result.(model)
+
+	if !m.modelsLoaded {
+		t.Fatal("modelsLoaded should be true even on error")
+	}
+
+	// /model should show the error
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+
+	if m.mode != modeChat {
+		t.Error("should stay in chat mode on error")
+	}
+	found := false
+	for _, msg := range m.messages {
+		if msg.kind == msgError && strings.Contains(msg.content, "network timeout") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("should show fetch error message")
+	}
+}
+
+// TestFullFlowProviderFilteringAfterConfigChange verifies that changing
+// API keys in config correctly filters the model list on next /model.
+func TestFullFlowProviderFilteringAfterConfigChange(t *testing.T) {
+	m := initialModel()
+	m.config.AnthropicAPIKey = "key"
+	m.config.GrokAPIKey = ""
+	m.config.OpenAIAPIKey = ""
+	m.models = testModels()
+	m.modelsLoaded = true
+	m = resize(m, 80, 24)
+
+	// /model shows only Anthropic
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+	for _, md := range m.modelList.models {
+		if md.Provider != ProviderAnthropic {
+			t.Errorf("should only show anthropic, got %s", md.Provider)
+		}
+	}
+	// Cancel
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = result.(model)
+
+	// Add OpenAI key
+	m.config.OpenAIAPIKey = "openai-key"
+
+	// /model now shows Anthropic + OpenAI
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+
+	hasAnthropic := false
+	hasOpenAI := false
+	for _, md := range m.modelList.models {
+		if md.Provider == ProviderAnthropic {
+			hasAnthropic = true
+		}
+		if md.Provider == ProviderOpenAI {
+			hasOpenAI = true
+		}
+		if md.Provider == ProviderGrok {
+			t.Error("should not show Grok models without key")
+		}
+	}
+	if !hasAnthropic {
+		t.Error("should show Anthropic models")
+	}
+	if !hasOpenAI {
+		t.Error("should show OpenAI models after adding key")
+	}
+}
+
+// TestFullFlowModelPricingInView verifies pricing is displayed in the model list.
+func TestFullFlowModelPricingInView(t *testing.T) {
+	m := initialModel()
+	m.config.AnthropicAPIKey = "key"
+	m.models = testModels()
+	m.modelsLoaded = true
+	m = resize(m, 80, 24)
+
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+
+	view := m.modelList.View()
+	// Should contain pricing info
+	if !strings.Contains(view, "$") {
+		t.Error("model list should show pricing with $ symbol")
+	}
+	if !strings.Contains(view, "1M tokens") {
+		t.Error("model list should mention per 1M tokens in hint")
 	}
 }

@@ -70,6 +70,7 @@ const (
 	modeModel
 	modeWorktrees
 	modeBranches
+	modeShell
 )
 
 type msgKind int
@@ -87,7 +88,7 @@ type message struct {
 }
 
 // commands is the list of available slash commands.
-var commands = []string{"/branches", "/config", "/exec", "/model", "/worktrees"}
+var commands = []string{"/branches", "/config", "/container-shell", "/model", "/worktrees"}
 
 // filterCommands returns commands matching the given prefix.
 func filterCommands(prefix string) []string {
@@ -617,6 +618,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateBranchMode(msg)
 	}
 
+	// Shell mode: delegate to shell mode handler
+	if m.mode == modeShell {
+		return m.updateShellMode(msg)
+	}
+
 	var cmds []tea.Cmd
 	taMsg := tea.Msg(msg) // message forwarded to textarea (may be modified)
 
@@ -1104,8 +1110,8 @@ func (m model) handleCommand(input string) (tea.Model, tea.Cmd) {
 		return m.enterBranchMode()
 	case "/config":
 		return m.enterConfigMode()
-	case "/exec":
-		return m.handleExec(input)
+	case "/container-shell":
+		return m.enterShellMode()
 	case "/model":
 		return m.enterModelMode()
 	case "/worktrees":
@@ -1136,26 +1142,8 @@ func (m *model) cleanup() {
 	}
 }
 
-// handleExec processes the /exec command.
-func (m model) handleExec(input string) (tea.Model, tea.Cmd) {
-	// Parse the command text after "/exec ".
-	parts := strings.SplitN(input, " ", 2)
-	if len(parts) < 2 || strings.TrimSpace(parts[1]) == "" {
-		m.messages = append(m.messages, message{
-			content: "Usage: /exec <command>",
-			kind:    msgError,
-		})
-		m.textarea.Reset()
-		m.textarea.SetHeight(minInputHeight)
-		if m.ready {
-			m.viewport.SetHeight(m.viewportHeight())
-			m.updateViewportContent()
-			m.viewport.GotoBottom()
-		}
-		return m, nil
-	}
-	execCmd := strings.TrimSpace(parts[1])
-
+// enterShellMode switches to the container shell mode.
+func (m model) enterShellMode() (tea.Model, tea.Cmd) {
 	// Check container state.
 	if m.containerErr != nil {
 		m.messages = append(m.messages, message{
@@ -1186,25 +1174,109 @@ func (m model) handleExec(input string) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	// Show the command being run.
-	m.messages = append(m.messages, message{
-		content: fmt.Sprintf("$ %s", execCmd),
-		kind:    msgUser,
-	})
+	m.mode = modeShell
 	m.textarea.Reset()
 	m.textarea.SetHeight(minInputHeight)
+	m.textarea.Placeholder = "container $"
+	m.messages = append(m.messages, message{
+		content: "Entering container shell mode. Ctrl+C to exit.",
+		kind:    msgInfo,
+	})
 	if m.ready {
 		m.viewport.SetHeight(m.viewportHeight())
 		m.updateViewportContent()
 		m.viewport.GotoBottom()
 	}
+	return m, nil
+}
 
-	// Fire async exec.
-	client := m.container
-	return m, func() tea.Msg {
-		result, err := client.Exec(execCmd, 120)
-		return execResultMsg{result: result, err: err}
+// exitShellMode returns to chat mode.
+func (m model) exitShellMode() (tea.Model, tea.Cmd) {
+	m.mode = modeChat
+	m.textarea.Reset()
+	m.textarea.SetHeight(minInputHeight)
+	m.textarea.Placeholder = "Type a message..."
+	m.messages = append(m.messages, message{
+		content: "Exited container shell mode.",
+		kind:    msgInfo,
+	})
+	if m.ready {
+		m.viewport.SetHeight(m.viewportHeight())
+		m.updateViewportContent()
+		m.viewport.GotoBottom()
 	}
+	return m, m.textarea.Focus()
+}
+
+// updateShellMode handles input while in container shell mode.
+func (m model) updateShellMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+
+		inputAreaWidth := m.width - 2
+		if inputAreaWidth < 1 {
+			inputAreaWidth = 1
+		}
+		m.textarea.SetWidth(inputAreaWidth)
+
+		if m.ready {
+			m.viewport.SetWidth(m.width)
+			m.viewport.SetHeight(m.viewportHeight())
+		}
+		m.recalcTextareaHeight()
+		m.updateViewportContent()
+		return m, nil
+
+	case tea.KeyPressMsg:
+		switch msg.String() {
+		case "ctrl+c":
+			return m.exitShellMode()
+		case "enter":
+			val := strings.TrimSpace(m.textarea.Value())
+			if val == "" {
+				return m, nil
+			}
+
+			// Show the command being run.
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("$ %s", val),
+				kind:    msgUser,
+			})
+			m.textarea.Reset()
+			m.textarea.SetHeight(minInputHeight)
+			if m.ready {
+				m.viewport.SetHeight(m.viewportHeight())
+				m.updateViewportContent()
+				m.viewport.GotoBottom()
+			}
+
+			// Fire async exec.
+			client := m.container
+			execCmd := val
+			return m, func() tea.Msg {
+				result, err := client.Exec(execCmd, 120)
+				return execResultMsg{result: result, err: err}
+			}
+		}
+	}
+
+	// Temporarily expand textarea to max height before Update
+	m.textarea.SetHeight(maxInputHeight)
+
+	var taCmd tea.Cmd
+	m.textarea, taCmd = m.textarea.Update(msg)
+
+	m.recalcTextareaHeight()
+
+	if m.ready {
+		var vpCmd tea.Cmd
+		m.viewport, vpCmd = m.viewport.Update(msg)
+		return m, tea.Batch(taCmd, vpCmd)
+	}
+
+	return m, taCmd
 }
 
 func (m *model) recalcTextareaHeight() {
@@ -1303,14 +1375,14 @@ func (m *model) updateViewportContent() {
 }
 
 func (m model) statusBarHeight() int {
-	if m.status.Branch == "" {
+	if m.status.Branch == "" && m.mode != modeShell {
 		return 0
 	}
 	return 1
 }
 
 func (m model) renderStatusBar() string {
-	if m.status.Branch == "" {
+	if m.status.Branch == "" && m.mode != modeShell {
 		return ""
 	}
 
@@ -1320,10 +1392,21 @@ func (m model) renderStatusBar() string {
 	dimStyle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color("#6B34B0"))
 
-	// Left side: branch + optional PR
-	left := leftStyle.Render(m.status.Branch)
-	if m.status.PRNumber > 0 {
-		left += dimStyle.Render(fmt.Sprintf(" PR #%d", m.status.PRNumber))
+	// Left side: shell mode indicator or branch + optional PR
+	var left string
+	if m.mode == modeShell {
+		shellStyle := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#6FE7B8")).
+			Bold(true)
+		left = shellStyle.Render("SHELL")
+		if m.status.Branch != "" {
+			left += dimStyle.Render(" " + m.status.Branch)
+		}
+	} else {
+		left = leftStyle.Render(m.status.Branch)
+		if m.status.PRNumber > 0 {
+			left += dimStyle.Render(fmt.Sprintf(" PR #%d", m.status.PRNumber))
+		}
 	}
 
 	// Right side: worktree name + active count
@@ -1342,8 +1425,12 @@ func (m model) renderStatusBar() string {
 
 	bar := " " + left + strings.Repeat(" ", gap) + right + " "
 
+	bgColor := "#1A0A2E"
+	if m.mode == modeShell {
+		bgColor = "#0A2E1A"
+	}
 	barStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color("#1A0A2E")).
+		Background(lipgloss.Color(bgColor)).
 		Width(m.width)
 
 	return barStyle.Render(bar)
@@ -1401,9 +1488,21 @@ func (m model) View() tea.View {
 		return m.viewBranches()
 	}
 
+	var inputBorderColors []color.Color
+	if m.mode == modeShell {
+		inputBorderColors = []color.Color{
+			lipgloss.Color("#1A6B34"),
+			lipgloss.Color("#2E9B55"),
+			lipgloss.Color("#4EC77B"),
+			lipgloss.Color("#2E9B55"),
+			lipgloss.Color("#1A6B34"),
+		}
+	} else {
+		inputBorderColors = borderGradientColors
+	}
 	inputBorderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
-		BorderForegroundBlend(borderGradientColors...).
+		BorderForegroundBlend(inputBorderColors...).
 		Width(m.width)
 
 	inputBox := inputBorderStyle.Render(m.textarea.View())

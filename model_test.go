@@ -815,8 +815,8 @@ func TestFilterCommandsExactMatch(t *testing.T) {
 
 func TestFilterCommandsPartialMatch(t *testing.T) {
 	matches := filterCommands("/con")
-	if len(matches) != 1 || matches[0] != "/config" {
-		t.Errorf("filterCommands(/con) = %v, want [/config]", matches)
+	if len(matches) != 2 || matches[0] != "/config" || matches[1] != "/container-shell" {
+		t.Errorf("filterCommands(/con) = %v, want [/config /container-shell]", matches)
 	}
 }
 
@@ -1131,7 +1131,7 @@ func TestModelModeNavigationUpDown(t *testing.T) {
 	m := initialModel()
 	m.config.AnthropicAPIKey = "key"
 	m.config.OpenAIAPIKey = "key"
-	m.config.ActiveModel = ""
+	m.config.ActiveModel = "anthropic/claude-opus-4-20250514" // most expensive → cursor starts near top
 	m.models = testModels()
 	m.modelsLoaded = true
 	m = resize(m, 80, 24)
@@ -1526,10 +1526,10 @@ func TestSlashModelWithFetchError(t *testing.T) {
 // testModelsWithSWE returns test models enriched with SWE-bench scores.
 func testModelsWithSWE() []ModelDef {
 	return []ModelDef{
-		{Provider: ProviderAnthropic, ID: "anthropic/claude-opus-4", DisplayName: "Claude Opus 4", PromptPrice: 15.0, CompletionPrice: 75.0, SWEScore: 79.2},
-		{Provider: ProviderAnthropic, ID: "anthropic/claude-sonnet-4", DisplayName: "Claude Sonnet 4", PromptPrice: 3.0, CompletionPrice: 15.0, SWEScore: 65.0},
-		{Provider: ProviderOpenAI, ID: "openai/gpt-4o", DisplayName: "GPT-4o", PromptPrice: 2.5, CompletionPrice: 10.0, SWEScore: 55.0},
-		{Provider: ProviderGrok, ID: "x-ai/grok-3", DisplayName: "Grok 3", PromptPrice: 3.0, CompletionPrice: 15.0, SWEScore: 0},
+		{Provider: ProviderAnthropic, ID: "anthropic/claude-opus-4", DisplayName: "Claude Opus 4", PromptPrice: 15.0, CompletionPrice: 75.0},
+		{Provider: ProviderAnthropic, ID: "anthropic/claude-sonnet-4", DisplayName: "Claude Sonnet 4", PromptPrice: 3.0, CompletionPrice: 15.0},
+		{Provider: ProviderOpenAI, ID: "openai/gpt-4o", DisplayName: "GPT-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
+		{Provider: ProviderGrok, ID: "x-ai/grok-3", DisplayName: "Grok 3", PromptPrice: 3.0, CompletionPrice: 15.0},
 	}
 }
 
@@ -1552,42 +1552,40 @@ func enterModelModeWith(t *testing.T, models []ModelDef) model {
 	return m
 }
 
-func TestSortDefaultSWEDescending(t *testing.T) {
+func TestSortDefaultPriceDescending(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	if m.modelList.sortCol != colSWE {
-		t.Errorf("default sortCol = %d, want colSWE (%d)", m.modelList.sortCol, colSWE)
+	if m.modelList.sortCol != colPrice {
+		t.Errorf("default sortCol = %d, want colPrice (%d)", m.modelList.sortCol, colPrice)
 	}
-	if m.modelList.sortAsc {
-		t.Error("default sort should be descending for SWE-bench")
+	if m.modelList.sortDirs[colPrice] {
+		t.Error("default sort should be descending for price")
 	}
 
-	// First model should have the highest SWE score
-	if m.modelList.models[0].SWEScore != 79.2 {
-		t.Errorf("first model SWE score = %f, want 79.2 (highest)", m.modelList.models[0].SWEScore)
-	}
-	// Last model with score 0 should be at the bottom
-	last := m.modelList.models[len(m.modelList.models)-1]
-	if last.SWEScore != 0 {
-		t.Errorf("last model SWE score = %f, want 0 (no data at bottom)", last.SWEScore)
+	// First model should have the most expensive price
+	for i := 1; i < len(m.modelList.models); i++ {
+		if m.modelList.models[i-1].PromptPrice < m.modelList.models[i].PromptPrice {
+			t.Errorf("price sort broken: %f < %f at index %d",
+				m.modelList.models[i-1].PromptPrice, m.modelList.models[i].PromptPrice, i)
+		}
 	}
 }
 
 func TestSortRightArrowCyclesColumn(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	// Default is colSWE (0)
-	if m.modelList.sortCol != colSWE {
-		t.Fatalf("initial sortCol = %d, want colSWE", m.modelList.sortCol)
+	// Default is colPrice (2)
+	if m.modelList.sortCol != colPrice {
+		t.Fatalf("initial sortCol = %d, want colPrice", m.modelList.sortCol)
 	}
 
-	// Right arrow → colName
+	// Right arrow → colName (wraps: (2+1)%3 = 0)
 	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = result.(model)
 	if m.modelList.sortCol != colName {
 		t.Errorf("after right: sortCol = %d, want colName (%d)", m.modelList.sortCol, colName)
 	}
-	if !m.modelList.sortAsc {
+	if !m.modelList.sortDirs[colName] {
 		t.Error("colName should default to ascending")
 	}
 
@@ -1598,41 +1596,37 @@ func TestSortRightArrowCyclesColumn(t *testing.T) {
 		t.Errorf("after right x2: sortCol = %d, want colProvider (%d)", m.modelList.sortCol, colProvider)
 	}
 
-	// Right arrow → colPrice
+	// Right arrow → colPrice (wraps back)
 	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = result.(model)
 	if m.modelList.sortCol != colPrice {
 		t.Errorf("after right x3: sortCol = %d, want colPrice (%d)", m.modelList.sortCol, colPrice)
 	}
-
-	// Right arrow → wraps to colSWE
-	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-	m = result.(model)
-	if m.modelList.sortCol != colSWE {
-		t.Errorf("after right x4: sortCol = %d, want colSWE (wrap)", m.modelList.sortCol)
-	}
-	if m.modelList.sortAsc {
-		t.Error("colSWE should default to descending")
+	if m.modelList.sortDirs[colPrice] {
+		t.Error("colPrice should default to descending")
 	}
 }
 
 func TestSortLeftArrowCyclesColumn(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	// Default is colSWE (0), left arrow → colPrice (wraps)
+	// Default is colPrice (2), left arrow → colProvider (1)
 	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	m = result.(model)
-	if m.modelList.sortCol != colPrice {
-		t.Errorf("after left: sortCol = %d, want colPrice (%d)", m.modelList.sortCol, colPrice)
+	if m.modelList.sortCol != colProvider {
+		t.Errorf("after left: sortCol = %d, want colProvider (%d)", m.modelList.sortCol, colProvider)
 	}
 }
 
 func TestSortByNameAlphabetical(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	// Switch to name sort
+	// Switch to name sort (right from colPrice wraps to colName)
 	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = result.(model)
+	if m.modelList.sortCol != colName {
+		t.Fatalf("sortCol = %d, want colName", m.modelList.sortCol)
+	}
 
 	// Should be alphabetical ascending
 	for i := 1; i < len(m.modelList.models); i++ {
@@ -1647,19 +1641,15 @@ func TestSortByNameAlphabetical(t *testing.T) {
 func TestSortByPriceAscending(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	// Switch to price sort (right x3 from colSWE)
-	for range 3 {
-		result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-		m = result.(model)
-	}
+	// Default sort is already colPrice descending
 	if m.modelList.sortCol != colPrice {
 		t.Fatalf("sortCol = %d, want colPrice", m.modelList.sortCol)
 	}
 
-	// Should be price ascending (cheapest first)
+	// Should be price descending (most expensive first)
 	for i := 1; i < len(m.modelList.models); i++ {
-		if m.modelList.models[i-1].PromptPrice > m.modelList.models[i].PromptPrice {
-			t.Errorf("price sort broken: %f > %f at index %d",
+		if m.modelList.models[i-1].PromptPrice < m.modelList.models[i].PromptPrice {
+			t.Errorf("price sort broken: %f < %f at index %d",
 				m.modelList.models[i-1].PromptPrice, m.modelList.models[i].PromptPrice, i)
 		}
 	}
@@ -1683,26 +1673,6 @@ func TestSortCursorPreserved(t *testing.T) {
 	}
 }
 
-func TestSortSWEZeroScoresAtBottom(t *testing.T) {
-	models := []ModelDef{
-		{Provider: ProviderAnthropic, ID: "anthropic/a", DisplayName: "A", SWEScore: 0},
-		{Provider: ProviderAnthropic, ID: "anthropic/b", DisplayName: "B", SWEScore: 50.0},
-		{Provider: ProviderAnthropic, ID: "anthropic/c", DisplayName: "C", SWEScore: 30.0},
-	}
-	m := enterModelModeWith(t, models)
-
-	// Default SWE sort: B (50) then C (30) then A (0)
-	if m.modelList.models[0].ID != "anthropic/b" {
-		t.Errorf("first = %q, want anthropic/b (score 50)", m.modelList.models[0].ID)
-	}
-	if m.modelList.models[1].ID != "anthropic/c" {
-		t.Errorf("second = %q, want anthropic/c (score 30)", m.modelList.models[1].ID)
-	}
-	if m.modelList.models[2].ID != "anthropic/a" {
-		t.Errorf("third = %q, want anthropic/a (score 0, bottom)", m.modelList.models[2].ID)
-	}
-}
-
 func TestTableViewHasHeaderAndSeparator(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 	view := m.modelList.View()
@@ -1716,53 +1686,140 @@ func TestTableViewHasHeaderAndSeparator(t *testing.T) {
 	if !strings.Contains(view, "PRICE") {
 		t.Error("view should contain PRICE header")
 	}
-	if !strings.Contains(view, "SWE-BENCH") {
-		t.Error("view should contain SWE-BENCH header")
+	if strings.Contains(view, "SWE-BENCH") {
+		t.Error("view should NOT contain SWE-BENCH header (column removed)")
 	}
 	if !strings.Contains(view, "─") {
 		t.Error("view should contain separator line")
 	}
 	if !strings.Contains(view, "▼") {
-		t.Error("view should contain sort direction indicator")
+		t.Error("view should contain sort direction indicator (▼ for default descending price)")
 	}
 	if !strings.Contains(view, "←/→") {
 		t.Error("hint should mention ←/→ for sort")
 	}
-}
-
-func TestTableViewShowsSWEScores(t *testing.T) {
-	m := enterModelModeWith(t, testModelsWithSWE())
-	view := m.modelList.View()
-
-	if !strings.Contains(view, "79.2") {
-		t.Error("view should show SWE score 79.2")
-	}
-	if !strings.Contains(view, "65.0") {
-		t.Error("view should show SWE score 65.0")
-	}
-	if !strings.Contains(view, "—") {
-		t.Error("view should show — for models without SWE score")
+	if !strings.Contains(view, "tab") {
+		t.Error("hint should mention tab for reverse")
 	}
 }
 
 func TestTableViewSortArrowChanges(t *testing.T) {
 	m := enterModelModeWith(t, testModelsWithSWE())
 
-	// Default: SWE-BENCH with ▼
+	// Default: PRICE with ▼ (descending)
 	view := m.modelList.View()
-	if !strings.Contains(view, "SWE-BENCH ▼") {
-		t.Error("default view should show SWE-BENCH ▼")
+	if !strings.Contains(view, "PRICE ▼") {
+		t.Error("default view should show PRICE ▼")
 	}
 
-	// Switch to name sort (ascending ▲)
+	// Switch to name sort (right from colPrice wraps to colName, ascending ▲)
 	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	m = result.(model)
 	view = m.modelList.View()
 	if !strings.Contains(view, "MODEL ▲") {
 		t.Error("name sort view should show MODEL ▲")
 	}
-	// SWE-BENCH should no longer have arrow
-	if strings.Contains(view, "SWE-BENCH ▼") || strings.Contains(view, "SWE-BENCH ▲") {
-		t.Error("SWE-BENCH should not have arrow when not active sort")
+	// PRICE should no longer have arrow
+	if strings.Contains(view, "PRICE ▼") || strings.Contains(view, "PRICE ▲") {
+		t.Error("PRICE should not have arrow when not active sort")
+	}
+}
+
+func TestTabTogglesSortDirection(t *testing.T) {
+	m := enterModelModeWith(t, testModelsWithSWE())
+
+	// Default: colPrice descending
+	if m.modelList.sortDirs[colPrice] {
+		t.Fatal("default price should be descending")
+	}
+
+	// Record first model (most expensive)
+	firstBefore := m.modelList.models[0].ID
+
+	// Press tab → ascending
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = result.(model)
+
+	if !m.modelList.sortDirs[colPrice] {
+		t.Error("tab should toggle to ascending")
+	}
+	if m.modelList.sortCol != colPrice {
+		t.Error("tab should not change the sort column")
+	}
+
+	// First model should now be the cheapest
+	if m.modelList.models[0].ID == firstBefore {
+		t.Error("order should change after toggling direction")
+	}
+
+	// Press tab again → descending
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = result.(model)
+
+	if m.modelList.sortDirs[colPrice] {
+		t.Error("second tab should toggle back to descending")
+	}
+	if m.modelList.models[0].ID != firstBefore {
+		t.Error("order should restore after toggling back")
+	}
+}
+
+func TestTabPreservesPerColumnDirection(t *testing.T) {
+	m := enterModelModeWith(t, testModelsWithSWE())
+
+	// Toggle price to ascending
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = result.(model)
+	if !m.modelList.sortDirs[colPrice] {
+		t.Fatal("price should now be ascending")
+	}
+
+	// Switch to name column (right arrow wraps to colName)
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m = result.(model)
+	if m.modelList.sortCol != colName {
+		t.Fatalf("sortCol = %d, want colName", m.modelList.sortCol)
+	}
+	// Name should still be at its default (ascending)
+	if !m.modelList.sortDirs[colName] {
+		t.Error("name should be ascending (default)")
+	}
+
+	// Switch back to price — should remember ascending
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m = result.(model)
+	if m.modelList.sortCol != colPrice {
+		t.Fatalf("sortCol = %d, want colPrice", m.modelList.sortCol)
+	}
+	if !m.modelList.sortDirs[colPrice] {
+		t.Error("price should still be ascending (remembered)")
+	}
+}
+
+func TestSortDirsSavedToConfig(t *testing.T) {
+	m := enterModelModeWith(t, testModelsWithSWE())
+
+	// Toggle price to ascending
+	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m = result.(model)
+
+	// Exit model mode (cancel) — should persist sort dirs
+	result, _ = m.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	m = result.(model)
+
+	// Config should have the updated sort dirs
+	if !m.config.ModelSortDirs["price"] {
+		t.Error("config should persist price as ascending after tab toggle")
+	}
+	if !m.config.ModelSortDirs["name"] {
+		t.Error("config should persist name as ascending (default)")
+	}
+
+	// Re-enter model mode — should restore saved dirs
+	m = typeString(m, "/model")
+	m = sendKey(m, tea.KeyEnter)
+
+	if !m.modelList.sortDirs[colPrice] {
+		t.Error("price should be ascending (restored from config)")
 	}
 }

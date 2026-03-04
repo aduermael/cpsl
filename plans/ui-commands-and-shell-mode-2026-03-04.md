@@ -68,8 +68,8 @@ The status bar content is fetched once at startup (alongside container boot) and
 
 ## Phase 4: `/container-shell` Mode (replaces `/exec`)
 
-- [ ] 4a: Add `modeShell` app mode. When active: textarea prompt changes (placeholder text "container $" or similar visual indicator), Enter sends input via `Exec()` (same async pattern as old `/exec`), output appended to messages, Ctrl+C returns to `modeChat`. The shell mode is indicated by a visual change in the input area and status bar.
-- [ ] 4b: Wire `/container-shell` in `handleCommand()`. Remove `/exec` from commands list. On enter: check container ready (show error if not), switch to `modeShell`. In `modeShell` Update: Enter sends command (reuse exec async pattern), handle `execResultMsg` to append output, Ctrl+C sets mode back to `modeChat`. Show a mode indicator (e.g., status bar changes color or text, or a "shell mode" banner).
+- [x] 4a: Add `modeShell` app mode. When active: textarea prompt changes (placeholder text "container $" or similar visual indicator), Enter sends input via `Exec()` (same async pattern as old `/exec`), output appended to messages, Ctrl+C returns to `modeChat`. The shell mode is indicated by a visual change in the input area and status bar.
+- [x] 4b: Wire `/container-shell` in `handleCommand()`. Remove `/exec` from commands list. On enter: check container ready (show error if not), switch to `modeShell`. In `modeShell` Update: Enter sends command (reuse exec async pattern), handle `execResultMsg` to append output, Ctrl+C sets mode back to `modeChat`. Show a mode indicator (e.g., status bar changes color or text, or a "shell mode" banner).
 - [ ] 4c: Tests: entering shell mode changes app mode, Ctrl+C exits shell mode, Enter in shell mode fires exec command, container-not-ready prevents entering shell mode, exec results appear in messages.
 
 ## Open Questions
