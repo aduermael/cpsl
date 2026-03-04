@@ -31,7 +31,8 @@ Alpine Linux VM (arm64)
 
 - **Go client**: Port the Rust JSON-RPC client logic to Go. Same protocol — newline-delimited JSON-RPC 2.0 over a Unix socket. The Go client spawns the `container-service` binary as a subprocess.
 - **One container per CLI session**: No session multiplexing needed. The client manages a single container lifecycle.
-- **Worktree directory**: `~/.cpsl/worktrees/<project>/<worktree-name>/` — project derived from git remote origin URL (or repo root path as fallback).
+- **Project identity**: A random UUID stored in `<project-root>/.cpsl/project.json`. Generated once on first run. Survives folder renames, remote URL changes, etc.
+- **Worktree directory**: `~/.cpsl/worktrees/<project-uuid>/<worktree-name>/`.
 - **Session tracking**: `.cpsl-lock` file in each worktree dir containing the PID. On startup, check if PID is alive to detect stale locks.
 - **Config**: `ContainerServiceBin` and `ContainerImagePath` fields with defaults (`~/.cpsl/service/container-service` and `~/.cpsl/service/oci-image`).
 - **Async boot**: Container starts in background after worktree selection. `/exec` shows "container starting..." if not ready yet.
@@ -42,6 +43,7 @@ Alpine Linux VM (arm64)
 - Container service binary or OCI image not found → show clear error message with setup instructions, `/exec` returns error
 - Container fails to start (timeout, crash) → `containerErrMsg` shown in viewport, allow user to retry or continue without container
 - Not in a git repo → skip worktree, mount cwd directly into container
+- `.cpsl/` dir not writable → fall back to mounting cwd directly
 - Stale lock files → detect by checking if PID process exists, auto-clean stale locks
 - Socket path too long (>104 bytes) → use hash-based short socket names in temp dir (same approach as Rust client)
 
@@ -53,9 +55,9 @@ Alpine Linux VM (arm64)
 
 ## Phase 2: Worktree Manager
 
-- [ ] 2a: Add `worktree.go` with: `WorktreeInfo` struct (Path, Branch, Clean bool, Active bool), `projectID(repoRoot string) string` (hash of git remote origin URL, fallback to repo path), `worktreeBaseDir(repoRoot string) string` (returns `~/.cpsl/worktrees/<projectID>/`), `createWorktree(repoRoot string) (string, error)` (runs `git worktree add` with generated branch name like `cpsl-<timestamp>`), `listWorktrees(repoRoot string) ([]WorktreeInfo, error)` (scans base dir, checks `git status --porcelain` for clean/dirty, checks lock for active).
+- [ ] 2a: Add `worktree.go` with: `WorktreeInfo` struct (Path, Branch, Clean bool, Active bool), `ensureProjectID(repoRoot string) (string, error)` (reads UUID from `<repoRoot>/.cpsl/project.json`, generates and writes one if missing), `worktreeBaseDir(projectUUID string) string` (returns `~/.cpsl/worktrees/<projectUUID>/`), `createWorktree(repoRoot, baseDir string) (string, error)` (runs `git worktree add` with generated branch name like `cpsl-<timestamp>`), `listWorktrees(baseDir string) ([]WorktreeInfo, error)` (scans base dir, checks `git status --porcelain` for clean/dirty, checks lock for active).
 - [ ] 2b: Session tracking and selection: `lockWorktree(path string, pid int) error`, `unlockWorktree(path string) error`, `isWorktreeLocked(path string) (bool, int)` (returns locked + PID, checks if PID alive). `selectWorktree(repoRoot string) (selected string, dirty []WorktreeInfo, err error)` — auto-selects first clean inactive worktree, or returns dirty list for user prompt. If no worktrees exist, creates one.
-- [ ] 2c: Tests in `worktree_test.go` — uses temp git repos. Test: project ID stability, worktree creation, clean/dirty detection (stage a file to make dirty), lock/unlock lifecycle, stale lock cleanup (write a dead PID), auto-selection picks clean over dirty.
+- [ ] 2c: Tests in `worktree_test.go` — uses temp git repos. Test: project UUID generation and persistence (read back same UUID), worktree creation, clean/dirty detection (stage a file to make dirty), lock/unlock lifecycle, stale lock cleanup (write a dead PID), auto-selection picks clean over dirty.
 
 ## Phase 3: App Integration — `/exec`, Startup, Shutdown
 
