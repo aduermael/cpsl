@@ -165,14 +165,10 @@ func (c *ContainerClient) Stop() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Stop with 3 second grace period.
-	stop := dockerCommand(ctx, "docker", "stop", "-t", "3", c.containerID)
-	_ = stop.Run()
-
-	// Remove the container.
+	// Force-remove the container in one step (kills and removes).
 	rm := dockerCommand(ctx, "docker", "rm", "-f", c.containerID)
 	_ = rm.Run()
 
