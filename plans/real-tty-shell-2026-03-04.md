@@ -44,8 +44,8 @@ Currently `/shell` enters a custom `modeShell` that reads one command at a time 
 - [x] 1c: Handle `shellExitMsg` in the main `Update` — show info message ("Shell session ended.") and ensure we're in `modeChat`
 
 ## Phase 2: Remove old shell mode
-- [ ] 2a: Remove `modeShell` constant, `updateShellMode()`, `exitShellMode()`, and all shell-specific view rendering (green border conditional, "SHELL" in status bar, `shell $` placeholder logic)
-- [ ] 2b: Remove the `updateShellMode` dispatch from the main `Update` switch, remove shell-related message types if no longer used
+- [x] 2a: Remove `modeShell` constant, `updateShellMode()`, `exitShellMode()`, and all shell-specific view rendering (green border conditional, "SHELL" in status bar, `shell $` placeholder logic)
+- [x] 2b: Remove the `updateShellMode` dispatch from the main `Update` switch, remove shell-related message types if no longer used
 
 ## Phase 3: Update tests
 - [ ] 3a: Remove tests for old shell mode behavior (command echo, exec result in viewport, Ctrl+C exit, placeholder changes, shell status bar) since that UX no longer exists
