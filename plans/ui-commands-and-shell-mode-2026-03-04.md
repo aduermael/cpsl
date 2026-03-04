@@ -58,7 +58,7 @@ The status bar content is fetched once at startup (alongside container boot) and
 
 - [x] 2a: Add `worktreelist.go` with `worktreeList` component: struct with `items []WorktreeInfo`, `cursor int`, `currentPath string` (to mark active), `width/height int`. `Update()` handles up/down/j/k navigation and Esc to exit. `View()` renders the list with branch name, clean/dirty badge, active/current markers. Follow the `modelList` pattern.
 - [x] 2b: Add `modeWorktrees` app mode. Wire `/worktrees` command in `handleCommand()`. On enter, fetch worktree list (async cmd calling `listWorktrees()`), populate the component. Esc returns to `modeChat`. Add `viewWorktrees()` method for the mode's View. Add `worktreeListMsg` message type.
-- [ ] 2c: Tests: worktree list navigation (up/down moves cursor), Esc returns to chat mode, current worktree is marked, clean/dirty display.
+- [x] 2c: Tests: worktree list navigation (up/down moves cursor), Esc returns to chat mode, current worktree is marked, clean/dirty display.
 
 ## Phase 3: `/branches` Command with Filter and Selection
 
