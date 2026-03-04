@@ -57,7 +57,7 @@ Alpine Linux VM (arm64)
 
 - [x] 2a: Add `worktree.go` with: `WorktreeInfo` struct (Path, Branch, Clean bool, Active bool), `ensureProjectID(repoRoot string) (string, error)` (reads UUID from `<repoRoot>/.cpsl/project.json`, generates and writes one if missing), `worktreeBaseDir(projectUUID string) string` (returns `~/.cpsl/worktrees/<projectUUID>/`), `createWorktree(repoRoot, baseDir string) (string, error)` (runs `git worktree add` with generated branch name like `cpsl-<timestamp>`), `listWorktrees(baseDir string) ([]WorktreeInfo, error)` (scans base dir, checks `git status --porcelain` for clean/dirty, checks lock for active).
 - [x] 2b: Session tracking and selection: `lockWorktree(path string, pid int) error`, `unlockWorktree(path string) error`, `isWorktreeLocked(path string) (bool, int)` (returns locked + PID, checks if PID alive). `selectWorktree(repoRoot string) (selected string, dirty []WorktreeInfo, err error)` — auto-selects first clean inactive worktree, or returns dirty list for user prompt. If no worktrees exist, creates one.
-- [ ] 2c: Tests in `worktree_test.go` — uses temp git repos. Test: project UUID generation and persistence (read back same UUID), worktree creation, clean/dirty detection (stage a file to make dirty), lock/unlock lifecycle, stale lock cleanup (write a dead PID), auto-selection picks clean over dirty.
+- [x] 2c: Tests in `worktree_test.go` — uses temp git repos. Test: project UUID generation and persistence (read back same UUID), worktree creation, clean/dirty detection (stage a file to make dirty), lock/unlock lifecycle, stale lock cleanup (write a dead PID), auto-selection picks clean over dirty.
 
 ## Phase 3: App Integration — `/exec`, Startup, Shutdown
 
