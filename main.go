@@ -5,6 +5,7 @@ import (
 	"image/color"
 	"log"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -205,7 +206,10 @@ type sweScoresMsg struct {
 }
 
 // containerReadyMsg signals that the container has started successfully.
-type containerReadyMsg struct{}
+type containerReadyMsg struct {
+	client       *ContainerClient
+	worktreePath string
+}
 
 // containerErrMsg signals that the container failed to start.
 type containerErrMsg struct {
@@ -216,6 +220,67 @@ type containerErrMsg struct {
 type execResultMsg struct {
 	result CommandResult
 	err    error
+}
+
+// gitRepoRoot returns the git repository root, or empty string if not in a repo.
+func gitRepoRoot() string {
+	cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// bootContainerCmd selects a worktree, creates a container client, and starts
+// the container. Runs as an async tea.Cmd from Init().
+func bootContainerCmd(cfg Config) tea.Msg {
+	ccfg := cfg.containerConfig()
+	client := NewContainerClient(ccfg)
+
+	if !client.IsAvailable() {
+		return containerErrMsg{err: fmt.Errorf(
+			"container service not found (expected binary at %s and image at %s)",
+			ccfg.ServiceBinary, ccfg.ImagePath)}
+	}
+
+	// Determine workspace path.
+	var workspace string
+	repoRoot := gitRepoRoot()
+	if repoRoot != "" {
+		selected, _, err := selectWorktree(repoRoot)
+		if err != nil {
+			return containerErrMsg{err: fmt.Errorf("worktree selection: %w", err)}
+		}
+		if selected != "" {
+			workspace = selected
+		} else {
+			// Dirty worktrees only, no clean option — use cwd for now.
+			// Phase 4 adds the selection UI.
+			cwd, _ := os.Getwd()
+			workspace = cwd
+		}
+	} else {
+		cwd, _ := os.Getwd()
+		workspace = cwd
+	}
+
+	// Lock the worktree if it's under the worktree base dir.
+	if repoRoot != "" && workspace != "" {
+		_ = lockWorktree(workspace, os.Getpid())
+	}
+
+	mounts := []MountSpec{{
+		Source:      workspace,
+		Destination: "/workspace",
+		ReadOnly:    false,
+	}}
+
+	if err := client.Start(workspace, mounts); err != nil {
+		return containerErrMsg{err: err}
+	}
+
+	return containerReadyMsg{client: client, worktreePath: workspace}
 }
 
 // fetchModelsCmd returns a tea.Cmd that fetches models from OpenRouter.
@@ -231,7 +296,10 @@ func fetchSWEScoresCmd() tea.Msg {
 }
 
 func (m model) Init() tea.Cmd {
-	return tea.Batch(textarea.Blink, fetchModelsCmd, fetchSWEScoresCmd)
+	cfg := m.config
+	return tea.Batch(textarea.Blink, fetchModelsCmd, fetchSWEScoresCmd, func() tea.Msg {
+		return bootContainerCmd(cfg)
+	})
 }
 
 // wrapLineCount reproduces the textarea's internal wrap() function exactly
@@ -335,6 +403,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				matchSWEScores(m.models, m.sweScores)
 			}
 		}
+		return m, nil
+	}
+
+	// Handle async container startup result regardless of mode
+	if msg, ok := msg.(containerReadyMsg); ok {
+		m.container = msg.client
+		m.worktreePath = msg.worktreePath
+		m.containerReady = true
+		return m, nil
+	}
+	if msg, ok := msg.(containerErrMsg); ok {
+		m.containerErr = msg.err
 		return m, nil
 	}
 
