@@ -14,6 +14,7 @@ func TestStatusInfoMsgUpdatesModel(t *testing.T) {
 		PRNumber:     42,
 		WorktreeName: "cpsl-abc123",
 		ActiveCount:  3,
+		TotalCount:   5,
 	}
 
 	result, _ := m.Update(statusInfoMsg{info: info})
@@ -41,6 +42,7 @@ func TestRenderStatusBarContainsBranch(t *testing.T) {
 		PRNumber:     7,
 		WorktreeName: "wt-1",
 		ActiveCount:  2,
+		TotalCount:   3,
 	}
 
 	bar := m.renderStatusBar()
@@ -54,8 +56,8 @@ func TestRenderStatusBarContainsBranch(t *testing.T) {
 	if !strings.Contains(bar, "wt-1") {
 		t.Error("status bar should contain worktree name")
 	}
-	if !strings.Contains(bar, "2 active") {
-		t.Error("status bar should contain active count")
+	if !strings.Contains(bar, "2/3") {
+		t.Error("status bar should contain worktree count '2/3'")
 	}
 }
 

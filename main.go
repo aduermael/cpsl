@@ -221,9 +221,10 @@ type containerReadyMsg struct {
 // statusInfo holds cached status bar data.
 type statusInfo struct {
 	Branch       string
-	PRNumber     int    // 0 = no PR
+	PRNumber     int // 0 = no PR
 	WorktreeName string
 	ActiveCount  int
+	TotalCount   int
 }
 
 // statusInfoMsg carries the result of the async status bar fetch.
@@ -345,6 +346,7 @@ func fetchStatusCmd(worktreePath string) tea.Msg {
 		if projectID, err := ensureProjectID(repoRoot); err == nil {
 			baseDir := worktreeBaseDir(projectID)
 			if wts, err := listWorktrees(baseDir); err == nil {
+				info.TotalCount = len(wts)
 				for _, wt := range wts {
 					if wt.Active {
 						info.ActiveCount++
@@ -1411,8 +1413,8 @@ func (m model) renderStatusBar() string {
 
 	// Right side: worktree name + active count
 	right := dimStyle.Render(" " + m.status.WorktreeName)
-	if m.status.ActiveCount > 0 {
-		right += dimStyle.Render(fmt.Sprintf(" (%d active)", m.status.ActiveCount))
+	if m.status.TotalCount > 1 {
+		right += dimStyle.Render(fmt.Sprintf(" (%d/%d)", m.status.ActiveCount, m.status.TotalCount))
 	}
 
 	// Fill the space between left and right
