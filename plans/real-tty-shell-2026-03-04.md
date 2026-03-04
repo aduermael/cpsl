@@ -39,9 +39,9 @@ Currently `/shell` enters a custom `modeShell` that reads one command at a time 
 ---
 
 ## Phase 1: Add ContainerID getter and shell exec command
-- [ ] 1a: Add `ContainerID() string` method to `ContainerClient`, add `ShellCmd() *exec.Cmd` helper that builds `docker exec -it <id> /bin/sh -l` with stdin/stdout/stderr wired to os.Stdin/os.Stdout/os.Stderr
-- [ ] 1b: Rewrite `enterShellMode()` to validate container state (keep existing checks), then return `tea.ExecProcess(container.ShellCmd(), callback)` where callback produces a `shellExitMsg`
-- [ ] 1c: Handle `shellExitMsg` in the main `Update` — show info message ("Shell session ended.") and ensure we're in `modeChat`
+- [x] 1a: Add `ContainerID() string` method to `ContainerClient`, add `ShellCmd() *exec.Cmd` helper that builds `docker exec -it <id> /bin/sh -l` with stdin/stdout/stderr wired to os.Stdin/os.Stdout/os.Stderr
+- [x] 1b: Rewrite `enterShellMode()` to validate container state (keep existing checks), then return `tea.ExecProcess(container.ShellCmd(), callback)` where callback produces a `shellExitMsg`
+- [x] 1c: Handle `shellExitMsg` in the main `Update` — show info message ("Shell session ended.") and ensure we're in `modeChat`
 
 ## Phase 2: Remove old shell mode
 - [ ] 2a: Remove `modeShell` constant, `updateShellMode()`, `exitShellMode()`, and all shell-specific view rendering (green border conditional, "SHELL" in status bar, `shell $` placeholder logic)

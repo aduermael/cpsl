@@ -253,6 +253,11 @@ type branchCheckoutMsg struct {
 	err    error
 }
 
+// workspaceMsg carries the resolved workspace path from resolveWorkspaceCmd.
+type workspaceMsg struct {
+	worktreePath string
+}
+
 // containerErrMsg signals that the container failed to start.
 type containerErrMsg struct {
 	err error
@@ -262,6 +267,11 @@ type containerErrMsg struct {
 type execResultMsg struct {
 	result CommandResult
 	err    error
+}
+
+// shellExitMsg is sent when the interactive shell session ends.
+type shellExitMsg struct {
+	err error
 }
 
 // gitRepoRoot returns the git repository root, or empty string if not in a repo.
@@ -274,18 +284,9 @@ func gitRepoRoot() string {
 	return strings.TrimSpace(string(out))
 }
 
-// bootContainerCmd selects a worktree, creates a container client, and starts
-// the container. Runs as an async tea.Cmd from Init().
-func bootContainerCmd(cfg Config) tea.Msg {
-	ccfg := cfg.containerConfig()
-	client := NewContainerClient(ccfg)
-
-	if !client.IsAvailable() {
-		return containerErrMsg{err: fmt.Errorf(
-			"Docker is not running. Please start Docker Desktop and try again.")}
-	}
-
-	// Determine workspace path.
+// resolveWorkspaceCmd determines the workspace path (worktree selection + lock)
+// without starting Docker. Returns workspaceMsg.
+func resolveWorkspaceCmd(cfg Config) tea.Msg {
 	var workspace string
 	repoRoot := gitRepoRoot()
 	if repoRoot != "" {
@@ -307,6 +308,20 @@ func bootContainerCmd(cfg Config) tea.Msg {
 	// Lock the worktree if it's under the worktree base dir.
 	if repoRoot != "" && workspace != "" {
 		_ = lockWorktree(workspace, os.Getpid())
+	}
+
+	return workspaceMsg{worktreePath: workspace}
+}
+
+// bootContainerCmd creates a container client and starts the container with
+// the given workspace path. Runs as an async tea.Cmd.
+func bootContainerCmd(cfg Config, workspace string) tea.Msg {
+	ccfg := cfg.containerConfig()
+	client := NewContainerClient(ccfg)
+
+	if !client.IsAvailable() {
+		return containerErrMsg{err: fmt.Errorf(
+			"Docker is not running. Please start Docker Desktop and try again.")}
 	}
 
 	mounts := []MountSpec{{
@@ -393,7 +408,7 @@ func fetchSWEScoresCmd() tea.Msg {
 func (m model) Init() tea.Cmd {
 	cfg := m.config
 	return tea.Batch(textarea.Blink, fetchModelsCmd, fetchSWEScoresCmd, func() tea.Msg {
-		return bootContainerCmd(cfg)
+		return resolveWorkspaceCmd(cfg)
 	})
 }
 
@@ -504,6 +519,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle async status bar result regardless of mode
 	if msg, ok := msg.(statusInfoMsg); ok {
 		m.status = msg.info
+		if m.ready {
+			m.viewport.SetHeight(m.viewportHeight())
+			m.updateViewportContent()
+		}
 		return m, nil
 	}
 
@@ -568,18 +587,46 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.textarea.Focus()
 	}
 
+	// Handle workspace resolution result — fires status fetch + container boot in parallel
+	if msg, ok := msg.(workspaceMsg); ok {
+		m.worktreePath = msg.worktreePath
+		cfg := m.config
+		wtPath := msg.worktreePath
+		return m, tea.Batch(
+			func() tea.Msg { return fetchStatusCmd(wtPath) },
+			func() tea.Msg { return bootContainerCmd(cfg, wtPath) },
+		)
+	}
+
 	// Handle async container startup result regardless of mode
 	if msg, ok := msg.(containerReadyMsg); ok {
 		m.container = msg.client
 		m.worktreePath = msg.worktreePath
 		m.containerReady = true
-		wtPath := msg.worktreePath
-		return m, func() tea.Msg {
-			return fetchStatusCmd(wtPath)
-		}
+		return m, nil
 	}
 	if msg, ok := msg.(containerErrMsg); ok {
 		m.containerErr = msg.err
+		return m, nil
+	}
+
+	// Handle interactive shell exit
+	if msg, ok := msg.(shellExitMsg); ok {
+		if msg.err != nil {
+			m.messages = append(m.messages, message{
+				content: fmt.Sprintf("Shell error: %v", msg.err),
+				kind:    msgError,
+			})
+		} else {
+			m.messages = append(m.messages, message{
+				content: "Shell session ended.",
+				kind:    msgInfo,
+			})
+		}
+		if m.ready {
+			m.updateViewportContent()
+			m.viewport.GotoBottom()
+		}
 		return m, nil
 	}
 
@@ -1166,7 +1213,7 @@ func (m *model) cleanup() {
 	}
 }
 
-// enterShellMode switches to the shell mode.
+// enterShellMode opens an interactive TTY shell session in the container.
 func (m model) enterShellMode() (tea.Model, tea.Cmd) {
 	// Check container state.
 	if m.containerErr != nil {
@@ -1198,20 +1245,14 @@ func (m model) enterShellMode() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	m.mode = modeShell
 	m.textarea.Reset()
 	m.textarea.SetHeight(minInputHeight)
-	m.textarea.Placeholder = "shell $"
-	m.messages = append(m.messages, message{
-		content: "Entering shell mode. Ctrl+C to exit.",
-		kind:    msgInfo,
+
+	// Suspend the TUI and hand terminal control to docker exec -it.
+	shellCmd := m.container.ShellCmd()
+	return m, tea.ExecProcess(shellCmd, func(err error) tea.Msg {
+		return shellExitMsg{err: err}
 	})
-	if m.ready {
-		m.viewport.SetHeight(m.viewportHeight())
-		m.updateViewportContent()
-		m.viewport.GotoBottom()
-	}
-	return m, nil
 }
 
 // exitShellMode returns to chat mode.
@@ -1424,21 +1465,18 @@ func (m model) renderStatusBar() string {
 		return ""
 	}
 
-	leftStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#9B6ADE")).
-		Bold(true)
-	dimStyle := lipgloss.NewStyle().
-		Foreground(lipgloss.Color("#6B34B0"))
+	infoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6FE7B8"))
 
 	// Compute fixed-width elements to determine name budgets
 	var leftFixedW int
 	if m.mode == modeShell {
 		leftFixedW = 5 // "SHELL"
 		if m.status.Branch != "" {
-			leftFixedW += 2 // "  " prefix before branch
+			leftFixedW += 5 // "  /b " prefix before branch
 		}
 	} else {
-		leftFixedW = 2 // " " icon + space
+		leftFixedW = 3 // "/b " prefix
 	}
 
 	var prText string
@@ -1453,7 +1491,7 @@ func (m model) renderStatusBar() string {
 		leftFixedW += diffW
 	}
 
-	rightFixedW := 2 // " " icon + space
+	rightFixedW := 3 // "/w " prefix
 	var countText string
 	if m.status.TotalCount > 1 {
 		countText = fmt.Sprintf(" (%d/%d)", m.status.ActiveCount, m.status.TotalCount)
@@ -1500,12 +1538,12 @@ func (m model) renderStatusBar() string {
 			Bold(true)
 		left = shellStyle.Render("SHELL")
 		if branchName != "" {
-			left += dimStyle.Render("  " + branchName)
+			left += infoStyle.Render("  /b " + branchName)
 		}
 	} else {
-		left = leftStyle.Render(" " + branchName)
+		left = infoStyle.Render("/b " + branchName)
 		if m.status.PRNumber > 0 {
-			left += dimStyle.Render(prText)
+			left += infoStyle.Render(prText)
 		}
 	}
 
@@ -1518,9 +1556,9 @@ func (m model) renderStatusBar() string {
 	}
 
 	// Right side: worktree name + active count
-	right := dimStyle.Render(" " + wtName)
+	right := infoStyle.Render("/w " + wtName)
 	if m.status.TotalCount > 1 {
-		right += dimStyle.Render(countText)
+		right += infoStyle.Render(countText)
 	}
 
 	// Fill the space between left and right
@@ -1533,13 +1571,7 @@ func (m model) renderStatusBar() string {
 
 	bar := " " + left + strings.Repeat(" ", gap) + right + " "
 
-	bgColor := "#1A0A2E"
-	if m.mode == modeShell {
-		bgColor = "#0A2E1A"
-	}
-	barStyle := lipgloss.NewStyle().
-		Background(lipgloss.Color(bgColor)).
-		Width(m.width)
+	barStyle := lipgloss.NewStyle().Width(m.width)
 
 	return barStyle.Render(bar)
 }
@@ -1610,32 +1642,46 @@ func (m model) View() tea.View {
 	}
 	inputBorderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
+		BorderLeft(false).
+		BorderRight(false).
 		BorderForegroundBlend(inputBorderColors...).
 		Width(m.width)
 
-	inputBox := inputBorderStyle.Render(m.textarea.View())
+	// Add ❯ prefix to each line for a copy-friendly input box
+	prefixStyle := lipgloss.NewStyle().Foreground(inputBorderColors[0])
+	prefix := prefixStyle.Render("❯ ")
+	textareaLines := strings.Split(m.textarea.View(), "\n")
+	for i, line := range textareaLines {
+		textareaLines[i] = prefix + line
+	}
+	inputBox := inputBorderStyle.Render(strings.Join(textareaLines, "\n"))
 
-	statusBar := m.renderStatusBar()
 	autocomplete := m.renderAutocomplete()
 	acHeight := m.autocompleteHeight()
 
 	var fullView string
 	viewportView := m.viewport.View()
-	if statusBar != "" {
-		viewportView += "\n" + statusBar
-	}
-	if autocomplete != "" {
-		fullView = viewportView + "\n" + autocomplete + "\n" + inputBox
-	} else {
+	if acHeight == 0 {
+		// Show status bar only when autocomplete is not visible
+		if statusBar := m.renderStatusBar(); statusBar != "" {
+			viewportView += "\n" + statusBar
+		}
 		fullView = viewportView + "\n" + inputBox
+	} else {
+		fullView = viewportView + "\n" + autocomplete + "\n" + inputBox
 	}
 
 	v := tea.NewView(fullView)
 
 	c := m.textarea.Cursor()
 	if c != nil {
-		c.Y += m.viewport.Height() + m.statusBarHeight() + acHeight + 1 // +1 for top border
-		c.X += 1                                    // +1 for left border
+		// Status bar is hidden when autocomplete is visible
+		statusH := 0
+		if acHeight == 0 {
+			statusH = m.statusBarHeight()
+		}
+		c.Y += m.viewport.Height() + statusH + acHeight + 1 // +1 for top border
+		c.X += 2                                              // +2 for ❯ prefix
 		v.Cursor = c
 	}
 

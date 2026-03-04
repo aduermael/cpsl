@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -154,6 +155,20 @@ func (c *ContainerClient) Exec(command string, timeout int) (CommandResult, erro
 		Stderr:   stderr.String(),
 		ExitCode: exitCode,
 	}, nil
+}
+
+// ContainerID returns the Docker container ID.
+func (c *ContainerClient) ContainerID() string {
+	return c.containerID
+}
+
+// ShellCmd returns an exec.Cmd that opens an interactive shell in the container.
+func (c *ContainerClient) ShellCmd() *exec.Cmd {
+	cmd := exec.Command("docker", "exec", "-it", "-w", "/workspace", c.containerID, "/bin/sh", "-l")
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd
 }
 
 // Stop stops and removes the Docker container.
