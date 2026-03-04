@@ -220,19 +220,11 @@ func TestShellModeCtrlCExits(t *testing.T) {
 	m = enterShell(t, m)
 
 	// Ctrl+C should exit shell mode
-	result, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEscape, Mod: tea.ModCtrl})
+	result, _ := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 	m = result.(model)
 
 	if m.mode != modeChat {
-		// Try the actual ctrl+c key string
-		m2 := modelWithContainer(t, "", "", 0)
-		m2 = enterShell(t, m2)
-		r2, _ := m2.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
-		m2 = r2.(model)
-		if m2.mode != modeChat {
-			t.Errorf("mode = %d, want modeChat after Ctrl+C", m2.mode)
-		}
-		return
+		t.Errorf("mode = %d, want modeChat after Ctrl+C", m.mode)
 	}
 
 	// Should show exit message
@@ -277,6 +269,43 @@ func TestShellModePlaceholderChanges(t *testing.T) {
 
 	if m.textarea.Placeholder != "container $" {
 		t.Errorf("placeholder = %q, want 'container $'", m.textarea.Placeholder)
+	}
+}
+
+func TestShellModeStatusBarShowsShell(t *testing.T) {
+	m := modelWithContainer(t, "", "", 0)
+	m.status = statusInfo{Branch: "main", WorktreeName: "test-wt"}
+	m = enterShell(t, m)
+
+	bar := m.renderStatusBar()
+	if !strings.Contains(bar, "SHELL") {
+		t.Errorf("status bar should contain 'SHELL', got %q", bar)
+	}
+}
+
+func TestShellModeStaysAfterExecResult(t *testing.T) {
+	m := modelWithContainer(t, "output\n", "", 0)
+	m = enterShell(t, m)
+
+	// Send a command
+	m = typeString(m, "ls")
+	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = result.(model)
+
+	if m.mode != modeShell {
+		t.Fatalf("mode = %d, want modeShell before exec result", m.mode)
+	}
+
+	// Process exec result
+	if cmd != nil {
+		msg := cmd()
+		result, _ = m.Update(msg)
+		m = result.(model)
+	}
+
+	// Should still be in shell mode after result
+	if m.mode != modeShell {
+		t.Errorf("mode = %d, want modeShell after exec result", m.mode)
 	}
 }
 
