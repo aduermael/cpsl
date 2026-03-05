@@ -15,6 +15,7 @@ type Config struct {
 	AnthropicAPIKey       string          `json:"anthropic_api_key,omitempty"`
 	GrokAPIKey            string          `json:"grok_api_key,omitempty"`
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
+	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
 	ActiveModel           string          `json:"active_model,omitempty"`
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending
 	ContainerImage        string          `json:"container_image,omitempty"`
@@ -31,6 +32,9 @@ func (c Config) configuredProviders() map[string]bool {
 	}
 	if c.OpenAIAPIKey != "" {
 		providers[ProviderOpenAI] = true
+	}
+	if c.GeminiAPIKey != "" {
+		providers[ProviderGemini] = true
 	}
 	return providers
 }

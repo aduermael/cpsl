@@ -18,6 +18,7 @@ func TestConfigFormApplyToWritesAPIKeys(t *testing.T) {
 	form.fields[1].input.SetValue("sk-ant-new")
 	form.fields[2].input.SetValue("xai-key-123")
 	form.fields[3].input.SetValue("sk-openai-456")
+	form.fields[4].input.SetValue("gemini-key-789")
 
 	var result Config
 	form.applyTo(&result)
@@ -30,6 +31,9 @@ func TestConfigFormApplyToWritesAPIKeys(t *testing.T) {
 	}
 	if result.OpenAIAPIKey != "sk-openai-456" {
 		t.Errorf("OpenAIAPIKey = %q, want %q", result.OpenAIAPIKey, "sk-openai-456")
+	}
+	if result.GeminiAPIKey != "gemini-key-789" {
+		t.Errorf("GeminiAPIKey = %q, want %q", result.GeminiAPIKey, "gemini-key-789")
 	}
 }
 
@@ -48,8 +52,8 @@ func TestConfigFormApplyToTrimsKeys(t *testing.T) {
 func TestConfigFormAPIKeyFieldsMasked(t *testing.T) {
 	form := newConfigForm(Config{}, 80, 24)
 
-	// Fields 1, 2, 3 are the API key fields
-	for i := 1; i <= 3; i++ {
+	// Fields 1, 2, 3, 4 are the API key fields
+	for i := 1; i <= 4; i++ {
 		if form.fields[i].input.EchoMode != textinput.EchoPassword {
 			t.Errorf("field %d EchoMode = %d, want EchoPassword (%d)",
 				i, form.fields[i].input.EchoMode, textinput.EchoPassword)
@@ -62,6 +66,7 @@ func TestConfigFormPrePopulatesKeys(t *testing.T) {
 		AnthropicAPIKey: "ant-key",
 		GrokAPIKey:      "grok-key",
 		OpenAIAPIKey:    "openai-key",
+		GeminiAPIKey:    "gemini-key",
 	}
 	form := newConfigForm(cfg, 80, 24)
 
@@ -74,6 +79,9 @@ func TestConfigFormPrePopulatesKeys(t *testing.T) {
 	if form.fields[3].input.Value() != "openai-key" {
 		t.Errorf("OpenAI field = %q, want %q", form.fields[3].input.Value(), "openai-key")
 	}
+	if form.fields[4].input.Value() != "gemini-key" {
+		t.Errorf("Gemini field = %q, want %q", form.fields[4].input.Value(), "gemini-key")
+	}
 }
 
 func TestConfigFormTabCyclesThroughAllFields(t *testing.T) {
@@ -84,8 +92,8 @@ func TestConfigFormTabCyclesThroughAllFields(t *testing.T) {
 	}
 
 	totalFields := len(form.fields)
-	if totalFields != 4 {
-		t.Fatalf("expected 4 fields (paste + 3 keys), got %d", totalFields)
+	if totalFields != 5 {
+		t.Fatalf("expected 5 fields (paste + 4 keys), got %d", totalFields)
 	}
 
 	// Tab through all fields
@@ -135,5 +143,8 @@ func TestConfigFormApplyToEmptyKeysStayEmpty(t *testing.T) {
 	}
 	if cfg.OpenAIAPIKey != "" {
 		t.Errorf("OpenAIAPIKey should be empty, got %q", cfg.OpenAIAPIKey)
+	}
+	if cfg.GeminiAPIKey != "" {
+		t.Errorf("GeminiAPIKey should be empty, got %q", cfg.GeminiAPIKey)
 	}
 }

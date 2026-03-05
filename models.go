@@ -14,6 +14,7 @@ const (
 	ProviderAnthropic = "anthropic"
 	ProviderGrok      = "grok"
 	ProviderOpenAI    = "openai"
+	ProviderGemini    = "gemini"
 )
 
 // providerPrefixes maps OpenRouter ID prefixes to internal provider names.

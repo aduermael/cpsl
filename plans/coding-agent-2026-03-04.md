@@ -64,7 +64,7 @@ Done → final assistant message displayed
 
 ## Phase 1: langdag Integration & Agent Types
 
-- [ ] 1a: Add langdag dependency (`go get github.com/langdag/langdag`). Add `GeminiAPIKey` to `Config` struct and `configform.go`. Create `agent.go` with core types: `Tool` interface (`Definition()`, `Execute()`, `RequiresApproval()`), `AgentEvent` variants (text delta, tool call start, tool call done, tool result, approval request, done, error), `Agent` struct holding langdag client, tools, system prompt, and event/approval channels.
+- [x] 1a: Add langdag dependency (`go get github.com/langdag/langdag`). Add `GeminiAPIKey` to `Config` struct and `configform.go`. Create `agent.go` with core types: `Tool` interface (`Definition()`, `Execute()`, `RequiresApproval()`), `AgentEvent` variants (text delta, tool call start, tool call done, tool result, approval request, done, error), `Agent` struct holding langdag client, tools, system prompt, and event/approval channels.
 - [ ] 1b: Initialize langdag client on startup — configure providers from API keys in config, open SQLite DB at `~/.cpsl/conversations.db`. Map `Config.AnthropicAPIKey` / `OpenAIAPIKey` / `GeminiAPIKey` to langdag provider config. Wire into the `model` struct in `main.go`.
 - [ ] 1c: Implement the agent loop in `Agent.Run()` — accept user message, build `CompletionRequest` with system prompt + conversation history + tool definitions, call `Provider.Stream()`, consume stream events, emit `AgentEvent` on channel. When stop reason is `tool_use`: extract tool calls, check `RequiresApproval()`, execute tools (or wait for approval), append tool results, re-call LLM. Cap at max iterations. Persist all nodes (user, assistant, tool_call, tool_result) to langdag storage after each exchange.
 

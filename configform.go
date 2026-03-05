@@ -67,6 +67,7 @@ func newConfigForm(cfg Config, width, height int) configForm {
 			{label: "Anthropic API Key", desc: "key for Claude models", input: newAPIKeyInput(cfg.AnthropicAPIKey)},
 			{label: "Grok API Key", desc: "key for Grok models", input: newAPIKeyInput(cfg.GrokAPIKey)},
 			{label: "OpenAI API Key", desc: "key for GPT models", input: newAPIKeyInput(cfg.OpenAIAPIKey)},
+			{label: "Gemini API Key", desc: "key for Gemini models", input: newAPIKeyInput(cfg.GeminiAPIKey)},
 		},
 		width:  width,
 		height: height,
@@ -118,6 +119,7 @@ func (f configForm) applyTo(cfg *Config) {
 	cfg.AnthropicAPIKey = strings.TrimSpace(f.fields[1].input.Value())
 	cfg.GrokAPIKey = strings.TrimSpace(f.fields[2].input.Value())
 	cfg.OpenAIAPIKey = strings.TrimSpace(f.fields[3].input.Value())
+	cfg.GeminiAPIKey = strings.TrimSpace(f.fields[4].input.Value())
 }
 
 func (f configForm) View() string {
