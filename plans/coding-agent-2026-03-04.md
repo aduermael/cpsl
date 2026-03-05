@@ -71,7 +71,7 @@ Done → final assistant message displayed
 ## Phase 2: Tool Implementations
 
 - [x] 2a: Implement `BashTool` in `tools.go` — wraps `ContainerClient.Exec(command, timeout)`. Tool definition describes it as bash execution inside the dev container at `/workspace`. Truncate output beyond a limit (e.g., last 200 lines / 30KB) with a note that output was truncated. Default timeout configurable. Return combined stdout+stderr with exit code.
-- [ ] 2b: Implement `GitTool` in `tools.go` — executes git commands on the host via `os/exec` in the worktree directory. Allowlist of subcommands: `status`, `diff`, `log`, `show`, `branch`, `checkout`, `add`, `commit`, `pull`, `push`, `fetch`, `stash`, `rebase`, `merge`, `reset`, `tag`. `RequiresApproval()` returns true for `push` (including `--force`). Return stdout+stderr.
+- [x] 2b: Implement `GitTool` in `tools.go` — executes git commands on the host via `os/exec` in the worktree directory. Allowlist of subcommands: `status`, `diff`, `log`, `show`, `branch`, `checkout`, `add`, `commit`, `pull`, `push`, `fetch`, `stash`, `rebase`, `merge`, `reset`, `tag`. `RequiresApproval()` returns true for `push` (including `--force`). Return stdout+stderr.
 
 ## Phase 3: System Prompt
 
