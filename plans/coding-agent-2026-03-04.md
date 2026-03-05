@@ -75,7 +75,7 @@ Done → final assistant message displayed
 
 ## Phase 3: System Prompt
 
-- [ ] 3a: Create `systemprompt.go` with `buildSystemPrompt(tools []Tool, workDir string) string`. Structure (inspired by pi-mono): (1) Role — you are a coding agent working in a containerized environment; (2) Tool guidelines — conditional on which tools are available (e.g., "Use bash to explore files, run tests, install packages. Commands execute inside the container at /workspace."); (3) Git guidelines — if git tool available, explain it runs on the host, describe approval flow for push; (4) General coding guidelines — read before editing, explain changes, don't over-engineer; (5) Current date/time and working directory (always last).
+- [x] 3a: Create `systemprompt.go` with `buildSystemPrompt(tools []Tool, workDir string) string`. Structure (inspired by pi-mono): (1) Role — you are a coding agent working in a containerized environment; (2) Tool guidelines — conditional on which tools are available (e.g., "Use bash to explore files, run tests, install packages. Commands execute inside the container at /workspace."); (3) Git guidelines — if git tool available, explain it runs on the host, describe approval flow for push; (4) General coding guidelines — read before editing, explain changes, don't over-engineer; (5) Current date/time and working directory (always last).
 
 ## Phase 4: UI Integration
 
