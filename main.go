@@ -154,7 +154,9 @@ type model struct {
 	langdagClient  *langdag.Client
 	agent          *Agent
 	agentNodeID    string // last assistant node ID for conversation continuity
-	agentRunning   bool   // true while the agent loop is executing
+	agentRunning     bool   // true while the agent loop is executing
+	awaitingApproval bool   // true when waiting for user y/n on a tool call
+	approvalDesc     string // human-readable description of the pending approval
 }
 
 // autocompleteMatches returns matching commands for the current textarea input,
@@ -691,6 +693,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Branch list mode: delegate to branch list
 	if m.mode == modeBranches {
 		return m.updateBranchMode(msg)
+	}
+
+	// Handle approval y/n input when awaiting user confirmation
+	if m.awaitingApproval {
+		if msg, ok := msg.(tea.KeyPressMsg); ok {
+			switch msg.String() {
+			case "y", "Y":
+				m.awaitingApproval = false
+				m.messages = append(m.messages, message{
+					content: "✓ Approved",
+					kind:    msgSuccess,
+				})
+				if m.agent != nil {
+					m.agent.Approve(ApprovalResponse{Approved: true})
+				}
+				if m.ready {
+					m.updateViewportContent()
+					m.viewport.GotoBottom()
+				}
+				return m, listenForAgentEvent(m.agent.Events())
+			case "n", "N":
+				m.awaitingApproval = false
+				m.messages = append(m.messages, message{
+					content: "✗ Denied",
+					kind:    msgError,
+				})
+				if m.agent != nil {
+					m.agent.Approve(ApprovalResponse{Approved: false})
+				}
+				if m.ready {
+					m.updateViewportContent()
+					m.viewport.GotoBottom()
+				}
+				return m, listenForAgentEvent(m.agent.Events())
+			case "ctrl+c":
+				m.cleanup()
+				return m, tea.Quit
+			}
+			// Ignore all other keys while awaiting approval
+			return m, nil
+		}
 	}
 
 	var cmds []tea.Cmd
@@ -1289,20 +1332,15 @@ func (m model) handleAgentEvent(event AgentEvent) (tea.Model, tea.Cmd) {
 		return m, listenForAgentEvent(m.agent.Events())
 
 	case EventApprovalReq:
-		// Show approval request — will be fully implemented in 4c
-		m.messages = append(m.messages, message{
-			content: fmt.Sprintf("⚠ Approval needed: %s (auto-approving for now)", event.ApprovalDesc),
-			kind:    msgInfo,
-		})
+		// Show approval request and wait for user y/n
+		m.awaitingApproval = true
+		m.approvalDesc = event.ApprovalDesc
 		if m.ready {
 			m.updateViewportContent()
 			m.viewport.GotoBottom()
 		}
-		// Auto-approve for now (4c will add proper y/n flow)
-		if m.agent != nil {
-			m.agent.Approve(ApprovalResponse{Approved: true})
-		}
-		return m, listenForAgentEvent(m.agent.Events())
+		// Don't listen for more events yet — wait for user input in Update()
+		return m, nil
 
 	case EventDone:
 		m.agentRunning = false
@@ -1538,8 +1576,15 @@ func (m *model) updateViewportContent() {
 			parts = append(parts, style.Render(wrapped), "")
 		}
 
-		// Show working indicator while agent is running
-		if m.agentRunning {
+		// Show approval prompt or working indicator
+		if m.awaitingApproval {
+			approvalPrompt := lipgloss.NewStyle().
+				Foreground(lipgloss.Color("#FFD700")).
+				PaddingLeft(2).
+				Bold(true).
+				Render(fmt.Sprintf("⚠ Allow %s? [y/n]", m.approvalDesc))
+			parts = append(parts, approvalPrompt)
+		} else if m.agentRunning {
 			indicator := lipgloss.NewStyle().
 				Foreground(lipgloss.Color("#B88AFF")).
 				PaddingLeft(2).

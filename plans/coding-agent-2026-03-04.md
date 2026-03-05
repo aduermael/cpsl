@@ -81,7 +81,7 @@ Done → final assistant message displayed
 
 - [x] 4a: Wire agent into chat mode — when user sends a non-slash message and an LLM provider is configured, create/resume an `Agent` and call `Run()` in a goroutine. Receive `AgentEvent` messages in `Update()`. Display streaming text deltas in the viewport (append to current assistant message as chunks arrive). Show a spinner/indicator while agent is working. Handle done/error events. If no provider is configured, show a message directing to `/config`.
 - [x] 4b: Render tool calls and results in the viewport — when a tool_call event arrives, show the tool name and a summary of the input (e.g., `▶ bash: ls -la /workspace`). When the tool result arrives, show it (collapsed if long, expandable). Style with distinct colors (dimmed for tool I/O vs. normal for assistant text).
-- [ ] 4c: Implement approval flow — when the agent emits an approval request (git push), show a confirmation bar or inline prompt ("Allow `git push origin main`? [y/n]"). Capture y/n keypress, send approval/denial back to the agent via the approval channel. On denial, the agent tells the LLM the tool call was rejected.
+- [x] 4c: Implement approval flow — when the agent emits an approval request (git push), show a confirmation bar or inline prompt ("Allow `git push origin main`? [y/n]"). Capture y/n keypress, send approval/denial back to the agent via the approval channel. On denial, the agent tells the LLM the tool call was rejected.
 
 ## Phase 5: Tests
 
