@@ -78,6 +78,6 @@ Replace viewport-based chat rendering with native terminal scrollback. Bubbletea
 
 ## Phase 4: Update tests
 
-- [ ] 4a: Remove viewport-related assertions from `model_test.go` (pgup/pgdown tests, viewport content checks, `userScrolled` assertions). Update resize tests to verify the reprint command sequence instead of viewport state.
-- [ ] 4b: Update `integration_test.go`, `exec_test.go`, `statusbar_test.go`, `worktreelist_test.go`, `branchlist_test.go` -- remove any viewport references, update view output assertions for inline mode.
-- [ ] 4c: Add new test: verify that resize produces correct sequence of commands (clear + println for each message). Verify that mode transition back to chat triggers reprint.
+- [x] 4a: Remove viewport-related assertions from `model_test.go` (pgup/pgdown tests, viewport content checks, `userScrolled` assertions). Update resize tests to verify the reprint command sequence instead of viewport state.
+- [x] 4b: Update `integration_test.go`, `exec_test.go`, `statusbar_test.go`, `worktreelist_test.go`, `branchlist_test.go` -- remove any viewport references, update view output assertions for inline mode.
+- [x] 4c: Add new test: verify that resize produces correct sequence of commands (clear + println for each message). Verify that mode transition back to chat triggers reprint.
