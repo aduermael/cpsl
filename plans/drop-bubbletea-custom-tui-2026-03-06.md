@@ -135,7 +135,7 @@ This is fundamentally simpler than bubbletea's approach because we don't fight a
 
 Build the low-level terminal handling that replaces bubbletea's runtime.
 
-- [ ] 1a: Create `term.go` with terminal raw mode management: `enterRawMode()` / `restoreTerminal()` using `golang.org/x/term`, SIGWINCH handler that sends resize events to a channel, `getTerminalSize()` helper. Include panic-safe defer restoration.
+- [x] 1a: Create `term.go` with terminal raw mode management: `enterRawMode()` / `restoreTerminal()` using `golang.org/x/term`, SIGWINCH handler that sends resize events to a channel, `getTerminalSize()` helper. Include panic-safe defer restoration.
 - [ ] 1b: Create `input.go` with stdin reader goroutine: read bytes in raw mode, parse into key events (printable runes, escape sequences for arrows/home/end/pgup/pgdn/delete/backspace, ctrl+key combos, shift+enter/alt+enter). Handle bracketed paste sequences. Define `EventKey`, `EventPaste`, `EventResize` types. Send parsed events to a channel.
 - [ ] 1c: Create `render.go` with the rendering engine: `Renderer` struct that tracks active area height, provides `printAbove(content string)` to write to scrollback, `renderActiveArea(lines []string, cursorX, cursorY int)` to redraw the bottom area, `clearAll()` to clear screen+scrollback. All writes go directly to a buffered stdout writer. No cell buffer or diffing.
 
