@@ -151,7 +151,7 @@ Replace bubbles textarea and textinput with a custom implementation.
 
 Build the main application loop that replaces bubbletea's Program.
 
-- [ ] 3a: Create the `App` struct in `main.go` (replacing `model`): holds all existing state fields (messages, config, agent, textarea → TextInput, container, status, etc.), plus terminal fd, renderer, event channels. Add `Run()` method: enter raw mode, start input reader, start SIGWINCH handler, run main event loop (select on input channel, async result channels, agent event channel), restore terminal on exit.
+- [x] 3a: Create the `App` struct in `main.go` (replacing `model`): holds all existing state fields (messages, config, agent, textarea → TextInput, container, status, etc.), plus terminal fd, renderer, event channels. Add `Run()` method: enter raw mode, start input reader, start SIGWINCH handler, run main event loop (select on input channel, async result channels, agent event channel), restore terminal on exit.
 - [ ] 3b: Port async command pattern: replace `tea.Cmd` functions with goroutines that send results to typed channels. `Init()` becomes startup goroutines: fetch models, fetch SWE scores, resolve workspace, init langdag. Each writes to a dedicated result channel that the event loop selects on.
 - [ ] 3c: Port the main event dispatch: translate the `update()` switch statement from tea.Msg types to the new event types. `EventKey` replaces `tea.KeyPressMsg`, `EventPaste` replaces `tea.PasteMsg`, `EventResize` replaces `tea.WindowSizeMsg`. Domain messages (modelsMsg, statusInfoMsg, etc.) come from their respective channels.
 

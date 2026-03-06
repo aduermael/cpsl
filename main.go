@@ -318,6 +318,25 @@ func renderMessage(msg chatMessage, width int) string {
 	return strings.Join(parts, "\n")
 }
 
+// reprintScrollback returns a command that clears the terminal scrollback and
+// re-prints the logo + all messages word-wrapped at the given width as a
+// single tea.Println. Using one Println avoids interleaved render cycles that
+// can corrupt renderer state.
+func reprintScrollback(messages []chatMessage, width int) tea.Cmd {
+	var buf strings.Builder
+	buf.WriteString(renderLogo())
+	for _, msg := range messages {
+		buf.WriteByte('\n')
+		buf.WriteString(renderMessage(msg, width))
+	}
+	content := buf.String()
+	return tea.Sequence(
+		tea.Raw("\033[2J\033[3J\033[H"),
+		tea.ClearScreen,
+		tea.Println(content),
+	)
+}
+
 // renderMessages renders all stored chat messages with current width.
 func (m model) renderMessages() string {
 	if len(m.messages) == 0 {
@@ -878,10 +897,16 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Print logo on first resize
 			m.logoPrinted = true
 			cmds = append(cmds, tea.Println(renderLogo()))
-		} else {
-			// Reset renderer line tracking so old View() lines don't
-			// leak into scrollback as ghost frames on resize.
-			cmds = append(cmds, tea.ClearScreen)
+		} else if m.printedMsgCount > 0 || m.logoPrinted {
+			// Resize with existing scrollback: clear everything and reprint
+			// with word-wrap at the new width. This prevents the terminal's
+			// character-level reflow from mangling our word-wrapped output.
+			// Return early to avoid batching with other cmds (textarea etc.)
+			// which would cause concurrent renders that interfere with the
+			// clear+reprint sequence.
+			m.printedMsgCount = len(m.messages)
+			m.recalcTextareaHeight()
+			return m, reprintScrollback(m.messages, m.width)
 		}
 		m.recalcTextareaHeight()
 
@@ -1836,13 +1861,23 @@ func (m model) View() tea.View {
 	viewParts = append(viewParts, inputBox)
 	linesAbove += 1 // top border of input box
 
-	fullView := strings.Join(viewParts, "\n")
+	bottom := strings.Join(viewParts, "\n")
+	bottomHeight := lipgloss.Height(bottom)
+
+	// Pad the View to fill the terminal height. This ensures the input area
+	// is always at the bottom of the terminal, which is required for
+	// tea.Println/insertAbove to position content correctly above the View.
+	pad := m.height - bottomHeight
+	if pad < 0 {
+		pad = 0
+	}
+	fullView := strings.Repeat("\n", pad) + bottom
 
 	v := tea.NewView(fullView)
 
 	c := m.textarea.Cursor()
 	if c != nil {
-		c.Y += linesAbove
+		c.Y += linesAbove + pad
 		c.X += 2 // +2 for ❯ prefix
 		v.Cursor = c
 	}
@@ -1888,13 +1923,244 @@ func (m model) viewModel() tea.View {
 	return v
 }
 
+// ─── App: custom terminal engine (replaces bubbletea program + model) ───
+
+// App is the main application struct. It owns the terminal directly:
+// raw mode, input parsing, rendering. Replaces bubbletea's Program + Model.
+type App struct {
+	// Terminal
+	term     *termState
+	renderer *Renderer
+	width    int
+	height   int
+	ready    bool
+
+	// Input
+	textarea *TextInput
+
+	// Event channels
+	keyCh    chan EventKey
+	pasteCh  chan EventPaste
+	resizeCh chan EventResize
+	resultCh chan any       // async operation results
+	stopCh   chan struct{} // signal to stop background goroutines
+	quit     bool
+
+	// Chat state
+	messages         []chatMessage
+	config           Config
+	pasteCount       int
+	pasteStore       map[int]string
+	mode             appMode
+	configForm       configForm
+	modelList        modelList
+	worktreeListC    worktreeList
+	branchListC      branchList
+	models           []ModelDef
+	modelsErr        error
+	modelsLoaded     bool
+	sweScores        map[string]float64
+	sweLoaded        bool
+	container        *ContainerClient
+	worktreePath     string
+	containerReady   bool
+	containerErr     error
+	status           statusInfo
+	langdagClient    *langdag.Client
+	langdagProvider  string
+	agent            *Agent
+	agentNodeID      string
+	agentRunning     bool
+	awaitingApproval bool
+	approvalDesc     string
+	autocompleteIdx  int
+	streamingText    string
+	pendingToolCall  string
+	needsTextSep     bool
+	logoPrinted      bool
+	printedMsgCount  int
+}
+
+func newApp() *App {
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Printf("warning: loading config: %v (using defaults)", err)
+	}
+
+	ta := NewTextInput(true)
+
+	return &App{
+		textarea: ta,
+		config:   cfg,
+		keyCh:    make(chan EventKey, 32),
+		pasteCh:  make(chan EventPaste, 4),
+		resizeCh: make(chan EventResize, 4),
+		resultCh: make(chan any, 16),
+		stopCh:   make(chan struct{}),
+		renderer: NewRenderer(),
+	}
+}
+
+// Run enters raw mode, starts the event loop, and blocks until quit.
+func (a *App) Run() error {
+	ts, err := enterRawMode()
+	if err != nil {
+		return fmt.Errorf("entering raw mode: %w", err)
+	}
+	a.term = ts
+
+	// Panic-safe terminal restoration.
+	defer func() {
+		if r := recover(); r != nil {
+			restoreTerminal(ts)
+			panic(r)
+		}
+	}()
+	defer func() {
+		a.renderer.disableBracketedPaste()
+		a.renderer.showCursor()
+		fmt.Fprint(os.Stdout, "\n")
+		restoreTerminal(ts)
+	}()
+
+	a.renderer.enableBracketedPaste()
+
+	// Get initial terminal size.
+	if w, h, err := getTerminalSize(); err == nil {
+		a.width = w
+		a.height = h
+		a.ready = true
+		a.textarea.SetWidth(a.inputAreaWidth())
+	}
+
+	// Start background goroutines.
+	go readInput(a.keyCh, a.pasteCh, a.stopCh)
+	go watchResize(a.resizeCh, a.stopCh)
+
+	// Start async initialization (model fetch, workspace, langdag).
+	a.startInit()
+
+	// Print logo.
+	a.logoPrinted = true
+	a.renderer.printAbove(renderLogo())
+	a.render()
+
+	// Main event loop.
+	for !a.quit {
+		a.eventLoop()
+	}
+
+	a.cleanup()
+	return nil
+}
+
+func (a *App) inputAreaWidth() int {
+	w := a.width - 2 // account for border left + right
+	if w < 1 {
+		w = 1
+	}
+	return w
+}
+
+// startInit launches the async initialization goroutines.
+func (a *App) startInit() {
+	cfg := a.config
+	go func() { a.resultCh <- fetchModelsCmd() }()
+	go func() { a.resultCh <- fetchSWEScoresCmd() }()
+	go func() { a.resultCh <- resolveWorkspaceCmd(cfg) }()
+	go func() {
+		client, err := newLangdagClient(cfg)
+		a.resultCh <- langdagReadyMsg{client: client, provider: cfg.defaultLangdagProvider(), err: err}
+	}()
+}
+
+// eventLoop runs one iteration of the main event loop: select on all channels,
+// dispatch the event, then re-render.
+func (a *App) eventLoop() {
+	var agentCh <-chan AgentEvent
+	if a.agent != nil && a.agentRunning {
+		agentCh = a.agent.Events()
+	}
+
+	select {
+	case key := <-a.keyCh:
+		a.handleKey(key)
+	case paste := <-a.pasteCh:
+		a.handlePaste(paste)
+	case resize := <-a.resizeCh:
+		a.handleResize(resize)
+	case result := <-a.resultCh:
+		a.handleResult(result)
+	case event, ok := <-agentCh:
+		if !ok {
+			if a.agentRunning {
+				a.handleAgentEvent(AgentEvent{Type: EventDone})
+			}
+			a.agentRunning = false
+		} else {
+			a.handleAgentEvent(event)
+		}
+	}
+
+	a.render()
+}
+
+// --- Stub handlers (ported in tasks 3b and 3c) ---
+
+func (a *App) handleKey(key EventKey) {
+	// Stub — ported in task 3c
+}
+
+func (a *App) handlePaste(paste EventPaste) {
+	// Stub — ported in task 3c
+}
+
+func (a *App) handleResize(resize EventResize) {
+	a.width = resize.Width
+	a.height = resize.Height
+	a.textarea.SetWidth(a.inputAreaWidth())
+}
+
+func (a *App) handleResult(result any) {
+	// Stub — ported in task 3b
+}
+
+func (a *App) handleAgentEvent(event AgentEvent) {
+	// Stub — ported in task 3c
+}
+
+func (a *App) render() {
+	if !a.ready {
+		return
+	}
+	cx, cy := a.textarea.CursorPosition()
+	lines := []string{"❯ " + a.textarea.Value()}
+	a.renderer.renderActiveArea(lines, cx+2, cy)
+}
+
+func (a *App) cleanup() {
+	close(a.stopCh)
+	if a.agent != nil {
+		a.agent.Cancel()
+	}
+	if a.container != nil {
+		_ = a.container.Stop()
+	}
+	if a.langdagClient != nil {
+		_ = a.langdagClient.Close()
+	}
+	if a.worktreePath != "" {
+		_ = unlockWorktree(a.worktreePath)
+	}
+}
+
 func main() {
-	// Silence the default logger so library log.Printf calls (e.g. langdag)
-	// don't corrupt the bubbletea TUI output.
+	// Silence the default logger so library log.Printf calls don't
+	// corrupt the TUI output.
 	log.SetOutput(io.Discard)
 
-	p := tea.NewProgram(initialModel())
-	if _, err := p.Run(); err != nil {
+	app := newApp()
+	if err := app.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
