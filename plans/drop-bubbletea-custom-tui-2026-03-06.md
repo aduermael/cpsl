@@ -159,7 +159,7 @@ Build the main application loop that replaces bubbletea's Program.
 
 Port the chat View and scrollback management.
 
-- [ ] 4a: Port `View()` to a `renderChatArea()` method that returns the active area content (streaming text / thinking indicator / approval prompt + status bar / autocomplete + input box) as a string, plus cursor position. Call `renderer.renderActiveArea()` to display it.
+- [x] 4a: Port `View()` to a `renderChatArea()` method that returns the active area content (streaming text / thinking indicator / approval prompt + status bar / autocomplete + input box) as a string, plus cursor position. Call `renderer.renderActiveArea()` to display it.
 - [ ] 4b: Port scrollback printing: when a new message is added, call `renderer.printAbove(renderMessage(msg, width))`. On resize: call `renderer.clearAll()`, reprint logo + all messages at new width, then render active area. This is now trivial direct stdout writes instead of fighting insertAbove.
 - [ ] 4c: Port `/clear` command: clear messages slice, call `renderer.clearAll()`, reprint logo.
 

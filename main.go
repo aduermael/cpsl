@@ -2625,14 +2625,212 @@ func (a *App) printNewMessages() {
 	}
 }
 
+func (a *App) renderStreamingText() string {
+	if a.streamingText == "" {
+		return ""
+	}
+	return styledAssistantText(a.streamingText, a.width)
+}
+
+func (a *App) autocompleteHeight() int {
+	if matches := a.autocompleteMatches(); len(matches) > 0 {
+		return len(matches)
+	}
+	return 0
+}
+
+func (a *App) renderAutocomplete() string {
+	matches := a.autocompleteMatches()
+	if len(matches) == 0 {
+		return ""
+	}
+	highlightStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#B88AFF")).
+		Background(lipgloss.Color("#2A1545")).
+		Bold(true).
+		PaddingLeft(1).
+		PaddingRight(1).
+		Width(a.width)
+	normalStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#E0E0E0")).
+		Background(lipgloss.Color("#2A1545")).
+		PaddingLeft(1).
+		PaddingRight(1).
+		Width(a.width)
+	idx := a.autocompleteIdx
+	if idx >= len(matches) {
+		idx = 0
+	}
+	var lines []string
+	for i, cmd := range matches {
+		if i == idx {
+			lines = append(lines, highlightStyle.Render(cmd))
+		} else {
+			lines = append(lines, normalStyle.Render(cmd))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (a *App) renderStatusBar() string {
+	if a.status.Branch == "" {
+		return ""
+	}
+
+	infoStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color("#6FE7B8"))
+
+	leftFixedW := 3 // "/b " prefix
+
+	var prText string
+	if a.status.PRNumber > 0 {
+		prText = fmt.Sprintf(" PR #%d", a.status.PRNumber)
+		leftFixedW += len([]rune(prText))
+	}
+
+	var diffW int
+	if a.status.DiffAdd > 0 || a.status.DiffDel > 0 {
+		diffW = len(fmt.Sprintf(" +%d/-%d", a.status.DiffAdd, a.status.DiffDel))
+		leftFixedW += diffW
+	}
+
+	rightFixedW := 3 // "/w " prefix
+	var countText string
+	if a.status.TotalCount > 1 {
+		countText = fmt.Sprintf(" (%d/%d)", a.status.ActiveCount, a.status.TotalCount)
+		rightFixedW += len([]rune(countText))
+	}
+
+	overhead := leftFixedW + rightFixedW + 3
+	available := a.width - overhead
+	if available < 4 {
+		available = 4
+	}
+
+	branchNeed := len([]rune(a.status.Branch))
+	wtNeed := len([]rune(a.status.WorktreeName))
+
+	branchBudget := branchNeed
+	wtBudget := wtNeed
+	if branchNeed+wtNeed > available {
+		half := available / 3
+		if half < 2 {
+			half = 2
+		}
+		if branchNeed <= half {
+			wtBudget = available - branchNeed
+		} else if wtNeed <= half {
+			branchBudget = available - wtNeed
+		} else {
+			branchBudget = available * 3 / 5
+			wtBudget = available - branchBudget
+		}
+	}
+
+	branchName := truncateWithEllipsis(a.status.Branch, branchBudget)
+	wtName := truncateWithEllipsis(a.status.WorktreeName, wtBudget)
+
+	left := infoStyle.Render("/b " + branchName)
+	if a.status.PRNumber > 0 {
+		left += infoStyle.Render(prText)
+	}
+
+	if a.status.DiffAdd > 0 || a.status.DiffDel > 0 {
+		addStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#6FE7B8"))
+		delStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
+		left += " " + addStyle.Render(fmt.Sprintf("+%d", a.status.DiffAdd)) +
+			delStyle.Render(fmt.Sprintf("/-%d", a.status.DiffDel))
+	}
+
+	right := infoStyle.Render("/w " + wtName)
+	if a.status.TotalCount > 1 {
+		right += infoStyle.Render(countText)
+	}
+
+	leftW := lipgloss.Width(left)
+	rightW := lipgloss.Width(right)
+	gap := a.width - leftW - rightW - 2
+	if gap < 1 {
+		gap = 1
+	}
+
+	bar := " " + left + strings.Repeat(" ", gap) + right + " "
+
+	barStyle := lipgloss.NewStyle().Width(a.width)
+
+	return barStyle.Render(bar)
+}
+
 func (a *App) render() {
 	if !a.ready {
 		return
 	}
 	a.printNewMessages()
+
+	// Build input box with gradient border
+	inputBorderStyle := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderLeft(false).
+		BorderRight(false).
+		BorderForegroundBlend(borderGradientColors...).
+		Width(a.width)
+
+	prefixStyle := lipgloss.NewStyle().Foreground(borderGradientColors[0])
+	prefix := prefixStyle.Render("❯ ")
+	textareaLines := strings.Split(a.textarea.View(), "\n")
+	for i, line := range textareaLines {
+		textareaLines[i] = prefix + line
+	}
+	inputBox := inputBorderStyle.Render(strings.Join(textareaLines, "\n"))
+
+	acHeight := a.autocompleteHeight()
+
+	// Build active area: ephemeral content + status/autocomplete + input
+	var viewParts []string
+	linesAbove := 0
+
+	// Ephemeral streaming text / thinking indicator / approval prompt
+	if a.awaitingApproval {
+		approvalPrompt := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FFD700")).
+			Bold(true).
+			Render(fmt.Sprintf("Allow %s? [y/n]", a.approvalDesc))
+		viewParts = append(viewParts, approvalPrompt)
+		linesAbove += lipgloss.Height(approvalPrompt)
+	} else if streaming := a.renderStreamingText(); streaming != "" {
+		viewParts = append(viewParts, streaming)
+		linesAbove += lipgloss.Height(streaming)
+	} else if a.agentRunning {
+		indicator := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#B88AFF")).
+			Italic(true).
+			Render("thinking...")
+		viewParts = append(viewParts, indicator)
+		linesAbove += 1
+	}
+
+	if acHeight == 0 {
+		if statusBar := a.renderStatusBar(); statusBar != "" {
+			viewParts = append(viewParts, statusBar)
+			linesAbove += 1
+		}
+	} else {
+		viewParts = append(viewParts, a.renderAutocomplete())
+		linesAbove += acHeight
+	}
+
+	viewParts = append(viewParts, inputBox)
+	linesAbove += 1 // top border of input box
+
+	// Compute cursor position within the active area
 	cx, cy := a.textarea.CursorPosition()
-	lines := []string{"❯ " + a.textarea.Value()}
-	a.renderer.renderActiveArea(lines, cx+2, cy)
+	cx += 2 // +2 for "❯ " prefix
+	cy += linesAbove
+
+	activeContent := strings.Join(viewParts, "\n")
+	activeLines := strings.Split(activeContent, "\n")
+
+	a.renderer.renderActiveArea(activeLines, cx, cy)
 }
 
 func (a *App) cleanup() {
