@@ -878,6 +878,10 @@ func (m model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Print logo on first resize
 			m.logoPrinted = true
 			cmds = append(cmds, tea.Println(renderLogo()))
+		} else {
+			// Reset renderer line tracking so old View() lines don't
+			// leak into scrollback as ghost frames on resize.
+			cmds = append(cmds, tea.ClearScreen)
 		}
 		m.recalcTextareaHeight()
 
