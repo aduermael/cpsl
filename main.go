@@ -2105,20 +2105,337 @@ func (a *App) eventLoop() {
 	a.render()
 }
 
-// --- Stub handlers (ported in tasks 3b and 3c) ---
+// --- Event handlers ---
 
 func (a *App) handleKey(key EventKey) {
-	// Stub — ported in task 3c
+	// Handle approval y/n
+	if a.awaitingApproval {
+		a.handleApprovalKey(key)
+		return
+	}
+
+	// Mode-specific delegation (stubs until phase 5)
+	switch a.mode {
+	case modeConfig:
+		a.handleConfigKey(key)
+		return
+	case modeModel:
+		a.handleModelKey(key)
+		return
+	case modeWorktrees:
+		a.handleWorktreeKey(key)
+		return
+	case modeBranches:
+		a.handleBranchKey(key)
+		return
+	}
+
+	// Chat mode key handling
+	switch key.Key {
+	case KeyRune:
+		if key.Mod&ModCtrl != 0 {
+			switch key.Rune {
+			case 'c':
+				a.quit = true
+				return
+			case 'w':
+				a.textarea.DeleteWordBackward()
+				a.autocompleteIdx = 0
+				a.recalcTextareaHeight()
+				return
+			case 'k':
+				a.textarea.KillLine()
+				return
+			case 'u':
+				a.textarea.KillToStart()
+				return
+			}
+		}
+		if key.Mod == 0 || key.Mod == ModShift {
+			prevVal := a.textarea.Value()
+			a.textarea.InsertRune(key.Rune)
+			if a.textarea.Value() != prevVal {
+				a.autocompleteIdx = 0
+			}
+			a.recalcTextareaHeight()
+		}
+
+	case KeyEnter:
+		if key.Mod&(ModShift|ModAlt) != 0 {
+			a.textarea.InsertNewline()
+			a.recalcTextareaHeight()
+			return
+		}
+		a.handleEnter()
+
+	case KeyBackspace:
+		a.textarea.Backspace()
+		a.autocompleteIdx = 0
+		a.recalcTextareaHeight()
+
+	case KeyDelete:
+		a.textarea.Delete()
+		a.recalcTextareaHeight()
+
+	case KeyLeft:
+		if key.Mod&ModCtrl != 0 {
+			a.textarea.MoveWordLeft()
+		} else {
+			a.textarea.MoveLeft()
+		}
+
+	case KeyRight:
+		if key.Mod&ModCtrl != 0 {
+			a.textarea.MoveWordRight()
+		} else {
+			a.textarea.MoveRight()
+		}
+
+	case KeyUp:
+		if matches := a.autocompleteMatches(); len(matches) > 0 {
+			a.autocompleteIdx--
+			if a.autocompleteIdx < 0 {
+				a.autocompleteIdx = len(matches) - 1
+			}
+			return
+		}
+		a.textarea.MoveUp()
+
+	case KeyDown:
+		if matches := a.autocompleteMatches(); len(matches) > 0 {
+			a.autocompleteIdx++
+			if a.autocompleteIdx >= len(matches) {
+				a.autocompleteIdx = 0
+			}
+			return
+		}
+		a.textarea.MoveDown()
+
+	case KeyHome:
+		a.textarea.MoveHome()
+
+	case KeyEnd:
+		a.textarea.MoveEnd()
+
+	case KeyTab:
+		if matches := a.autocompleteMatches(); len(matches) > 0 {
+			idx := a.autocompleteIdx
+			if idx >= len(matches) {
+				idx = 0
+			}
+			a.textarea.SetValue(matches[idx])
+			a.textarea.CursorEnd()
+			a.autocompleteIdx = 0
+			a.recalcTextareaHeight()
+		}
+
+	case KeyEscape:
+		if strings.HasPrefix(a.textarea.Value(), "/") {
+			a.textarea.Reset()
+			a.textarea.SetHeight(minInputHeight)
+			a.autocompleteIdx = 0
+		}
+	}
+}
+
+func (a *App) handleApprovalKey(key EventKey) {
+	if key.Key == KeyRune && key.Mod&ModCtrl != 0 && key.Rune == 'c' {
+		a.quit = true
+		return
+	}
+	if key.Key != KeyRune || key.Mod != 0 {
+		return
+	}
+	switch key.Rune {
+	case 'y', 'Y':
+		a.awaitingApproval = false
+		if a.agent != nil {
+			a.agent.Approve(ApprovalResponse{Approved: true})
+		}
+		a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Approved"})
+	case 'n', 'N':
+		a.awaitingApproval = false
+		if a.agent != nil {
+			a.agent.Approve(ApprovalResponse{Approved: false})
+		}
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: "Denied"})
+	}
+}
+
+func (a *App) handleEnter() {
+	if a.agentRunning {
+		return
+	}
+	val := strings.TrimSpace(a.textarea.Value())
+	if val == "" {
+		return
+	}
+	if strings.HasPrefix(val, "/") {
+		if matches := filterCommands(val); len(matches) > 0 {
+			idx := a.autocompleteIdx
+			if idx >= len(matches) {
+				idx = 0
+			}
+			val = matches[idx]
+		}
+		a.autocompleteIdx = 0
+		a.appHandleCommand(val)
+		return
+	}
+	content := expandPastes(val, a.pasteStore)
+	a.textarea.Reset()
+	a.textarea.SetHeight(minInputHeight)
+
+	if a.langdagClient == nil {
+		a.messages = append(a.messages, chatMessage{kind: msgUser, content: content, leadBlank: true})
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: "No API keys configured. Use /config to add a key first."})
+		return
+	}
+
+	a.messages = append(a.messages, chatMessage{kind: msgUser, content: content, leadBlank: true})
+	if !a.containerReady {
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Container is still starting — the agent won't have bash or file tools until it's ready."})
+	}
+	a.appStartAgent(content)
+}
+
+func (a *App) appHandleCommand(input string) {
+	cmd := strings.Fields(input)[0]
+	a.textarea.Reset()
+	a.textarea.SetHeight(minInputHeight)
+
+	switch cmd {
+	case "/clear":
+		a.agentNodeID = ""
+		a.streamingText = ""
+		a.pendingToolCall = ""
+		a.messages = nil
+		a.printedMsgCount = 0
+		a.renderer.clearAll()
+		a.logoPrinted = true
+		a.renderer.printAbove(renderLogo())
+	case "/config":
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Config mode not yet ported."})
+	case "/model":
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Model selection not yet ported."})
+	case "/branches":
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Branch selection not yet ported."})
+	case "/worktrees":
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Worktree selection not yet ported."})
+	case "/shell":
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Shell mode not yet ported."})
+	default:
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Unknown command: %s", cmd)})
+	}
+}
+
+func (a *App) appStartAgent(userMessage string) {
+	var tools []Tool
+	if a.containerReady && a.container != nil {
+		tools = append(tools, NewBashTool(a.container, 120))
+	}
+	if a.worktreePath != "" {
+		tools = append(tools, NewGitTool(a.worktreePath))
+	}
+
+	modelID := ""
+	if a.modelsLoaded {
+		modelID = a.config.resolveActiveModel(a.models)
+	}
+
+	var modelProvider string
+	if modelDef := findModelByID(a.models, modelID); modelDef != nil {
+		modelProvider = modelDef.Provider
+	}
+
+	if modelProvider != "" && modelProvider != a.langdagProvider {
+		if a.langdagClient != nil {
+			a.langdagClient.Close()
+		}
+		client, err := newLangdagClientForProvider(a.config, modelProvider)
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error initializing %s provider: %v", modelProvider, err)})
+			return
+		}
+		a.langdagClient = client
+		a.langdagProvider = modelProvider
+	}
+
+	workDir := "/workspace"
+	systemPrompt := buildSystemPrompt(tools, workDir)
+
+	agent := NewAgent(a.langdagClient, tools, systemPrompt, modelID)
+	a.agent = agent
+	a.agentRunning = true
+	a.streamingText = ""
+	a.needsTextSep = true
+
+	parentNodeID := a.agentNodeID
+	go agent.Run(context.Background(), userMessage, parentNodeID)
+}
+
+// Mode-specific key handlers (stubs — ported in phase 5)
+
+func (a *App) handleConfigKey(key EventKey) {
+	if key.Key == KeyEscape || (key.Key == KeyRune && key.Mod&ModCtrl != 0 && key.Rune == 'c') {
+		a.mode = modeChat
+		a.textarea.Focus()
+	}
+}
+
+func (a *App) handleModelKey(key EventKey) {
+	if key.Key == KeyEscape || (key.Key == KeyRune && key.Mod&ModCtrl != 0 && key.Rune == 'c') {
+		a.mode = modeChat
+		a.textarea.Focus()
+	}
+}
+
+func (a *App) handleWorktreeKey(key EventKey) {
+	if key.Key == KeyEscape || (key.Key == KeyRune && key.Mod&ModCtrl != 0 && key.Rune == 'c') {
+		a.mode = modeChat
+		a.textarea.Focus()
+	}
+}
+
+func (a *App) handleBranchKey(key EventKey) {
+	if key.Key == KeyEscape || (key.Key == KeyRune && key.Mod&ModCtrl != 0 && key.Rune == 'c') {
+		a.mode = modeChat
+		a.textarea.Focus()
+	}
 }
 
 func (a *App) handlePaste(paste EventPaste) {
-	// Stub — ported in task 3c
+	content := paste.Content
+	if len(content) >= a.config.PasteCollapseMinChars {
+		a.pasteCount++
+		if a.pasteStore == nil {
+			a.pasteStore = make(map[int]string)
+		}
+		a.pasteStore[a.pasteCount] = content
+		content = fmt.Sprintf("[pasted #%d | %d chars]", a.pasteCount, len(content))
+	}
+	prevVal := a.textarea.Value()
+	a.textarea.InsertText(content)
+	if a.textarea.Value() != prevVal {
+		a.autocompleteIdx = 0
+	}
+	a.recalcTextareaHeight()
 }
 
 func (a *App) handleResize(resize EventResize) {
 	a.width = resize.Width
 	a.height = resize.Height
 	a.textarea.SetWidth(a.inputAreaWidth())
+	// Reprint scrollback at new width
+	if a.logoPrinted || a.printedMsgCount > 0 {
+		a.renderer.clearAll()
+		a.renderer.printAbove(renderLogo())
+		for i := 0; i < len(a.messages); i++ {
+			a.renderer.printAbove(renderMessage(a.messages[i], a.width))
+		}
+		a.printedMsgCount = len(a.messages)
+	}
+	a.recalcTextareaHeight()
 }
 
 func (a *App) handleResult(result any) {
@@ -2206,13 +2523,113 @@ func (a *App) handleResult(result any) {
 }
 
 func (a *App) handleAgentEvent(event AgentEvent) {
-	// Stub — ported in task 3c
+	debugLog("event=%d text=%q tool=%s err=%v", event.Type, event.Text, event.ToolName, event.Error)
+
+	switch event.Type {
+	case EventTextDelta:
+		a.streamingText += event.Text
+		if idx := strings.LastIndex(a.streamingText, "\n"); idx >= 0 {
+			a.messages = append(a.messages, chatMessage{
+				kind:      msgAssistant,
+				content:   a.streamingText[:idx],
+				leadBlank: a.needsTextSep,
+			})
+			a.needsTextSep = false
+			a.streamingText = a.streamingText[idx+1:]
+		}
+
+	case EventToolCallStart:
+		debugLog("tool_call_start: %s input=%s", event.ToolName, string(event.ToolInput))
+		if a.streamingText != "" {
+			a.messages = append(a.messages, chatMessage{
+				kind:      msgAssistant,
+				content:   a.streamingText,
+				leadBlank: a.needsTextSep,
+			})
+			a.needsTextSep = false
+			a.streamingText = ""
+		}
+		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true})
+
+	case EventToolResult:
+		debugLog("tool_result: err=%v result=%q", event.IsError, truncateForLog(event.ToolResult, 500))
+		result := collapseToolResult(event.ToolResult)
+		a.needsTextSep = true
+		a.messages = append(a.messages, chatMessage{kind: msgToolResult, content: result, isError: event.IsError})
+
+	case EventToolCallDone:
+		// Already handled by EventToolResult
+
+	case EventApprovalReq:
+		debugLog("approval_req: %s", event.ApprovalDesc)
+		a.awaitingApproval = true
+		a.approvalDesc = event.ApprovalDesc
+
+	case EventDone:
+		debugLog("done: nodeID=%s streamingLen=%d", event.NodeID, len(a.streamingText))
+		a.agentRunning = false
+		if event.NodeID != "" {
+			a.agentNodeID = event.NodeID
+		}
+		if a.streamingText != "" {
+			a.messages = append(a.messages, chatMessage{
+				kind:      msgAssistant,
+				content:   a.streamingText,
+				leadBlank: a.needsTextSep,
+			})
+			a.streamingText = ""
+		}
+
+	case EventError:
+		errMsg := "Agent error"
+		if event.Error != nil {
+			errMsg = event.Error.Error()
+		}
+		debugLog("error: %s", errMsg)
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: errMsg})
+
+	default:
+		debugLog("unknown event type: %d", event.Type)
+	}
+}
+
+// --- App helpers ---
+
+func (a *App) autocompleteMatches() []string {
+	if a.mode != modeChat {
+		return nil
+	}
+	val := a.textarea.Value()
+	if !strings.HasPrefix(val, "/") {
+		return nil
+	}
+	return filterCommands(val)
+}
+
+func (a *App) recalcTextareaHeight() {
+	newHeight := a.textarea.DisplayLineCount()
+	if newHeight < minInputHeight {
+		newHeight = minInputHeight
+	}
+	if newHeight > maxInputHeight {
+		newHeight = maxInputHeight
+	}
+	a.textarea.SetHeight(newHeight)
+}
+
+func (a *App) printNewMessages() {
+	for a.printedMsgCount < len(a.messages) {
+		msg := a.messages[a.printedMsgCount]
+		a.renderer.printAbove(renderMessage(msg, a.width))
+		a.printedMsgCount++
+	}
 }
 
 func (a *App) render() {
 	if !a.ready {
 		return
 	}
+	a.printNewMessages()
 	cx, cy := a.textarea.CursorPosition()
 	lines := []string{"❯ " + a.textarea.Value()}
 	a.renderer.renderActiveArea(lines, cx+2, cy)
