@@ -2122,7 +2122,87 @@ func (a *App) handleResize(resize EventResize) {
 }
 
 func (a *App) handleResult(result any) {
-	// Stub — ported in task 3b
+	switch msg := result.(type) {
+	case modelsMsg:
+		a.modelsLoaded = true
+		a.modelsErr = msg.err
+		if msg.err == nil {
+			a.models = msg.models
+			if a.sweLoaded && a.sweScores != nil {
+				matchSWEScores(a.models, a.sweScores)
+			}
+		}
+
+	case sweScoresMsg:
+		a.sweLoaded = true
+		if msg.err == nil {
+			a.sweScores = msg.scores
+			if a.modelsLoaded && a.models != nil {
+				matchSWEScores(a.models, a.sweScores)
+			}
+		}
+
+	case langdagReadyMsg:
+		if msg.err != nil {
+			log.Printf("warning: langdag init: %v", msg.err)
+		} else {
+			a.langdagClient = msg.client
+			a.langdagProvider = msg.provider
+		}
+
+	case statusInfoMsg:
+		a.status = msg.info
+
+	case workspaceMsg:
+		a.worktreePath = msg.worktreePath
+		cfg := a.config
+		wtPath := msg.worktreePath
+		go func() { a.resultCh <- fetchStatusCmd(wtPath) }()
+		go func() { a.resultCh <- bootContainerCmd(cfg, wtPath) }()
+
+	case containerReadyMsg:
+		a.container = msg.client
+		a.worktreePath = msg.worktreePath
+		a.containerReady = true
+
+	case containerErrMsg:
+		a.containerErr = msg.err
+
+	case worktreeListMsg:
+		if msg.err != nil {
+			a.mode = modeChat
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error listing worktrees: %v", msg.err)})
+			a.textarea.Focus()
+		} else {
+			a.worktreeListC = newWorktreeList(msg.items, a.worktreePath, a.width, a.height)
+		}
+
+	case branchListMsg:
+		if msg.err != nil {
+			a.mode = modeChat
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error listing branches: %v", msg.err)})
+			a.textarea.Focus()
+		} else {
+			a.branchListC = newBranchList(msg.items, msg.currentBranch, a.width, a.height)
+		}
+
+	case branchCheckoutMsg:
+		a.mode = modeChat
+		if msg.err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Checkout failed: %v", msg.err)})
+		} else {
+			a.status.Branch = msg.branch
+			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to branch '%s'", msg.branch)})
+		}
+		a.textarea.Focus()
+
+	case shellExitMsg:
+		if msg.err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Shell error: %v", msg.err)})
+		} else {
+			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Shell session ended."})
+		}
+	}
 }
 
 func (a *App) handleAgentEvent(event AgentEvent) {
