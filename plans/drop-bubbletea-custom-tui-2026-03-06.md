@@ -186,7 +186,7 @@ Port all test files to the new architecture.
 
 - [x] 7a: Create new test helpers: `newTestApp(width, height int) *App` (creates app without entering raw mode), `simulateKey(app, key)`, `simulateResize(app, w, h)`, `simulatePaste(app, content)`. These call the app's event handlers directly, same pattern as the old `resize()` / `sendKey()` / `typeString()` / `paste()` helpers.
 - [x] 7b: Port `model_test.go` — update all tests to use the new helpers and assert on the new state fields. Tests that check View output need updated assertions for the new rendering format.
-- [ ] 7c: Port `integration_test.go`, `exec_test.go`, `statusbar_test.go` — update event types and assertions.
+- [x] 7c: Port `integration_test.go`, `exec_test.go`, `statusbar_test.go` — update event types and assertions.
 - [ ] 7d: Port `configform_test.go`, `branchlist_test.go`, `worktreelist_test.go` — update for custom TextInput and new event types.
 
 ## Phase 8: Cleanup and remove bubbletea

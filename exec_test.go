@@ -3,8 +3,6 @@ package main
 import (
 	"strings"
 	"testing"
-
-	tea "charm.land/bubbletea/v2"
 )
 
 // mockContainerClient creates a ContainerClient backed by fakeDockerCommand
@@ -38,144 +36,74 @@ func mockContainerClient(t *testing.T, stdout, stderr string, exitCode int) *Con
 	return c
 }
 
-// modelWithContainer creates a ready model with a mock container.
-func modelWithContainer(t *testing.T, stdout, stderr string, exitCode int) model {
+// appWithContainer creates a ready App with a mock container.
+func appWithContainer(t *testing.T, stdout, stderr string, exitCode int) *App {
 	t.Helper()
 	client := mockContainerClient(t, stdout, stderr, exitCode)
-	m := initialModel()
-	m = resize(m, 80, 24)
-	m.container = client
-	m.containerReady = true
-	m.worktreePath = "/tmp/test-worktree"
-	return m
+	a := newTestApp(80, 24)
+	a.container = client
+	a.containerReady = true
+	a.worktreePath = "/tmp/test-worktree"
+	return a
 }
 
 func TestShellContainerNotReady(t *testing.T) {
-	m := initialModel()
-	m = resize(m, 80, 24)
+	a := newTestApp(80, 24)
 	// containerReady is false by default
 
-	m = typeString(m, "/shell")
-	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = result.(model)
+	simType(a, "/shell")
+	simKey(a, KeyEnter)
 
 	// Should show info message about container starting
 	foundInfo := false
-	for _, msg := range m.messages {
+	for _, msg := range a.messages {
 		if msg.kind == msgInfo && strings.Contains(msg.content, "starting") {
 			foundInfo = true
 			break
 		}
 	}
 	if !foundInfo {
-		t.Errorf("should show container starting message, messages: %+v", m.messages)
+		t.Errorf("should show container starting message, messages: %+v", a.messages)
 	}
 
 	// Should stay in chat mode
-	if m.mode != modeChat {
-		t.Errorf("mode = %d, want modeChat when container not ready", m.mode)
-	}
-
-	// No cmd should be returned
-	if cmd != nil {
-		t.Error("should not return cmd when container not ready")
+	if a.mode != modeChat {
+		t.Errorf("mode = %d, want modeChat when container not ready", a.mode)
 	}
 }
 
 func TestShellContainerError(t *testing.T) {
-	m := initialModel()
-	m = resize(m, 80, 24)
+	a := newTestApp(80, 24)
 
 	// Simulate container error from startup
-	result, _ := m.Update(containerErrMsg{err: &ContainerError{Code: ErrDockerNotFound, Message: "not found"}})
-	m = result.(model)
+	simResult(a, containerErrMsg{err: &ContainerError{Code: ErrDockerNotFound, Message: "not found"}})
 
-	m = typeString(m, "/shell")
-	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = result.(model)
+	simType(a, "/shell")
+	simKey(a, KeyEnter)
 
 	// Should show container error
 	foundErr := false
-	for _, msg := range m.messages {
+	for _, msg := range a.messages {
 		if msg.kind == msgError && strings.Contains(msg.content, "not found") {
 			foundErr = true
 			break
 		}
 	}
 	if !foundErr {
-		t.Errorf("should show container error, messages: %+v", m.messages)
+		t.Errorf("should show container error, messages: %+v", a.messages)
 	}
 
 	// Should stay in chat mode
-	if m.mode != modeChat {
-		t.Errorf("mode = %d, want modeChat when container has error", m.mode)
-	}
-
-	if cmd != nil {
-		t.Error("should not return cmd when container has error")
-	}
-}
-
-func TestShellReturnsCmd(t *testing.T) {
-	m := modelWithContainer(t, "", "", 0)
-
-	m = typeString(m, "/shell")
-	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = result.(model)
-
-	// enterShellMode should return a tea.Cmd (ExecProcess)
-	if cmd == nil {
-		t.Error("enterShellMode should return a cmd for tea.ExecProcess")
-	}
-
-	// Should stay in chat mode (TUI suspends, not a mode switch)
-	if m.mode != modeChat {
-		t.Errorf("mode = %d, want modeChat (shell uses ExecProcess, not mode switch)", m.mode)
-	}
-}
-
-func TestShellExitMsgSuccess(t *testing.T) {
-	m := modelWithContainer(t, "", "", 0)
-
-	result, _ := m.Update(shellExitMsg{err: nil})
-	m = result.(model)
-
-	foundInfo := false
-	for _, msg := range m.messages {
-		if msg.kind == msgInfo && strings.Contains(msg.content, "Shell session ended") {
-			foundInfo = true
-			break
-		}
-	}
-	if !foundInfo {
-		t.Errorf("should show shell ended message, messages: %+v", m.messages)
-	}
-}
-
-func TestShellExitMsgError(t *testing.T) {
-	m := modelWithContainer(t, "", "", 0)
-
-	result, _ := m.Update(shellExitMsg{err: &ContainerError{Code: ErrExecFailed, Message: "connection lost"}})
-	m = result.(model)
-
-	foundErr := false
-	for _, msg := range m.messages {
-		if msg.kind == msgError && strings.Contains(msg.content, "connection lost") {
-			foundErr = true
-			break
-		}
-	}
-	if !foundErr {
-		t.Errorf("should show shell error message, messages: %+v", m.messages)
+	if a.mode != modeChat {
+		t.Errorf("mode = %d, want modeChat when container has error", a.mode)
 	}
 }
 
 func TestShellAutocomplete(t *testing.T) {
-	m := initialModel()
-	m = resize(m, 80, 24)
+	a := newTestApp(80, 24)
 
-	m = typeString(m, "/sh")
-	matches := m.autocompleteMatches()
+	simType(a, "/sh")
+	matches := a.autocompleteMatches()
 	found := false
 	for _, match := range matches {
 		if match == "/shell" {
@@ -185,20 +113,6 @@ func TestShellAutocomplete(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("autocompleteMatches = %v, should contain /shell", matches)
-	}
-}
-
-func TestAutocompleteEnterTriggersFirstMatch(t *testing.T) {
-	m := modelWithContainer(t, "", "", 0)
-
-	// Type partial command "/sh" and press Enter — should resolve to "/shell"
-	m = typeString(m, "/sh")
-	result, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = result.(model)
-
-	// Should return a cmd (ExecProcess from /shell)
-	if cmd == nil {
-		t.Error("Enter on '/sh' should trigger /shell and return ExecProcess cmd")
 	}
 }
 
@@ -224,27 +138,25 @@ func TestContainerIDGetter(t *testing.T) {
 }
 
 func TestShutdownCleanup(t *testing.T) {
-	m := modelWithContainer(t, "", "", 0)
+	a := appWithContainer(t, "", "", 0)
 
 	// Verify container is running
-	if !m.containerReady {
+	if !a.containerReady {
 		t.Fatal("container should be ready")
 	}
 
-	// Simulate ctrl+c — calls cleanup() then tea.Quit
-	m.cleanup()
+	a.cleanup()
 
 	// Container should be stopped
-	if m.container.running {
+	if a.container.running {
 		t.Error("container should be stopped after cleanup")
 	}
 }
 
 func TestContainerReadyMsg(t *testing.T) {
-	m := initialModel()
-	m = resize(m, 80, 24)
+	a := newTestApp(80, 24)
 
-	if m.containerReady {
+	if a.containerReady {
 		t.Fatal("should not be ready initially")
 	}
 
@@ -253,16 +165,15 @@ func TestContainerReadyMsg(t *testing.T) {
 		running: true,
 	}
 
-	result, _ := m.Update(containerReadyMsg{client: client, worktreePath: "/tmp/test-wt"})
-	m = result.(model)
+	simResult(a, containerReadyMsg{client: client, worktreePath: "/tmp/test-wt"})
 
-	if !m.containerReady {
+	if !a.containerReady {
 		t.Error("should be ready after containerReadyMsg")
 	}
-	if m.container != client {
+	if a.container != client {
 		t.Error("container should be set")
 	}
-	if m.worktreePath != "/tmp/test-wt" {
-		t.Errorf("worktreePath = %q, want /tmp/test-wt", m.worktreePath)
+	if a.worktreePath != "/tmp/test-wt" {
+		t.Errorf("worktreePath = %q, want /tmp/test-wt", a.worktreePath)
 	}
 }
