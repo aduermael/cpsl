@@ -2,3 +2,6 @@ cpsl
 main
 debug/debug
 .cpsl/
+.DS_Store
+.cpsl-lock
+simple-chat/simple-chat
