@@ -203,9 +203,18 @@ func positionCursor(buf *strings.Builder) {
 	buf.WriteString(fmt.Sprintf("\033[%d;%dH", inputStartRow+curLine, curCol+1))
 }
 
+var logo = []string{
+	"",
+	"    \033[38;5;75m▄███▄\033[0m ░▄▀▀▒█▀▄░▄▀▀░█▒░",
+	"  \033[38;5;75m▄██\033[38;5;255m• •\033[38;5;75m█\033[0m ░▀▄▄░█▀▒▒▄██▒█▄▄",
+	" \033[38;5;75m▀███▄█▄█\033[0m Contained Coding Agent",
+	"",
+}
+
 // render redraws the entire screen (blocks + input area).
 func render() {
 	var blockRows []string
+	blockRows = append(blockRows, logo...)
 	for _, b := range blocks {
 		for _, logLine := range strings.Split(b.Text, "\n") {
 			blockRows = append(blockRows, wrapString(logLine, 0)...)
