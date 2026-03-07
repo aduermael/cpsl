@@ -139,8 +139,8 @@ Implement slash commands using inline display (max 5 lines below input).
 
 Add features beyond simple-chat's basic input.
 
-- [ ] 4a: Add bracketed paste support: detect `\033[200~` / `\033[201~` sequences in the byte reader, collect pasted content, insert into input buffer (or collapse large pastes using existing `pasteStore` / `pasteCount` logic from current main.go).
-- [ ] 4b: Add Ctrl+key shortcuts: Ctrl+A (home), Ctrl+E (end), Ctrl+W (delete word), Ctrl+U (clear line). These are standard terminal shortcuts and straightforward to add in the byte reader.
+- [x] 4a: Add bracketed paste support: detect `\033[200~` / `\033[201~` sequences in the byte reader, collect pasted content, insert into input buffer (or collapse large pastes using existing `pasteStore` / `pasteCount` logic from current main.go).
+- [x] 4b: Add Ctrl+key shortcuts: Ctrl+A (home), Ctrl+E (end), Ctrl+W (delete word), Ctrl+U (clear line). These are standard terminal shortcuts and straightforward to add in the byte reader.
 
 ## Phase 5: Cleanup and dependency removal
 
