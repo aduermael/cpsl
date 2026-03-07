@@ -6,6 +6,7 @@ import (
 	"os/signal"
 	"strings"
 	"syscall"
+	"time"
 	"unicode/utf8"
 
 	"golang.org/x/term"
@@ -311,8 +312,16 @@ func main() {
 	}
 	defer term.Restore(int(os.Stdin.Fd()), oldState)
 
+	startTime := time.Now()
+
 	fmt.Print("\033[?1049h")
-	defer fmt.Print("\033[?1049l")
+	defer func() {
+		fmt.Print("\033[?1049l")
+		end := time.Now()
+		fmt.Printf("[CHAT %s -> %s]\r\n",
+			startTime.Format("Jan 02 15:04"),
+			end.Format("Jan 02 15:04"))
+	}()
 
 	width = getWidth()
 
