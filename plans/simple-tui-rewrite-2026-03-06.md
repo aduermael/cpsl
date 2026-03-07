@@ -144,8 +144,8 @@ Add features beyond simple-chat's basic input.
 
 ## Phase 5: Cleanup and dependency removal
 
-- [ ] 5a: Remove `charm.land/bubbletea/v2` and `charm.land/bubbles/v2` from `go.mod`. Run `go mod tidy`. Verify `go build` succeeds with zero bubbletea/bubbles imports. Remove `charm.land/lipgloss/v2` only if no styling code uses it anymore (likely still used for message styling — keep if so, or replace with direct ANSI codes).
-- [ ] 5b: Delete or rewrite remaining test files (`model_test.go`, `integration_test.go`, `exec_test.go`) to test business logic without bubbletea. Keep tests for unchanged files (`config_test.go`, `container_test.go`, `worktree_test.go`, `models_test.go`, `wrap_test.go`). Add basic tests for the new rendering functions (`wrapString`, `getVisualLines`, `progressBar`, `buildInputRows`).
+- [x] 5a: Remove `charm.land/bubbletea/v2` and `charm.land/bubbles/v2` from `go.mod`. Run `go mod tidy`. Verify `go build` succeeds with zero bubbletea/bubbles imports. Remove `charm.land/lipgloss/v2` only if no styling code uses it anymore (likely still used for message styling — keep if so, or replace with direct ANSI codes).
+- [x] 5b: Delete or rewrite remaining test files (`model_test.go`, `integration_test.go`, `exec_test.go`) to test business logic without bubbletea. Keep tests for unchanged files (`config_test.go`, `container_test.go`, `worktree_test.go`, `models_test.go`, `wrap_test.go`). Add basic tests for the new rendering functions (`wrapString`, `getVisualLines`, `progressBar`, `buildInputRows`).
 
 ## Phase 6: Verification
 

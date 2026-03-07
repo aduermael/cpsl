@@ -3,43 +3,44 @@ package main
 import (
 	"fmt"
 	"os"
+	"unicode/utf8"
 
-	tea "charm.land/bubbletea/v2"
+	"golang.org/x/term"
 )
 
-type model struct {
-	keys []string
-}
-
-func (m model) Init() tea.Cmd { return nil }
-
-func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.KeyPressMsg:
-		s := fmt.Sprintf("String=%q Keystroke=%q", msg.String(), msg.Keystroke())
-		if msg.String() == "ctrl+c" {
-			return m, tea.Quit
-		}
-		m.keys = append(m.keys, s)
-		if len(m.keys) > 20 {
-			m.keys = m.keys[len(m.keys)-20:]
-		}
-	}
-	return m, nil
-}
-
-func (m model) View() tea.View {
-	out := "Press keys to see their representation (ctrl+c to quit):\n\n"
-	for _, k := range m.keys {
-		out += k + "\n"
-	}
-	return tea.NewView(out)
-}
-
 func main() {
-	p := tea.NewProgram(model{})
-	if _, err := p.Run(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	fd := int(os.Stdin.Fd())
+	oldState, err := term.MakeRaw(fd)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error entering raw mode: %v\n", err)
 		os.Exit(1)
+	}
+	defer term.Restore(fd, oldState)
+
+	fmt.Print("Press keys to see their byte representation (ctrl+c to quit):\r\n\r\n")
+
+	buf := make([]byte, 32)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if err != nil {
+			break
+		}
+		bytes := buf[:n]
+
+		// Ctrl+C
+		if n == 1 && bytes[0] == 3 {
+			fmt.Print("\r\nBye.\r\n")
+			break
+		}
+
+		// Show hex bytes
+		fmt.Printf("bytes=[% x]", bytes)
+
+		// Try to decode as UTF-8 text
+		if utf8.Valid(bytes) {
+			fmt.Printf("  text=%q", string(bytes))
+		}
+
+		fmt.Print("\r\n")
 	}
 }
