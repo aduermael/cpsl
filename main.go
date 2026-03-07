@@ -1138,8 +1138,13 @@ func (a *App) Run() error {
 			continue
 		}
 
-		// Enter (CR) — submit
+		// Enter (CR) — submit or menu select
 		if ch == '\r' {
+			if a.menuActive && a.menuAction != nil {
+				a.menuAction(a.menuCursor)
+				a.render()
+				continue
+			}
 			a.handleEnter()
 			continue
 		}
@@ -1195,6 +1200,14 @@ func (a *App) handleEscapeSequence(raw []byte) {
 		if a.awaitingApproval {
 			return
 		}
+		if a.menuActive {
+			a.menuLines = nil
+			a.menuActive = false
+			a.menuAction = nil
+			a.menuCursor = 0
+			a.renderInput()
+			return
+		}
 		if strings.HasPrefix(a.inputValue(), "/") {
 			a.resetInput()
 			a.autocompleteIdx = 0
@@ -1241,7 +1254,12 @@ func (a *App) handleEscapeSequence(raw []byte) {
 
 	switch raw[0] {
 	case 'A': // Up
-		if matches := a.autocompleteMatches(); len(matches) > 0 {
+		if a.menuActive {
+			a.menuCursor--
+			if a.menuCursor < 0 {
+				a.menuCursor = len(a.menuLines) - 1
+			}
+		} else if matches := a.autocompleteMatches(); len(matches) > 0 {
 			a.autocompleteIdx--
 			if a.autocompleteIdx < 0 {
 				a.autocompleteIdx = len(matches) - 1
@@ -1251,7 +1269,12 @@ func (a *App) handleEscapeSequence(raw []byte) {
 		}
 		a.renderInput()
 	case 'B': // Down
-		if matches := a.autocompleteMatches(); len(matches) > 0 {
+		if a.menuActive {
+			a.menuCursor++
+			if a.menuCursor >= len(a.menuLines) {
+				a.menuCursor = 0
+			}
+		} else if matches := a.autocompleteMatches(); len(matches) > 0 {
 			a.autocompleteIdx++
 			if a.autocompleteIdx >= len(matches) {
 				a.autocompleteIdx = 0
@@ -1521,14 +1544,98 @@ func (a *App) handleCommand(input string) {
 		a.renderInput()
 
 	case "/branches":
-		// Phase 3: inline branch selection
-		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Branch selection not yet implemented in new TUI."})
-		a.render()
+		if a.worktreePath == "" {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: "No workspace path available."})
+			a.render()
+			return
+		}
+		branchCmd := exec.Command("git", "branch", "--format=%(refname:short)")
+		branchCmd.Dir = a.worktreePath
+		out, err := branchCmd.Output()
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error listing branches: %v", err)})
+			a.render()
+			return
+		}
+		branches := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(branches) == 0 || (len(branches) == 1 && branches[0] == "") {
+			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "No branches found."})
+			a.render()
+			return
+		}
+		a.menuLines = branches
+		a.menuCursor = 0
+		a.menuActive = true
+		a.menuAction = func(idx int) {
+			if idx >= 0 && idx < len(branches) {
+				selected := branches[idx]
+				checkoutCmd := exec.Command("git", "checkout", selected)
+				checkoutCmd.Dir = a.worktreePath
+				if err := checkoutCmd.Run(); err != nil {
+					a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Checkout failed: %v", err)})
+				} else {
+					a.status.Branch = selected
+					a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to branch '%s'", selected)})
+				}
+			}
+			a.menuLines = nil
+			a.menuActive = false
+			a.menuAction = nil
+		}
+		a.renderInput()
 
 	case "/worktrees":
-		// Phase 3: inline worktree selection
-		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Worktree selection not yet implemented in new TUI."})
-		a.render()
+		repoRoot := gitRepoRoot()
+		if repoRoot == "" {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: "Not in a git repository."})
+			a.render()
+			return
+		}
+		projectID, err := ensureProjectID(repoRoot)
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error reading project: %v", err)})
+			a.render()
+			return
+		}
+		baseDir := worktreeBaseDir(projectID)
+		wts, err := listWorktrees(baseDir)
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error listing worktrees: %v", err)})
+			a.render()
+			return
+		}
+		if len(wts) == 0 {
+			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "No worktrees found."})
+			a.render()
+			return
+		}
+		var lines []string
+		for _, wt := range wts {
+			status := ""
+			if wt.Active {
+				status = " [active]"
+			}
+			if !wt.Clean {
+				status += " [dirty]"
+			}
+			lines = append(lines, fmt.Sprintf("%s (%s)%s", filepath.Base(wt.Path), wt.Branch, status))
+		}
+		a.menuLines = lines
+		a.menuCursor = 0
+		a.menuActive = true
+		a.menuAction = func(idx int) {
+			if idx >= 0 && idx < len(wts) {
+				selected := wts[idx]
+				a.worktreePath = selected.Path
+				a.status.WorktreeName = filepath.Base(selected.Path)
+				a.status.Branch = selected.Branch
+				a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to worktree '%s' (%s)", filepath.Base(selected.Path), selected.Branch)})
+			}
+			a.menuLines = nil
+			a.menuActive = false
+			a.menuAction = nil
+		}
+		a.renderInput()
 
 	case "/shell":
 		a.enterShellMode()

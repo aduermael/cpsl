@@ -130,10 +130,10 @@ Connect the agent/LLM system to the new rendering engine.
 
 Implement slash commands using inline display (max 5 lines below input).
 
-- [ ] 3a: Implement the inline menu system: `menuLines []string`, `menuCursor int`, `menuActive bool`. When active, arrow up/down moves cursor, enter selects, esc cancels. Menu lines render below the progress bar in `buildInputRows()`. Autocomplete for `/` commands also uses this (show matching commands as menu).
-- [ ] 3b: Implement `/model` command: populate menu with available models (filtered by configured providers), show 5 at a time with scroll indicators. On select, update config's active model and reinitialize langdag client if provider changed. Implement `/config` command: print current config as info blocks (masked API keys), no editing.
-- [ ] 3c: Implement `/branches` command: populate menu with git branches (from worktree path), filterable by typing. On select, checkout branch. Implement `/worktrees` command: populate menu with worktrees, on select switch active worktree.
-- [ ] 3d: Implement `/clear` (clear blocks, reprint logo), `/shell` (restore terminal, spawn shell, re-enter raw mode on exit, reprint everything).
+- [x] 3a: Implement the inline menu system: `menuLines []string`, `menuCursor int`, `menuActive bool`. When active, arrow up/down moves cursor, enter selects, esc cancels. Menu lines render below the progress bar in `buildInputRows()`. Autocomplete for `/` commands also uses this (show matching commands as menu).
+- [x] 3b: Implement `/model` command: populate menu with available models (filtered by configured providers), show 5 at a time with scroll indicators. On select, update config's active model and reinitialize langdag client if provider changed. Implement `/config` command: print current config as info blocks (masked API keys), no editing.
+- [x] 3c: Implement `/branches` command: populate menu with git branches (from worktree path), filterable by typing. On select, checkout branch. Implement `/worktrees` command: populate menu with worktrees, on select switch active worktree.
+- [x] 3d: Implement `/clear` (clear blocks, reprint logo), `/shell` (restore terminal, spawn shell, re-enter raw mode on exit, reprint everything).
 
 ## Phase 4: Input enhancements
 
