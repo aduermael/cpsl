@@ -149,4 +149,4 @@ Add features beyond simple-chat's basic input.
 
 ## Phase 6: Verification
 
-- [ ] 6a: `go build` succeeds, manual smoke test: launch app, verify logo, type message, verify agent interaction works end-to-end (if API key configured), test `/model`, `/config`, `/clear`, `/shell`, `/branches`, `/worktrees`, resize terminal, verify clean redraw.
+- [ ] 6a: `go build` succeeds, manual smoke test: launch app, verify logo, type message, verify agent interaction works end-to-end (if API key configured), test `/model`, `/config`, `/clear`, `/shell`, `/branches`, `/worktrees`, resize terminal, verify clean redraw. *(build + tests pass, needs manual smoke test)*
