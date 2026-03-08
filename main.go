@@ -799,6 +799,11 @@ func (a *App) buildInputRows() []string {
 				rows = append(rows, line)
 			}
 		}
+		if total > maxVisible {
+			first := a.menuScrollOffset + 1
+			last := end
+			rows = append(rows, fmt.Sprintf("\033[2m(%d->%d / %d)\033[0m", first, last, total))
+		}
 		rows = append(rows, sep)
 		return rows
 	}
