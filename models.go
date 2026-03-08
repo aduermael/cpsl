@@ -67,9 +67,18 @@ func formatPrice(price float64) string {
 	return fmt.Sprintf("$%.2f", price)
 }
 
-// formatPricePerM formats a per-million-token price as "$X.XX/M".
-func formatPricePerM(price float64) string {
-	return fmt.Sprintf("$%.2f/M", price)
+// formatPriceCompact formats a price dropping unnecessary trailing zeros.
+// 5.0 → "$5", 0.15 → "$0.15", 0.80 → "$0.80", 15.0 → "$15".
+func formatPriceCompact(price float64) string {
+	if price == float64(int(price)) {
+		return fmt.Sprintf("$%d", int(price))
+	}
+	return fmt.Sprintf("$%.2f", price)
+}
+
+// formatPricePerM formats input/output prices per million tokens as "$X/$Y/M".
+func formatPricePerM(promptPrice, completionPrice float64) string {
+	return formatPriceCompact(promptPrice) + "/" + formatPriceCompact(completionPrice) + "/M"
 }
 
 // formatContextWindow formats a token count for display.
@@ -109,7 +118,7 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		e := entry{
 			name:   m.DisplayName,
 			prov:   m.Provider,
-			price:  formatPricePerM(m.PromptPrice),
+			price:  formatPricePerM(m.PromptPrice, m.CompletionPrice),
 			ctx:    formatContextWindow(m.ContextWindow),
 			active: m.ID == activeID,
 		}
