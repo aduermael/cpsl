@@ -1189,7 +1189,7 @@ done:
 func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) bool {
 	// Config editor mode intercept
 	if a.cfgActive {
-		a.handleConfigByte(ch, readByte)
+		a.handleConfigByte(ch, stdinCh, readByte)
 		return false
 	}
 
@@ -1320,9 +1320,39 @@ func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool
 	return false
 }
 
+func (a *App) handlePlainEscape() {
+	if a.awaitingApproval {
+		return
+	}
+	if a.menuActive {
+		a.menuLines = nil
+		a.menuActive = false
+		a.menuAction = nil
+		a.menuCursor = 0
+		a.renderInput()
+		return
+	}
+	if strings.HasPrefix(a.inputValue(), "/") {
+		a.resetInput()
+		a.autocompleteIdx = 0
+		a.renderInput()
+	}
+}
+
 func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, bool)) {
-	b, ok := readByte()
-	if !ok {
+	// Use a short timeout to distinguish plain ESC from escape sequences.
+	// Escape sequences (arrow keys, etc.) send bytes in rapid succession,
+	// so if no byte arrives within 50ms, it's a standalone ESC press.
+	var b byte
+	var ok bool
+	select {
+	case b, ok = <-stdinCh:
+		if !ok {
+			return
+		}
+	case <-time.After(50 * time.Millisecond):
+		// Plain ESC key — no sequence followed
+		a.handlePlainEscape()
 		return
 	}
 
@@ -1336,23 +1366,8 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 	}
 
 	if b != '[' {
-		// Escape key
-		if a.awaitingApproval {
-			return
-		}
-		if a.menuActive {
-			a.menuLines = nil
-			a.menuActive = false
-			a.menuAction = nil
-			a.menuCursor = 0
-			a.renderInput()
-			return
-		}
-		if strings.HasPrefix(a.inputValue(), "/") {
-			a.resetInput()
-			a.autocompleteIdx = 0
-			a.renderInput()
-		}
+		// ESC followed by non-[ byte (e.g. Alt+key) — treat as plain escape
+		a.handlePlainEscape()
 		return
 	}
 
@@ -1916,20 +1931,26 @@ func (a *App) buildConfigRows() []string {
 	return rows
 }
 
-func (a *App) handleConfigByte(ch byte, readByte func() (byte, bool)) {
+func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) {
 	if a.cfgEditing {
-		a.handleConfigEditByte(ch, readByte)
+		a.handleConfigEditByte(ch, stdinCh, readByte)
 		return
 	}
 
 	switch {
 	case ch == '\033': // Escape sequence
-		b, ok := readByte()
-		if !ok {
+		var b byte
+		var ok bool
+		select {
+		case b, ok = <-stdinCh:
+			if !ok {
+				return
+			}
+		case <-time.After(50 * time.Millisecond):
+			a.exitConfigMode(false)
 			return
 		}
 		if b != '[' {
-			// Plain Escape - exit config
 			a.exitConfigMode(false)
 			return
 		}
@@ -1998,15 +2019,24 @@ func (a *App) handleConfigByte(ch byte, readByte func() (byte, bool)) {
 	}
 }
 
-func (a *App) handleConfigEditByte(ch byte, readByte func() (byte, bool)) {
+func (a *App) handleConfigEditByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) {
 	switch {
 	case ch == '\033': // Escape
-		b, ok := readByte()
-		if !ok {
+		var b byte
+		var ok bool
+		select {
+		case b, ok = <-stdinCh:
+			if !ok {
+				return
+			}
+		case <-time.After(50 * time.Millisecond):
+			// Plain Escape - cancel edit
+			a.cfgEditing = false
+			a.cfgEditBuf = nil
+			a.renderInput()
 			return
 		}
 		if b != '[' {
-			// Plain Escape - cancel edit
 			a.cfgEditing = false
 			a.cfgEditBuf = nil
 			a.renderInput()
