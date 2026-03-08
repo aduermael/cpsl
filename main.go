@@ -858,6 +858,9 @@ func (a *App) buildInputRows() []string {
 		first := a.menuScrollOffset + 1
 		last := end
 		rows = append(rows, fmt.Sprintf("\033[2m(%d->%d / %d)\033[0m", first, last, total))
+		if a.menuModels != nil {
+			rows = append(rows, "\033[2m←/→ sort column  Tab flip order  Enter select  Esc close\033[0m")
+		}
 		rows = append(rows, sep)
 		return rows
 	}
