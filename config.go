@@ -17,8 +17,8 @@ type Config struct {
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
 	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
 	ActiveModel           string          `json:"active_model,omitempty"`
-	ModelSortCol          string          `json:"model_sort_col,omitempty"`  // "name","provider","price","context"
-	ModelSortDesc         bool            `json:"model_sort_desc,omitempty"` // true=descending
+	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
+	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	ContainerImage        string          `json:"container_image,omitempty"`
 }
 

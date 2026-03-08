@@ -727,7 +727,7 @@ type App struct {
 	menuAction       func(int)
 	menuScrollOffset int
 	menuSortCol      int        // active sort column (0=name,1=provider,2=price,3=context)
-	menuSortAsc      bool       // sort direction: true=ascending, false=descending
+	menuSortAsc      [4]bool    // per-column sort direction: true=ascending
 	menuModels       []ModelDef // model list for re-sorting (nil for non-model menus)
 	menuActiveID     string     // active model ID for re-sorting
 
@@ -794,8 +794,9 @@ func (a *App) refreshModelMenu() {
 	if a.menuCursor >= 0 && a.menuCursor < len(a.menuModels) {
 		cursorID = a.menuModels[a.menuCursor].ID
 	}
-	sortModelsByCol(a.menuModels, a.menuSortCol, a.menuSortAsc)
-	header, lines := formatModelMenuLines(a.menuModels, a.menuActiveID, a.menuSortCol, a.menuSortAsc)
+	asc := a.menuSortAsc[a.menuSortCol]
+	sortModelsByCol(a.menuModels, a.menuSortCol, asc)
+	header, lines := formatModelMenuLines(a.menuModels, a.menuActiveID, a.menuSortCol, asc)
 	a.menuHeader = header
 	a.menuLines = lines
 	// Restore cursor position
@@ -817,7 +818,7 @@ func (a *App) refreshModelMenu() {
 	}
 	// Persist sort preferences
 	a.config.ModelSortCol = sortColNames[a.menuSortCol]
-	a.config.ModelSortDesc = !a.menuSortAsc
+	a.config.ModelSortDirs = sortAscToMap(a.menuSortAsc)
 	_ = saveConfig(a.config)
 }
 
@@ -1411,7 +1412,7 @@ func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool
 	// Tab
 	if ch == '\t' {
 		if a.menuActive && a.menuModels != nil {
-			a.menuSortAsc = !a.menuSortAsc
+			a.menuSortAsc[a.menuSortCol] = !a.menuSortAsc[a.menuSortCol]
 			a.refreshModelMenu()
 			a.renderInput()
 			return false
@@ -1878,9 +1879,10 @@ func (a *App) handleCommand(input string) {
 		a.menuModels = available
 		a.menuActiveID = activeID
 		a.menuSortCol = sortColFromName(a.config.ModelSortCol)
-		a.menuSortAsc = !a.config.ModelSortDesc
-		sortModelsByCol(a.menuModels, a.menuSortCol, a.menuSortAsc)
-		header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, a.menuSortAsc)
+		a.menuSortAsc = sortAscFromMap(a.config.ModelSortDirs)
+		asc := a.menuSortAsc[a.menuSortCol]
+		sortModelsByCol(a.menuModels, a.menuSortCol, asc)
+		header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, asc)
 		activeIdx := 0
 		for i, m := range a.menuModels {
 			if m.ID == activeID {

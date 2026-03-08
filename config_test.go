@@ -119,7 +119,9 @@ func TestSortPrefsRoundTrip(t *testing.T) {
 	cfg := Config{
 		PasteCollapseMinChars: 200,
 		ModelSortCol:          "price",
-		ModelSortDesc:         true,
+		ModelSortDirs: map[string]bool{
+			"name": true, "provider": true, "price": false, "context": true,
+		},
 	}
 	if err := saveConfigTo(dir, cfg); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
@@ -133,8 +135,11 @@ func TestSortPrefsRoundTrip(t *testing.T) {
 	if loaded.ModelSortCol != "price" {
 		t.Errorf("ModelSortCol = %q, want %q", loaded.ModelSortCol, "price")
 	}
-	if !loaded.ModelSortDesc {
-		t.Error("ModelSortDesc = false, want true")
+	if loaded.ModelSortDirs["price"] != false {
+		t.Error("ModelSortDirs[price] = true, want false (descending)")
+	}
+	if loaded.ModelSortDirs["name"] != true {
+		t.Error("ModelSortDirs[name] = false, want true (ascending)")
 	}
 }
 
@@ -154,8 +159,27 @@ func TestSortPrefsDefaultsWhenMissing(t *testing.T) {
 	if loaded.ModelSortCol != "" {
 		t.Errorf("ModelSortCol = %q, want empty (default)", loaded.ModelSortCol)
 	}
-	if loaded.ModelSortDesc {
-		t.Error("ModelSortDesc = true, want false (default)")
+	if loaded.ModelSortDirs != nil {
+		t.Errorf("ModelSortDirs = %v, want nil (default)", loaded.ModelSortDirs)
+	}
+}
+
+func TestSortAscFromMapDefaults(t *testing.T) {
+	// nil map → all ascending
+	result := sortAscFromMap(nil)
+	for i, v := range result {
+		if !v {
+			t.Errorf("sortAscFromMap(nil)[%d] = false, want true", i)
+		}
+	}
+}
+
+func TestSortAscRoundTrip(t *testing.T) {
+	original := [4]bool{true, false, false, true}
+	m := sortAscToMap(original)
+	restored := sortAscFromMap(m)
+	if restored != original {
+		t.Errorf("round-trip: got %v, want %v", restored, original)
 	}
 }
 

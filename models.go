@@ -100,6 +100,29 @@ func sortColFromName(name string) int {
 	return 0
 }
 
+// sortAscFromMap converts a config map (column name → ascending) to a [4]bool array.
+// Missing columns default to ascending (true).
+func sortAscFromMap(m map[string]bool) [4]bool {
+	var result [4]bool
+	for i, name := range sortColNames {
+		if asc, ok := m[name]; ok {
+			result[i] = asc
+		} else {
+			result[i] = true
+		}
+	}
+	return result
+}
+
+// sortAscToMap converts a [4]bool array to a config map (column name → ascending).
+func sortAscToMap(arr [4]bool) map[string]bool {
+	m := make(map[string]bool, 4)
+	for i, name := range sortColNames {
+		m[name] = arr[i]
+	}
+	return m
+}
+
 // formatPrice formats a per-million-token price as "$X.XX".
 func formatPrice(price float64) string {
 	return fmt.Sprintf("$%.2f", price)
