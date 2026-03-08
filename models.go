@@ -199,9 +199,10 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 	}
 
 	// Build header with sort indicator on active column
-	arrow := "▲"
+	// ▼ = list reads downward (A→Z / low→high), ▲ = list reads upward (Z→A / high→low)
+	arrow := "▼"
 	if !sortAsc {
-		arrow = "▼"
+		arrow = "▲"
 	}
 	hdrParts := make([]string, 4)
 	widths := [4]int{maxName, maxProv, maxPrice, maxCtx}
