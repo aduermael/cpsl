@@ -1,0 +1,30 @@
+[
+  {"provider":"anthropic","id":"claude-opus-4-1-20250620","display_name":"Claude Opus 4.1","prompt_price":15.0,"completion_price":75.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-opus-4-0-20250514","display_name":"Claude Opus 4","prompt_price":15.0,"completion_price":75.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-3-5-sonnet-20241022","display_name":"Claude 3.5 Sonnet","prompt_price":6.0,"completion_price":30.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-opus-4-6-20250801","display_name":"Claude Opus 4.6","prompt_price":5.0,"completion_price":25.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-opus-4-5-20250620","display_name":"Claude Opus 4.5","prompt_price":5.0,"completion_price":25.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-sonnet-4-6-20250801","display_name":"Claude Sonnet 4.6","prompt_price":3.0,"completion_price":15.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-sonnet-4-5-20250514","display_name":"Claude Sonnet 4.5","prompt_price":3.0,"completion_price":15.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-sonnet-4-0-20250514","display_name":"Claude Sonnet 4","prompt_price":3.0,"completion_price":15.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-3-7-sonnet-20250219","display_name":"Claude 3.7 Sonnet","prompt_price":3.0,"completion_price":15.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-haiku-4-5-20250414","display_name":"Claude Haiku 4.5","prompt_price":1.0,"completion_price":5.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-3-5-haiku-20241022","display_name":"Claude 3.5 Haiku","prompt_price":0.80,"completion_price":4.0,"context_window":200000},
+  {"provider":"anthropic","id":"claude-3-haiku-20240307","display_name":"Claude 3 Haiku","prompt_price":0.25,"completion_price":1.25,"context_window":200000},
+
+  {"provider":"grok","id":"grok-4","display_name":"Grok 4","prompt_price":3.0,"completion_price":15.0,"context_window":256000},
+  {"provider":"grok","id":"grok-3","display_name":"Grok 3","prompt_price":3.0,"completion_price":15.0,"context_window":131072},
+  {"provider":"grok","id":"grok-3-beta","display_name":"Grok 3 Beta","prompt_price":3.0,"completion_price":15.0,"context_window":131072},
+  {"provider":"grok","id":"grok-3-mini","display_name":"Grok 3 Mini","prompt_price":0.30,"completion_price":0.50,"context_window":131072},
+  {"provider":"grok","id":"grok-3-mini-beta","display_name":"Grok 3 Mini Beta","prompt_price":0.30,"completion_price":0.50,"context_window":131072},
+  {"provider":"grok","id":"grok-4-1-fast","display_name":"Grok 4.1 Fast","prompt_price":0.20,"completion_price":0.50,"context_window":131072},
+  {"provider":"grok","id":"grok-4-fast","display_name":"Grok 4 Fast","prompt_price":0.20,"completion_price":0.50,"context_window":131072},
+  {"provider":"grok","id":"grok-code-fast-1","display_name":"Grok Code Fast 1","prompt_price":0.20,"completion_price":1.50,"context_window":131072},
+
+  {"provider":"openai","id":"gpt-4o","display_name":"GPT-4o","prompt_price":2.50,"completion_price":10.0,"context_window":128000},
+  {"provider":"openai","id":"gpt-4o-mini","display_name":"GPT-4o Mini","prompt_price":0.15,"completion_price":0.60,"context_window":128000},
+  {"provider":"openai","id":"o3-mini","display_name":"o3-mini","prompt_price":1.10,"completion_price":4.40,"context_window":200000},
+
+  {"provider":"gemini","id":"gemini-2.5-pro","display_name":"Gemini 2.5 Pro","prompt_price":1.25,"completion_price":10.0,"context_window":1048576},
+  {"provider":"gemini","id":"gemini-2.5-flash","display_name":"Gemini 2.5 Flash","prompt_price":0.15,"completion_price":0.60,"context_window":1048576}
+]

@@ -20,7 +20,7 @@
 
 ## Phase 1: Model data JSON file and context window field
 
-- [ ] 1a: Create `models.json` at repo root with all current models plus a `context_window` field (tokens). Add context window values for each model (e.g., Claude Opus 4.6 = 200000, GPT-4o = 128000, Gemini 2.5 Pro = 1000000, etc.). Structure: array of objects with provider, id, display_name, prompt_price, completion_price, context_window.
+- [x] 1a: Create `models.json` at repo root with all current models plus a `context_window` field (tokens). Add context window values for each model (e.g., Claude Opus 4.6 = 200000, GPT-4o = 128000, Gemini 2.5 Pro = 1000000, etc.). Structure: array of objects with provider, id, display_name, prompt_price, completion_price, context_window.
 - [ ] 1b: Add `ContextWindow int` field to `ModelDef` struct. Replace `builtinModels()` to load from embedded `models.json` (use `//go:embed`). Update tests.
 - [ ] 1c: Add unit test that validates `models.json` loads correctly and all entries have required fields populated.
 
