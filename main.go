@@ -1810,14 +1810,12 @@ func (a *App) handleCommand(input string) {
 		}
 		// Phase 3: inline model selection with menu
 		activeID := a.config.resolveActiveModel(a.models)
-		var lines []string
+		lines := formatModelMenuLines(available, activeID)
 		activeIdx := 0
 		for i, m := range available {
 			if m.ID == activeID {
-				lines = append(lines, fmt.Sprintf("%s (%s) ●", m.DisplayName, m.Provider))
 				activeIdx = i
-			} else {
-				lines = append(lines, fmt.Sprintf("%s (%s)", m.DisplayName, m.Provider))
+				break
 			}
 		}
 		a.menuLines = lines

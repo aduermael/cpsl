@@ -67,6 +67,74 @@ func formatPrice(price float64) string {
 	return fmt.Sprintf("$%.2f", price)
 }
 
+// formatPricePerM formats a per-million-token price as "$X.XX/M".
+func formatPricePerM(price float64) string {
+	return fmt.Sprintf("$%.2f/M", price)
+}
+
+// formatContextWindow formats a token count for display.
+// Examples: 128000 → "128k", 200000 → "200k", 1048576 → "1.0m".
+func formatContextWindow(tokens int) string {
+	if tokens >= 1000000 {
+		v := float64(tokens) / 1000000.0
+		if v == float64(int(v)) {
+			return fmt.Sprintf("%dm", int(v))
+		}
+		return fmt.Sprintf("%.1fm", v)
+	}
+	return fmt.Sprintf("%dk", tokens/1000)
+}
+
+// formatModelMenuLines formats models as aligned multi-column menu lines.
+// Columns: Name, Provider, Price (prompt), Context Window.
+// The active model is marked with ● at the end.
+func formatModelMenuLines(models []ModelDef, activeID string) []string {
+	// Compute column widths
+	maxName, maxProv, maxPrice, maxCtx := 0, 0, 0, 0
+	type entry struct {
+		name, prov, price, ctx string
+		active                 bool
+	}
+	entries := make([]entry, len(models))
+	for i, m := range models {
+		e := entry{
+			name:   m.DisplayName,
+			prov:   m.Provider,
+			price:  formatPricePerM(m.PromptPrice),
+			ctx:    formatContextWindow(m.ContextWindow),
+			active: m.ID == activeID,
+		}
+		if len(e.name) > maxName {
+			maxName = len(e.name)
+		}
+		if len(e.prov) > maxProv {
+			maxProv = len(e.prov)
+		}
+		if len(e.price) > maxPrice {
+			maxPrice = len(e.price)
+		}
+		if len(e.ctx) > maxCtx {
+			maxCtx = len(e.ctx)
+		}
+		entries[i] = e
+	}
+
+	lines := make([]string, len(entries))
+	for i, e := range entries {
+		marker := " "
+		if e.active {
+			marker = "●"
+		}
+		lines[i] = fmt.Sprintf("%-*s  %-*s  %*s  %*s %s",
+			maxName, e.name,
+			maxProv, e.prov,
+			maxPrice, e.price,
+			maxCtx, e.ctx,
+			marker)
+	}
+	return lines
+}
+
 // SWE-bench leaderboard types
 
 const sweBenchURL = "https://raw.githubusercontent.com/SWE-bench/swe-bench.github.io/master/data/leaderboards.json"

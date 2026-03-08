@@ -33,7 +33,7 @@
 
 ## Phase 3: Multi-column display for model menu
 
-- [ ] 3a: Format model menu lines as aligned columns: Name, Provider, Price (prompt price), Context Window. Use fixed-width formatting with padding so columns align. Price shown as `$X.XX/M`. Context window shown as `XXXk` or `X.Xm`.
+- [x] 3a: Format model menu lines as aligned columns: Name, Provider, Price (prompt price), Context Window. Use fixed-width formatting with padding so columns align. Price shown as `$X.XX/M`. Context window shown as `XXXk` or `X.Xm`.
 - [ ] 3b: Add a header row at the top of the model menu (not selectable, rendered before the scrollable items) showing column names. Highlight the currently active sort column.
 
 ## Phase 4: Column sorting with Left/Right and Tab
