@@ -835,8 +835,9 @@ func (a *App) buildInputRows() []string {
 
 	// Menu mode replaces input area
 	if a.menuActive && len(a.menuLines) > 0 {
+		w := a.width
 		if a.menuHeader != "" {
-			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", a.menuHeader))
+			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(a.menuHeader, w)))
 		}
 		maxVisible := getTerminalHeight() * 60 / 100
 		if maxVisible < 1 {
@@ -850,16 +851,18 @@ func (a *App) buildInputRows() []string {
 		for i := a.menuScrollOffset; i < end; i++ {
 			line := a.menuLines[i]
 			if i == a.menuCursor {
-				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", line))
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(line, w-2)))
 			} else {
-				rows = append(rows, line)
+				rows = append(rows, truncateWithEllipsis(line, w))
 			}
 		}
 		first := a.menuScrollOffset + 1
 		last := end
-		rows = append(rows, fmt.Sprintf("\033[2m(%d->%d / %d)\033[0m", first, last, total))
+		indicator := fmt.Sprintf("(%d->%d / %d)", first, last, total)
+		rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(indicator, w)))
 		if a.menuModels != nil {
-			rows = append(rows, "\033[2m←/→ sort column  Tab flip order  Enter select  Esc close\033[0m")
+			hints := "←/→ sort column  Tab flip order  Enter select  Esc close"
+			rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(hints, w)))
 		}
 		rows = append(rows, sep)
 		return rows
@@ -1274,6 +1277,7 @@ func (a *App) Run() error {
 	fmt.Print("\033[?1049h")
 	fmt.Print("\033[?2004h")
 	defer func() {
+		fmt.Print("\033[?25h")  // ensure cursor visible on exit
 		fmt.Print("\033[?2004l")
 		fmt.Print("\033[?1049l")
 		end := time.Now()
