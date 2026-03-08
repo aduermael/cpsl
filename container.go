@@ -163,8 +163,25 @@ func (c *ContainerClient) ContainerID() string {
 }
 
 // ShellCmd returns an exec.Cmd that opens an interactive shell in the container.
+// Busybox ash (Alpine's /bin/sh) sends \033[6n (cursor position query) on every
+// prompt. The CPR response travels through docker's double-PTY proxy chain with
+// enough latency to arrive after the prompt, leaking as visible "[row;colR" text.
+// Bash/readline does NOT have this issue, so we prefer bash when available.
+// For ash, we pre-consume a CPR response to warm up the PTY chain before exec-ing
+// the interactive shell.
 func (c *ContainerClient) ShellCmd() *exec.Cmd {
-	cmd := exec.Command("docker", "exec", "-it", "-w", "/workspace", c.containerID, "/bin/sh", "-l")
+	// Prefer bash (no CPR issue), fall back to ash with CPR pre-consumption.
+	script := `if command -v bash >/dev/null 2>&1; then
+  exec bash -l
+else
+  stty raw -echo 2>/dev/null
+  printf '\033[6n'
+  dd bs=32 count=1 >/dev/null 2>&1
+  stty sane 2>/dev/null
+  exec /bin/sh -l
+fi`
+	cmd := exec.Command("docker", "exec", "-it", "-w", "/workspace", c.containerID,
+		"/bin/sh", "-c", script)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr

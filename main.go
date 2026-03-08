@@ -677,6 +677,11 @@ type App struct {
 	stopCh   chan struct{}
 	quit     bool
 
+	// Stdin goroutine control
+	stdinDup *os.File   // dup'd stdin fd for the reader goroutine
+	stdinCh  chan byte   // channel carrying bytes from the reader goroutine
+	readByte func() (byte, bool)
+
 	// Chat state
 	messages         []chatMessage
 	config           Config
@@ -1066,6 +1071,57 @@ func (a *App) autocompleteMatches() []string {
 	return filterCommands(val)
 }
 
+// ─── Stdin reader goroutine ───
+
+// startStdinReader creates a dup'd stdin fd and starts a goroutine that reads
+// from it byte-by-byte into a.stdinCh. This allows us to stop the reader by
+// closing the dup'd fd (e.g. before entering shell mode).
+func (a *App) startStdinReader() {
+	dupFd, err := syscall.Dup(int(os.Stdin.Fd()))
+	if err != nil {
+		log.Fatalf("dup stdin: %v", err)
+	}
+	a.stdinDup = os.NewFile(uintptr(dupFd), "stdin-dup")
+	a.stdinCh = make(chan byte, 64)
+
+	go func() {
+		buf := make([]byte, 1)
+		for {
+			_, err := a.stdinDup.Read(buf)
+			if err != nil {
+				close(a.stdinCh)
+				return
+			}
+			a.stdinCh <- buf[0]
+		}
+	}()
+
+	a.readByte = func() (byte, bool) {
+		b, ok := <-a.stdinCh
+		return b, ok
+	}
+}
+
+// stopStdinReader closes the dup'd stdin fd, causing the reader goroutine to
+// exit, then drains any remaining bytes from stdinCh.
+func (a *App) stopStdinReader() {
+	if a.stdinDup != nil {
+		a.stdinDup.Close()
+		a.stdinDup = nil
+	}
+	// Drain remaining bytes
+	for {
+		select {
+		case _, ok := <-a.stdinCh:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
+	}
+}
+
 // ─── Main event loop ───
 
 func (a *App) Run() error {
@@ -1118,25 +1174,8 @@ func (a *App) Run() error {
 	// Initial render
 	a.render()
 
-	// Read stdin in a goroutine so we can select on it alongside channels
-	stdinCh := make(chan byte, 64)
-	go func() {
-		buf := make([]byte, 1)
-		for {
-			_, err := os.Stdin.Read(buf)
-			if err != nil {
-				close(stdinCh)
-				return
-			}
-			stdinCh <- buf[0]
-		}
-	}()
-
-	// readByte reads a single byte from the stdin channel (blocking).
-	readByte := func() (byte, bool) {
-		b, ok := <-stdinCh
-		return b, ok
-	}
+	// Start the stdin reader goroutine
+	a.startStdinReader()
 
 	// Main event loop — selects on stdin, agent events, and async results
 	for {
@@ -1144,13 +1183,13 @@ func (a *App) Run() error {
 		// Otherwise, just wait for stdin or async results.
 		if a.agent != nil && a.agentRunning {
 			select {
-			case ch, ok := <-stdinCh:
+			case ch, ok := <-a.stdinCh:
 				if !ok {
 					goto done
 				}
 				a.drainResults()
 				a.drainAgentEvents()
-				if a.handleByte(ch, stdinCh, readByte) {
+				if a.handleByte(ch, a.stdinCh, a.readByte) {
 					goto done
 				}
 			case event, ok := <-a.agent.Events():
@@ -1165,13 +1204,13 @@ func (a *App) Run() error {
 			}
 		} else {
 			select {
-			case ch, ok := <-stdinCh:
+			case ch, ok := <-a.stdinCh:
 				if !ok {
 					goto done
 				}
 				a.drainResults()
 				a.drainAgentEvents()
-				if a.handleByte(ch, stdinCh, readByte) {
+				if a.handleByte(ch, a.stdinCh, a.readByte) {
 					goto done
 				}
 			case result := <-a.resultCh:
@@ -2162,12 +2201,18 @@ func (a *App) enterShellMode() {
 		return
 	}
 
+	// Stop the stdin reader so it doesn't compete with the shell
+	a.stopStdinReader()
+
 	// Exit alt screen, restore terminal
 	fmt.Print("\033[?2004l") // disable bracketed paste
 	fmt.Print("\033[?1049l") // exit alt screen
 	term.Restore(a.fd, a.oldState)
 
-	// Run shell synchronously
+	// Brief pause + flush to discard any stale terminal responses still in-flight.
+	flushStdin(a.fd)
+
+	// Run shell synchronously — full TTY control goes to the child process
 	shellCmd := a.container.ShellCmd()
 	shellErr := shellCmd.Run()
 
@@ -2183,6 +2228,9 @@ func (a *App) enterShellMode() {
 	// Re-enter alt screen, re-enable bracketed paste
 	fmt.Print("\033[?1049h")
 	fmt.Print("\033[?2004h")
+
+	// Restart the stdin reader goroutine
+	a.startStdinReader()
 
 	a.width = getWidth()
 
@@ -2446,6 +2494,24 @@ func (a *App) cleanup() {
 }
 
 // ─── Helpers ───
+
+// flushStdin discards any bytes pending in the terminal input buffer.
+// A brief pause lets in-flight terminal responses (e.g. DSR cursor position
+// reports triggered by alt-screen transitions) arrive before we drain them.
+func flushStdin(fd int) {
+	time.Sleep(50 * time.Millisecond)
+	if err := syscall.SetNonblock(fd, true); err != nil {
+		return
+	}
+	defer syscall.SetNonblock(fd, false)
+	buf := make([]byte, 256)
+	for {
+		n, err := syscall.Read(fd, buf)
+		if n <= 0 || err != nil {
+			return
+		}
+	}
+}
 
 func getWidth() int {
 	w, _, err := term.GetSize(int(os.Stdin.Fd()))
