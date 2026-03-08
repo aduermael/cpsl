@@ -889,17 +889,21 @@ func (a *App) positionCursor(buf *strings.Builder) {
 				col = len(fields[a.cfgCursor].label) + 2 // "label: "
 			}
 			col += a.cfgEditCursor
+			buf.WriteString("\033[?25h")
 			buf.WriteString(fmt.Sprintf("\033[%d;%dH", fieldRow-s, col+1))
 		} else {
+			buf.WriteString("\033[?25l")
 			buf.WriteString(fmt.Sprintf("\033[%d;1H", a.sepRow+1-s))
 		}
 		return
 	}
 	if a.menuActive && len(a.menuLines) > 0 {
 		// Menu between separators — hide cursor
+		buf.WriteString("\033[?25l")
 		buf.WriteString(fmt.Sprintf("\033[%d;1H", a.sepRow+1-s))
 		return
 	}
+	buf.WriteString("\033[?25h")
 	curLine, curCol := cursorVisualPos(a.input, a.cursor, a.width)
 	buf.WriteString(fmt.Sprintf("\033[%d;%dH", a.inputStartRow+curLine-s, curCol+1))
 }
@@ -1805,13 +1809,29 @@ func (a *App) handleCommand(input string) {
 			return
 		}
 		// Phase 3: inline model selection with menu
+		activeID := a.config.resolveActiveModel(a.models)
 		var lines []string
-		for _, m := range available {
-			lines = append(lines, fmt.Sprintf("%s (%s)", m.DisplayName, m.Provider))
+		activeIdx := 0
+		for i, m := range available {
+			if m.ID == activeID {
+				lines = append(lines, fmt.Sprintf("%s (%s) ●", m.DisplayName, m.Provider))
+				activeIdx = i
+			} else {
+				lines = append(lines, fmt.Sprintf("%s (%s)", m.DisplayName, m.Provider))
+			}
 		}
 		a.menuLines = lines
-		a.menuCursor = 0
-		a.menuScrollOffset = 0
+		a.menuCursor = activeIdx
+		// Scroll so active model is visible
+		maxVisible := getTerminalHeight() * 60 / 100
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		if activeIdx >= maxVisible {
+			a.menuScrollOffset = activeIdx - maxVisible + 1
+		} else {
+			a.menuScrollOffset = 0
+		}
 		a.menuActive = true
 		a.menuAction = func(idx int) {
 			if idx >= 0 && idx < len(available) {
@@ -2293,6 +2313,7 @@ func (a *App) enterShellMode() {
 	a.stopStdinReader()
 
 	// Exit alt screen, restore terminal
+	fmt.Print("\033[?25h")   // show cursor
 	fmt.Print("\033[?2004l") // disable bracketed paste
 	fmt.Print("\033[?1049l") // exit alt screen
 	term.Restore(a.fd, a.oldState)
