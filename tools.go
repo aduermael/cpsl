@@ -287,7 +287,13 @@ func (t *DevEnvTool) readDockerfile() (string, error) {
 	data, err := os.ReadFile(t.dockerfilePath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "No Dockerfile exists at .cpsl/Dockerfile yet. Use the 'write' action to create one.", nil
+			msg := "No Dockerfile exists at .cpsl/Dockerfile yet. Use the 'write' action to create one."
+			// Check for a Dockerfile in the project root.
+			rootDockerfile := filepath.Join(t.workspace, "Dockerfile")
+			if rootData, rootErr := os.ReadFile(rootDockerfile); rootErr == nil {
+				msg += fmt.Sprintf("\n\nNote: A Dockerfile exists in the project root. You can use it as a base for .cpsl/Dockerfile:\n\n```\n%s```", string(rootData))
+			}
+			return msg, nil
 		}
 		return "", fmt.Errorf("reading Dockerfile: %w", err)
 	}

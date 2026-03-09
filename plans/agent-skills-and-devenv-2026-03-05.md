@@ -49,7 +49,7 @@ Improve the coding agent with:
 
 - [x] 2a: Add `DevEnvTool` in `tools.go` — implements `Tool` interface. Input schema: `{action: "read"|"write"|"build", content?: string}`. `read` returns current Dockerfile contents (or states none exists). `write` writes content to `.cpsl/Dockerfile`. `build` builds the image and replaces the container. The tool needs access to `ContainerClient` and project paths.
 - [x] 2b: Container rebuild support — add `Rebuild(dockerfilePath string, workspace string, mounts []MountSpec) error` method to `ContainerClient`. It builds the image (`docker build -t cpsl-custom-<id> -f <path> .`), stops current container, starts new one with the built image. Update `ContainerConfig` to track custom image name.
-- [ ] 2c: Detect existing Dockerfile — when `DevEnvTool` `read` action is called and no `.cpsl/Dockerfile` exists, check for `Dockerfile` in the project root. If found, mention it in the response so the LLM can suggest copying/adapting it.
+- [x] 2c: Detect existing Dockerfile — when `DevEnvTool` `read` action is called and no `.cpsl/Dockerfile` exists, check for `Dockerfile` in the project root. If found, mention it in the response so the LLM can suggest copying/adapting it.
 - [ ] 2d: Wire `DevEnvTool` into agent — register in `main.go` tool list (always available when container is ready). Add devenv section to system prompt in `systemprompt.go`.
 - [ ] 2e: Add a `devenv` skill in `.cpsl/skills/devenv.md` — instructs the agent to check for existing Dockerfiles, propose environment setup, and use the devenv tool when users want to install tools/languages.
 - [ ] 2f: Tests for DevEnvTool — test read/write/build actions, Dockerfile detection, error cases (build failure, missing content for write).
