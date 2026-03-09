@@ -43,7 +43,7 @@
 - [x] 3a: Add cost tracking state to App: `sessionCostUSD float64` (accumulated cost for current session). Add a helper `computeCost(modelID string, usage types.Usage) float64` that looks up the model in the catalog and calculates `(inputTokens * inputPrice + outputTokens * outputPrice) / 1_000_000`. Handle cache pricing for Anthropic (cache read tokens are cheaper).
 - [x] 3b: Extend `AgentEvent` with a `Usage *types.Usage` and `Model string` field. In `runLoop`, after each stream completes (the `Done` chunk with `Response`), extract usage from the `StreamChunk`'s completion response and emit it alongside `EventDone` or a new `EventUsage` event. For tool-loop iterations, emit usage after each LLM call.
 - [x] 3c: In `handleAgentEvent`, when receiving usage data, call `computeCost` and add to `sessionCostUSD`. Display the running cost in the status/separator line (where the model name or other metadata is shown). Format as `$0.0000` for small amounts, `$0.01` etc. for larger. Update on every LLM call completion.
-- [ ] 3d: Add tests for `computeCost` covering standard tokens, cache read tokens, and models not in catalog (returns 0).
+- [x] 3d: Add tests for `computeCost` covering standard tokens, cache read tokens, and models not in catalog (returns 0).
 
 ## Phase 4: Sub-agent tool
 

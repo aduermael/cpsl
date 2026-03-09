@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"langdag.com/langdag"
+	"langdag.com/langdag/types"
 )
 
 // testModels returns a known model list for testing (native API IDs).
@@ -575,5 +576,101 @@ func TestEnrichModelsNilCatalog(t *testing.T) {
 	enrichModelsFromCatalog(models, nil)
 	if models[0].PromptPrice != 5.0 {
 		t.Errorf("nil catalog should not modify prices, got %f", models[0].PromptPrice)
+	}
+}
+
+// --- computeCost tests ---
+
+func TestComputeCostStandardTokens(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderOpenAI, ID: "gpt-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
+	}
+	usage := types.Usage{InputTokens: 1000, OutputTokens: 500}
+	got := computeCost(models, "gpt-4o", usage)
+	// (1000 * 2.5 + 500 * 10.0) / 1_000_000 = (2500 + 5000) / 1_000_000 = 0.0075
+	want := 0.0075
+	if got != want {
+		t.Errorf("computeCost = %f, want %f", got, want)
+	}
+}
+
+func TestComputeCostAnthropicCacheRead(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderAnthropic, ID: "claude-sonnet-4-0-20250514", PromptPrice: 3.0, CompletionPrice: 15.0},
+	}
+	usage := types.Usage{
+		InputTokens:          1000,
+		OutputTokens:         500,
+		CacheReadInputTokens: 10000,
+	}
+	got := computeCost(models, "claude-sonnet-4-0-20250514", usage)
+	// input: 1000 * 3.0 / 1M = 0.003
+	// output: 500 * 15.0 / 1M = 0.0075
+	// cache read: 10000 * 3.0 * 0.1 / 1M = 0.003
+	want := 0.003 + 0.0075 + 0.003
+	if got != want {
+		t.Errorf("computeCost = %f, want %f", got, want)
+	}
+}
+
+func TestComputeCostNonAnthropicCacheReadIgnored(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderOpenAI, ID: "gpt-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
+	}
+	usage := types.Usage{
+		InputTokens:          1000,
+		OutputTokens:         500,
+		CacheReadInputTokens: 10000,
+	}
+	got := computeCost(models, "gpt-4o", usage)
+	// Cache read tokens should not add cost for non-Anthropic
+	want := (1000*2.5 + 500*10.0) / 1_000_000
+	if got != want {
+		t.Errorf("computeCost = %f, want %f", got, want)
+	}
+}
+
+func TestComputeCostModelNotFound(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderOpenAI, ID: "gpt-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
+	}
+	usage := types.Usage{InputTokens: 1000, OutputTokens: 500}
+	got := computeCost(models, "nonexistent-model", usage)
+	if got != 0 {
+		t.Errorf("computeCost for unknown model = %f, want 0", got)
+	}
+}
+
+func TestComputeCostZeroPricing(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderGrok, ID: "grok-free", PromptPrice: 0, CompletionPrice: 0},
+	}
+	usage := types.Usage{InputTokens: 5000, OutputTokens: 1000}
+	got := computeCost(models, "grok-free", usage)
+	if got != 0 {
+		t.Errorf("computeCost with zero pricing = %f, want 0", got)
+	}
+}
+
+// --- formatCost tests ---
+
+func TestFormatCostSmall(t *testing.T) {
+	got := formatCost(0.0075)
+	if got != "$0.0075" {
+		t.Errorf("formatCost(0.0075) = %q, want $0.0075", got)
+	}
+}
+
+func TestFormatCostLarge(t *testing.T) {
+	got := formatCost(1.23)
+	if got != "$1.23" {
+		t.Errorf("formatCost(1.23) = %q, want $1.23", got)
+	}
+}
+
+func TestFormatCostBoundary(t *testing.T) {
+	got := formatCost(0.01)
+	if got != "$0.01" {
+		t.Errorf("formatCost(0.01) = %q, want $0.01", got)
 	}
 }
