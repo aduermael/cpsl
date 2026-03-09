@@ -238,9 +238,54 @@ func (c *ContainerClient) Status() (ContainerStatus, error) {
 }
 
 // Rebuild builds a Docker image from the given Dockerfile, stops the current
-// container, and starts a new one with the built image.
+// container, and starts a new one with the built image. The workspace is used
+// as the build context directory.
 func (c *ContainerClient) Rebuild(dockerfilePath, workspace string, mounts []MountSpec) error {
-	return fmt.Errorf("rebuild not implemented")
+	// Build the custom image.
+	imageName := fmt.Sprintf("cpsl-custom-%s", randomID())
+
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer buildCancel()
+
+	buildCmd := dockerCommand(buildCtx, "docker", "build",
+		"-t", imageName,
+		"-f", dockerfilePath,
+		workspace,
+	)
+	var buildStderr bytes.Buffer
+	buildCmd.Stderr = &buildStderr
+
+	if err := buildCmd.Run(); err != nil {
+		return &ContainerError{
+			Code:    ErrStartFailed,
+			Message: fmt.Sprintf("docker build: %s", strings.TrimSpace(buildStderr.String())),
+		}
+	}
+
+	// Stop the current container.
+	c.mu.Lock()
+	wasRunning := c.running
+	oldID := c.containerID
+	c.mu.Unlock()
+
+	if wasRunning {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer stopCancel()
+		rm := dockerCommand(stopCtx, "docker", "rm", "-f", oldID)
+		_ = rm.Run()
+
+		c.mu.Lock()
+		c.running = false
+		c.containerID = ""
+		c.mu.Unlock()
+	}
+
+	// Update config to use the new image and start a new container.
+	c.mu.Lock()
+	c.config.Image = imageName
+	c.mu.Unlock()
+
+	return c.Start(workspace, mounts)
 }
 
 // randomID generates a short random hex string for container naming.
