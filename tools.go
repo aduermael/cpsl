@@ -35,17 +35,17 @@ func NewBashTool(container *ContainerClient, timeout int) *BashTool {
 func (t *BashTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "bash",
-		Description: "Execute a bash command inside the dev container at /workspace. Use this to explore files, run tests, install packages, compile code, and perform any shell operations. Commands run as root in an isolated Docker container with the project mounted at /workspace.",
+		Description: "Run a shell command in the dev container (project mounted at /workspace). Use for: reading/editing files, running tests, installing packages, building code, and any shell task. Output is truncated to the last 200 lines / 30KB.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"command": {
 					"type": "string",
-					"description": "The bash command to execute"
+					"description": "The bash command to execute in /workspace"
 				},
 				"timeout": {
 					"type": "integer",
-					"description": "Timeout in seconds (default: 120)"
+					"description": "Timeout in seconds (default: 120, max: 600)"
 				}
 			},
 			"required": ["command"]
@@ -150,18 +150,18 @@ func NewGitTool(workDir string) *GitTool {
 func (t *GitTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "git",
-		Description: "Execute git commands on the host machine in the project worktree. Use this for version control operations: viewing status/diff/log, staging changes, committing, branching, pushing, etc. The `push` subcommand requires user approval.",
+		Description: "Run git commands on the host (not in the container). Use for: status, diff, log, add, commit, push, branch, checkout, etc. Push requires user approval. Allowed subcommands: status, diff, log, show, branch, checkout, add, commit, pull, push, fetch, stash, rebase, merge, reset, tag.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"subcommand": {
 					"type": "string",
-					"description": "The git subcommand (e.g. status, diff, add, commit, push)"
+					"description": "Git subcommand to run (e.g. status, diff, add, commit)"
 				},
 				"args": {
 					"type": "array",
 					"items": {"type": "string"},
-					"description": "Arguments to pass to the git subcommand"
+					"description": "Arguments for the subcommand (e.g. [\"-m\", \"fix bug\"])"
 				}
 			},
 			"required": ["subcommand"]
@@ -232,18 +232,18 @@ func NewDevEnvTool(container *ContainerClient, cpslDir, workspace string, mounts
 func (t *DevEnvTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "devenv",
-		Description: "Manage the development environment Dockerfile. Use 'read' to view the current Dockerfile, 'write' to create or update it, and 'build' to build the image and replace the running container. The Dockerfile lives at .cpsl/Dockerfile in the project.",
+		Description: "Manage the dev container Dockerfile at .cpsl/Dockerfile. Actions: 'read' shows current Dockerfile (or detects project root Dockerfile), 'write' creates/updates it, 'build' builds the image and hot-swaps the running container. Use this to install languages, tools, or system deps persistently.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"action": {
 					"type": "string",
 					"enum": ["read", "write", "build"],
-					"description": "Action to perform: read the Dockerfile, write new contents, or build and replace the container"
+					"description": "read: view current Dockerfile, write: set Dockerfile content, build: build image and replace container"
 				},
 				"content": {
 					"type": "string",
-					"description": "Dockerfile content (required for 'write' action)"
+					"description": "Dockerfile content (required for 'write')"
 				}
 			},
 			"required": ["action"]
