@@ -215,6 +215,8 @@ honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099/go.mod h1:rf3lG4BRIbNafJWh
 honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
 langdag.com/langdag v0.2.0 h1:lU6+nqhBgMtoncpYGQEi/nw7bqWmHJjc1G1HOwwrk24=
 langdag.com/langdag v0.2.0/go.mod h1:ssI+s82B1hMYfoo9+iQrt4MXcoyXYCYm9GVnnrdgWSU=
+langdag.com/langdag v0.3.0 h1:elQt3rNm0oIenxZGKTGm1jUQ96ol8/LdcTZ++jnGNwA=
+langdag.com/langdag v0.3.0/go.mod h1:ssI+s82B1hMYfoo9+iQrt4MXcoyXYCYm9GVnnrdgWSU=
 modernc.org/cc/v4 v4.21.4 h1:3Be/Rdo1fpr8GrQ7IVw9OHtplU4gWbb+wNgeoBMmGLQ=
 modernc.org/cc/v4 v4.21.4/go.mod h1:HM7VJTZbUCR3rV8EYBi9wxnJ0ZBRiGE5OeGXNA0IsLQ=
 modernc.org/ccgo/v4 v4.19.2 h1:lwQZgvboKD0jBwdaeVCTouxhxAyN6iawF3STraAal8Y=

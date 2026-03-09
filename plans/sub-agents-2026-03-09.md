@@ -30,7 +30,7 @@
 
 ## Phase 1: Upgrade langdag to v0.3.0
 
-- [ ] 1a: Update `go.mod` to use `langdag.com/langdag v0.3.0`. Run `go mod tidy`. Verify build and existing tests pass.
+- [x] 1a: Update `go.mod` to use `langdag.com/langdag v0.3.0`. Run `go mod tidy`. Verify build and existing tests pass.
 
 ## Phase 2: Replace CPSL model pricing with langdag's ModelCatalog
 
