@@ -58,7 +58,7 @@ Improve the coding agent with:
 
 **Context**: Current system prompt is functional but basic. Improve it with patterns from popular open-source agents (Aider, OpenHands, Claude Code) — focused on making the agent more effective at coding tasks without being overly verbose.
 
-- [ ] 3a: Rewrite `buildSystemPrompt` — restructure into clear sections: Role & Capabilities, Tool Usage (per-tool), Coding Practices, Communication Style. Add guidance on: breaking down complex tasks, verifying changes work, asking clarifying questions when ambiguous, not over-engineering. Keep it concise — aim for ~1000 tokens total (excluding skills).
+- [x] 3a: Rewrite `buildSystemPrompt` — restructure into clear sections: Role & Capabilities, Tool Usage (per-tool), Coding Practices, Communication Style. Add guidance on: breaking down complex tasks, verifying changes work, asking clarifying questions when ambiguous, not over-engineering. Keep it concise — aim for ~1000 tokens total (excluding skills).
 - [ ] 3b: Improve per-tool descriptions in tool `Definition()` methods — make descriptions more actionable and specific about when/how to use each tool. These are what the LLM sees in the tool schema.
 - [ ] 3c: Tests — verify system prompt includes expected sections for different tool combinations, verify skills are included.
 
