@@ -39,7 +39,7 @@ Improve the coding agent with:
 **Context**: Skills are `.md` files in `.cpsl/skills/` (project-local). Each skill file has a YAML front matter with `name` and `description`, followed by markdown content. The skill content is appended to the system prompt so the LLM knows about project-specific conventions.
 
 - [x] 1a: Add `skills.go` — define `Skill` struct (`Name`, `Description`, `Content string`), `loadSkills(dir string) ([]Skill, error)` that reads all `.md` files from a directory, parses YAML front matter (name + description), and returns the skill list. Handle missing directory gracefully (return empty).
-- [ ] 1b: Integrate skills into system prompt — update `buildSystemPrompt` to accept `[]Skill` parameter. Append a `## Skills` section listing each skill's content. Update call site in `main.go`.
+- [x] 1b: Integrate skills into system prompt — update `buildSystemPrompt` to accept `[]Skill` parameter. Append a `## Skills` section listing each skill's content. Update call site in `main.go`. Added `--display-system-prompts` CLI flag.
 - [ ] 1c: Add a default skill — create `.cpsl/skills/coding.md` as an example skill with general coding best practices (read before edit, test after changes, etc.). This also validates the loading works.
 - [ ] 1d: Tests for skills loading — test `loadSkills` with valid skills dir, empty dir, missing dir, malformed front matter.
 

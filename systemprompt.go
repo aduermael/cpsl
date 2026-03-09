@@ -8,7 +8,7 @@ import (
 
 // buildSystemPrompt constructs the system prompt for the coding agent.
 // Tool-specific guidelines are included only when the corresponding tool is available.
-func buildSystemPrompt(tools []Tool, workDir string) string {
+func buildSystemPrompt(tools []Tool, skills []Skill, workDir string) string {
 	toolNames := make(map[string]bool)
 	for _, t := range tools {
 		toolNames[t.Definition().Name] = true
@@ -62,7 +62,24 @@ Guidelines:
 - Run existing tests after changes. If there are no tests, consider whether the change warrants adding them.
 - If you're unsure about something, say so rather than guessing.`)
 
-	// 5. Current date/time and working directory (always last)
+	// 5. Skills (if any loaded)
+	if len(skills) > 0 {
+		b.WriteString(`
+
+## Skills
+
+You have the following skills available. Apply them when relevant to the user's request.
+
+`)
+		for _, s := range skills {
+			b.WriteString(fmt.Sprintf("- **%s**: %s\n", s.Name, s.Description))
+		}
+		for _, s := range skills {
+			b.WriteString(fmt.Sprintf("\n### %s\n\n%s\n", s.Name, s.Content))
+		}
+	}
+
+	// 6. Current date/time and working directory (always last)
 	b.WriteString(fmt.Sprintf(`
 
 ## Environment

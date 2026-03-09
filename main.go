@@ -739,6 +739,9 @@ type App struct {
 	cfgEditBuf    []rune
 	cfgEditCursor int
 	cfgDraft      Config
+
+	// CLI flags
+	displaySystemPrompts bool
 }
 
 func newApp() *App {
@@ -2469,8 +2472,18 @@ func (a *App) startAgent(userMessage string) {
 		a.langdagProvider = modelProvider
 	}
 
+	// Load project-local skills from .cpsl/skills/
+	var skills []Skill
+	if a.worktreePath != "" {
+		skills, _ = loadSkills(filepath.Join(a.worktreePath, ".cpsl", "skills"))
+	}
+
 	workDir := "/workspace"
-	systemPrompt := buildSystemPrompt(tools, workDir)
+	systemPrompt := buildSystemPrompt(tools, skills, workDir)
+
+	if a.displaySystemPrompts {
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "── System Prompt ──\n" + systemPrompt})
+	}
 
 	agent := NewAgent(a.langdagClient, tools, systemPrompt, modelID)
 	a.agent = agent
@@ -2732,6 +2745,13 @@ func main() {
 	log.SetOutput(io.Discard)
 
 	app := newApp()
+
+	for _, arg := range os.Args[1:] {
+		if arg == "--display-system-prompts" {
+			app.displaySystemPrompts = true
+		}
+	}
+
 	if err := app.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
