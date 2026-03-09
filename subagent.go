@@ -18,6 +18,7 @@ type SubAgentTool struct {
 	model        string
 	maxTurns     int
 	workDir      string
+	parentEvents chan<- AgentEvent // set after construction; forwards live events to TUI
 }
 
 func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, workDir string) *SubAgentTool {
@@ -59,6 +60,13 @@ type subAgentInput struct {
 	Task string `json:"task"`
 }
 
+// forward sends a sub-agent event to the parent's event channel if set.
+func (t *SubAgentTool) forward(e AgentEvent) {
+	if t.parentEvents != nil {
+		t.parentEvents <- e
+	}
+}
+
 // Execute runs a sub-agent synchronously, drains its events, and returns the collected text output.
 func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var in subAgentInput
@@ -74,6 +82,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	systemPrompt := subAgentPreamble + "\n\n" + basePrompt
 
 	agent := NewAgent(t.client, t.tools, t.serverTools, systemPrompt, t.model)
+	agentID := agent.ID()
 
 	// Run the sub-agent in a goroutine and drain events.
 	done := make(chan struct{})
@@ -89,12 +98,18 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		switch event.Type {
 		case EventTextDelta:
 			textParts = append(textParts, event.Text)
+			t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: event.Text})
 		case EventToolCallStart:
 			turns++
 			if turns > t.maxTurns {
 				agent.Cancel()
 			}
+			t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: agentID, Text: fmt.Sprintf("tool: %s", event.ToolName)})
+		case EventUsage:
+			// Forward usage events so sub-agent costs are tracked.
+			t.forward(event)
 		case EventDone:
+			t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: agentID, Text: "done"})
 			// Wait for the goroutine to finish.
 			<-done
 			result := strings.TrimSpace(strings.Join(textParts, ""))

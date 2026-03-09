@@ -2616,7 +2616,8 @@ func (a *App) startAgent(userMessage string) {
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
-	tools = append(tools, NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir))
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir)
+	tools = append(tools, subAgentTool)
 
 	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir)
 
@@ -2625,6 +2626,7 @@ func (a *App) startAgent(userMessage string) {
 	}
 
 	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID)
+	subAgentTool.parentEvents = agent.events
 	a.agent = agent
 	a.agentRunning = true
 	a.streamingText = ""

@@ -62,7 +62,7 @@
 ## Phase 6: Live sub-agent display (3-line cap)
 
 - [x] 6a: Add an `AgentID string` field to `AgentEvent`. Generate a unique ID per agent instance in `NewAgent`. The main agent and sub-agents emit events tagged with their ID.
-- [ ] 6b: In `SubAgentTool.Execute`, instead of silently draining events, forward sub-agent events to the parent agent's event channel with a new event type `EventSubAgentDelta` (text) and `EventSubAgentStatus` (tool calls, completion). These carry the sub-agent's `AgentID`.
+- [x] 6b: In `SubAgentTool.Execute`, instead of silently draining events, forward sub-agent events to the parent agent's event channel with a new event type `EventSubAgentDelta` (text) and `EventSubAgentStatus` (tool calls, completion). These carry the sub-agent's `AgentID`.
 - [ ] 6c: In `handleAgentEvent`, handle `EventSubAgentDelta`: maintain a `subAgentLines []string` buffer on App. On each delta, update the buffer. In the rendering path (where `streamingText` is displayed), show the sub-agent activity as a dim/italic block capped to 3 lines — show the last 3 lines of the sub-agent's output with a `[sub-agent]` prefix. Clear the buffer when `EventSubAgentStatus` signals completion.
 - [ ] 6d: When the sub-agent finishes, collapse its 3-line live display into a single summary line in `a.messages` (e.g., `[sub-agent] completed: <first line of result>`). The full result is passed back as the tool result in the main agent's conversation.
 
