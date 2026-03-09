@@ -815,6 +815,7 @@ type App struct {
 	pendingToolCall  string
 	needsTextSep     bool
 	sessionCostUSD   float64
+	scratchpad       Scratchpad
 
 	// Menu state (for inline menus below input - Phase 3)
 	menuLines        []string
@@ -1969,6 +1970,7 @@ func (a *App) handleCommand(input string) {
 		a.streamingText = ""
 		a.pendingToolCall = ""
 		a.messages = nil
+		a.scratchpad.Clear()
 		a.render()
 
 	case "/config":
@@ -2606,7 +2608,10 @@ func (a *App) startAgent(userMessage string) {
 
 	workDir := "/workspace"
 
-	// Sub-agent tool: shares the langdag client and available tools.
+	// Shared scratchpad for inter-agent communication.
+	tools = append(tools, NewScratchpadTool(&a.scratchpad))
+
+	// Sub-agent tool: shares the langdag client, available tools (including scratchpad).
 	maxTurns := a.config.SubAgentMaxTurns
 	if maxTurns <= 0 {
 		maxTurns = 15

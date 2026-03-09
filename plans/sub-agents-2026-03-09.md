@@ -56,7 +56,7 @@
 
 - [x] 5a: Add a `Scratchpad` struct with mutex-protected `[]string` entries. Operations: `Read() []string`, `Write(entry string)`, `Clear()`, `Replace(entries []string)`. Create it once on App and pass to all agent tools.
 - [x] 5b: Add a `ScratchpadTool` implementing `Tool`. Actions: `read` returns all entries (numbered), `write` appends one entry, `clear` replaces all entries with a single provided summary. Input schema: `action` (string, required), `content` (string, required for write/clear).
-- [ ] 5c: Register `ScratchpadTool` in `startAgent()` alongside other tools. Pass the same `Scratchpad` instance to both main agent and sub-agents (via `SubAgentTool`). Add system prompt section for the scratchpad tool.
+- [x] 5c: Register `ScratchpadTool` in `startAgent()` alongside other tools. Pass the same `Scratchpad` instance to both main agent and sub-agents (via `SubAgentTool`). Add system prompt section for the scratchpad tool.
 - [ ] 5d: Restructure `buildSystemPrompt` to frame the main agent as an **orchestrator**. Add a section explaining: delegate complex subtasks to sub-agents, keep your own context lean, use the scratchpad as shared memory between agents, synthesize results. Sub-agents get a note to write key findings to the scratchpad. Add context window management guidelines.
 
 ## Phase 6: Live sub-agent display (3-line cap)

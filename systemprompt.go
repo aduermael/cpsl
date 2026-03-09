@@ -64,6 +64,17 @@ Manages the dev container's Dockerfile at .cpsl/Dockerfile.
 - Write to create/update, then build to apply. Prefer Dockerfile over ad-hoc installs for persistent tooling.`)
 	}
 
+	if toolNames["scratchpad"] {
+		b.WriteString(`
+
+### scratchpad
+Shared memory between you and sub-agents, persists for the session.
+- Write key findings, decisions, or context that other agents need. Keep entries short.
+- Read before starting work that might overlap with what another agent already discovered.
+- Use 'clear' with a summary to compact the scratchpad when it grows too large.
+- Don't write routine status updates — only information that's genuinely useful to other agents.`)
+	}
+
 	if toolNames["agent"] {
 		b.WriteString(`
 

@@ -124,4 +124,6 @@ Key guidelines:
 - Complete the task fully, then provide a clear summary of what you did and found.
 - Use tools as needed to accomplish the task.
 - Do not ask questions — make reasonable decisions and note any assumptions.
-- Keep your final response focused on results, not process narration.`
+- Keep your final response focused on results, not process narration.
+- Write important findings to the scratchpad so other agents can benefit from your work.
+- Read the scratchpad at the start to see if prior agents left useful context.`
