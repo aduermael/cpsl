@@ -26,7 +26,7 @@
 ## Phase 1: Word-aware wrapping
 
 - [x] 1a: Modify `wrapString()` to prefer breaking at word boundaries (spaces) instead of mid-word. When a single word exceeds the available width, fall back to character-level breaking. Keep ANSI-awareness and style re-emission intact. The `startCol` parameter must still work for first-line indentation.
-- [ ] 1b: Replace `wrapLineCount()` with a thin wrapper that calls `wrapString()` and returns `len(result)`. Remove the duplicated word-wrap logic. Update `wrap_test.go` — existing `wrapLineCount` tests should still pass since both functions now use the same algorithm.
+- [x] 1b: Replace `wrapLineCount()` with a thin wrapper that calls `wrapString()` and returns `len(result)`. Remove the duplicated word-wrap logic. Update `wrap_test.go` — existing `wrapLineCount` tests should still pass since both functions now use the same algorithm.
 - [ ] 1c: Add tests to `render_test.go` for word-wrap behavior in `wrapString`: basic word wrap, long-word fallback, ANSI codes across word boundaries, startCol offset, and empty/single-word edge cases.
 
 ## Phase 2: Debounced resize

@@ -627,63 +627,10 @@ func truncateForLog(s string, max int) string {
 	return s[:max] + "..."
 }
 
-// ─── wrapLineCount (used by wrap_test.go) ───
-
+// wrapLineCount returns the number of visual lines that `line` would occupy
+// when word-wrapped to `width` columns. It delegates to wrapString.
 func wrapLineCount(line string, width int) int {
-	if width <= 0 {
-		return 1
-	}
-	runes := []rune(line)
-	if len(runes) == 0 {
-		return 1
-	}
-
-	var (
-		lines  = [][]rune{{}}
-		word   = []rune{}
-		row    int
-		spaces int
-	)
-
-	for _, r := range runes {
-		if unicode.IsSpace(r) {
-			spaces++
-		} else {
-			word = append(word, r)
-		}
-
-		if spaces > 0 {
-			if uniseg.StringWidth(string(lines[row]))+uniseg.StringWidth(string(word))+spaces > width {
-				row++
-				lines = append(lines, []rune{})
-				lines[row] = append(lines[row], word...)
-				lines[row] = append(lines[row], []rune(strings.Repeat(" ", spaces))...)
-				spaces = 0
-				word = nil
-			} else {
-				lines[row] = append(lines[row], word...)
-				lines[row] = append(lines[row], []rune(strings.Repeat(" ", spaces))...)
-				spaces = 0
-				word = nil
-			}
-		} else if len(word) > 0 {
-			lastCharLen := uniseg.StringWidth(string(word[len(word)-1:]))
-			if uniseg.StringWidth(string(word))+lastCharLen > width {
-				if len(lines[row]) > 0 {
-					row++
-					lines = append(lines, []rune{})
-				}
-				lines[row] = append(lines[row], word...)
-				word = nil
-			}
-		}
-	}
-
-	if uniseg.StringWidth(string(lines[row]))+uniseg.StringWidth(string(word))+spaces >= width {
-		lines = append(lines, []rune{})
-	}
-
-	return len(lines)
+	return len(wrapString(line, 0, width))
 }
 
 // ─── Git helpers ───
