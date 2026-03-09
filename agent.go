@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +13,13 @@ import (
 	"langdag.com/langdag"
 	"langdag.com/langdag/types"
 )
+
+// generateAgentID returns a short random hex string for agent identification.
+func generateAgentID() string {
+	b := make([]byte, 4)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
 
 // langdagStoragePath returns the path to the langdag SQLite database.
 func langdagStoragePath() string {
@@ -85,21 +94,24 @@ type Tool interface {
 type AgentEventType int
 
 const (
-	EventTextDelta     AgentEventType = iota // streaming text chunk
-	EventToolCallStart                       // tool invocation beginning
-	EventToolCallDone                        // tool execution finished
-	EventToolResult                          // tool result available
-	EventApprovalReq                         // tool needs user approval
-	EventUsage                               // token usage from an LLM call
-	EventDone                                // agent loop finished
-	EventError                               // error occurred
+	EventTextDelta       AgentEventType = iota // streaming text chunk
+	EventToolCallStart                         // tool invocation beginning
+	EventToolCallDone                          // tool execution finished
+	EventToolResult                            // tool result available
+	EventApprovalReq                           // tool needs user approval
+	EventUsage                                 // token usage from an LLM call
+	EventDone                                  // agent loop finished
+	EventError                                 // error occurred
+	EventSubAgentDelta                         // sub-agent streaming text
+	EventSubAgentStatus                        // sub-agent status (tool calls, completion)
 )
 
 // AgentEvent carries a single event from the agent loop to the TUI.
 type AgentEvent struct {
-	Type AgentEventType
+	Type    AgentEventType
+	AgentID string // unique ID of the agent that emitted this event
 
-	// EventTextDelta
+	// EventTextDelta / EventSubAgentDelta
 	Text string
 
 	// EventToolCallStart / EventToolCallDone
@@ -132,6 +144,7 @@ type ApprovalResponse struct {
 
 // Agent orchestrates LLM calls and tool execution.
 type Agent struct {
+	id           string
 	client       *langdag.Client
 	tools        map[string]Tool
 	toolDefs     []types.ToolDefinition
@@ -160,6 +173,7 @@ func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefi
 	toolDefs = append(toolDefs, serverTools...)
 
 	return &Agent{
+		id:           generateAgentID(),
 		client:       client,
 		tools:        toolMap,
 		toolDefs:     toolDefs,
@@ -217,7 +231,13 @@ func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string
 	a.runLoop(ctx, userMessage, parentNodeID)
 }
 
+// ID returns the unique identifier for this agent instance.
+func (a *Agent) ID() string {
+	return a.id
+}
+
 func (a *Agent) emit(e AgentEvent) {
+	e.AgentID = a.id
 	a.events <- e
 }
 
