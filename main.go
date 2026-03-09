@@ -2717,11 +2717,19 @@ func (a *App) startInit() {
 		a.resultCh <- langdagReadyMsg{client: client, provider: cfg.defaultLangdagProvider(), err: err}
 	}()
 	go func() {
-		catalog, err := langdag.LoadModelCatalog(catalogCachePath())
+		cachePath := catalogCachePath()
+		catalog, err := langdag.LoadModelCatalog(cachePath)
 		if err != nil {
 			log.Printf("warning: loading model catalog: %v", err)
 		}
 		a.resultCh <- catalogMsg{catalog: catalog}
+
+		// Best-effort background refresh of the cache
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		if updated, err := langdag.FetchModelCatalog(ctx, cachePath); err == nil {
+			a.resultCh <- catalogMsg{catalog: updated}
+		}
 	}()
 }
 

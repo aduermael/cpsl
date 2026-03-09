@@ -36,7 +36,7 @@
 
 - [x] 2a: On startup, load langdag's model catalog via `langdag.LoadModelCatalog(cachePath)` (cache at `~/.cpsl/model_catalog.json`). Store the `*langdag.ModelCatalog` on the App struct. Populate `ModelDef.PromptPrice`, `CompletionPrice`, `ContextWindow` from the catalog, falling back to `models.json` values when a model isn't in the catalog.
 - [x] 2b: Remove `prompt_price`, `completion_price`, and `context_window` fields from `models.json` — keep only `provider`, `id`, `display_name`. `models.json` becomes the list of models CPSL knows about; pricing comes from langdag catalog. Update `ModelDef` struct and `builtinModels()` accordingly. Update tests.
-- [ ] 2c: Add a background fetch on startup: `langdag.FetchModelCatalog(ctx, cachePath)` to update the cache. Non-blocking, best-effort — if it fails, cached/embedded data is fine.
+- [x] 2c: Add a background fetch on startup: `langdag.FetchModelCatalog(ctx, cachePath)` to update the cache. Non-blocking, best-effort — if it fails, cached/embedded data is fine.
 
 ## Phase 3: Live cost display
 
