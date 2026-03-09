@@ -599,6 +599,8 @@ type langdagReadyMsg struct {
 	err      error
 }
 
+type resizeMsg struct{}
+
 // ─── Debug logging ───
 
 var debugEnabled = os.Getenv("CPSL_DEBUG") != ""
@@ -756,9 +758,10 @@ func fetchSWEScoresCmd() sweScoresMsg {
 
 type App struct {
 	// Terminal
-	fd       int
-	oldState *term.State
-	width    int
+	fd          int
+	oldState    *term.State
+	width       int
+	resizeTimer *time.Timer
 
 	// Rendering state (from simple-chat)
 	prevRowCount  int
@@ -1381,13 +1384,21 @@ func (a *App) Run() error {
 
 	a.width = getWidth()
 
-	// SIGWINCH handler
+	// SIGWINCH handler with debounce
 	sigWinch := make(chan os.Signal, 1)
 	signal.Notify(sigWinch, syscall.SIGWINCH)
 	go func() {
 		for range sigWinch {
 			a.width = getWidth()
-			a.renderFull()
+			// Show brief indicator immediately
+			os.Stdout.WriteString("\033[H\033[2J" + styledInfo("  resizing..."))
+			// Reset debounce timer — only render after 100ms of quiet
+			if a.resizeTimer != nil {
+				a.resizeTimer.Stop()
+			}
+			a.resizeTimer = time.AfterFunc(100*time.Millisecond, func() {
+				a.resultCh <- resizeMsg{}
+			})
 		}
 	}()
 
@@ -2783,6 +2794,11 @@ func (a *App) handleResult(result any) {
 			a.status.Branch = msg.branch
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to branch '%s'", msg.branch)})
 		}
+
+	case resizeMsg:
+		a.width = getWidth() // re-read in case of further changes
+		a.renderFull()
+		return
 	}
 
 	a.render()

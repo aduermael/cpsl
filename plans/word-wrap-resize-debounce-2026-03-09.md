@@ -31,7 +31,7 @@
 
 ## Phase 2: Debounced resize
 
-- [ ] 2a: Add a debounce mechanism to the SIGWINCH handler. On resize signal: update `a.width`, display a brief "resizing..." indicator (reuse existing info/dim style), and reset a debounce timer (~100ms). Only call `renderFull()` after the timer fires without interruption. Use `time.AfterFunc` or a `time.Timer` — keep it in the existing signal goroutine, no new goroutines needed beyond the timer.
+- [x] 2a: Add a debounce mechanism to the SIGWINCH handler. On resize signal: update `a.width`, display a brief "resizing..." indicator (reuse existing info/dim style), and reset a debounce timer (~100ms). Only call `renderFull()` after the timer fires without interruption. Use `time.AfterFunc` or a `time.Timer` — keep it in the existing signal goroutine, no new goroutines needed beyond the timer.
 - [ ] 2b: Add a test that verifies debounce behavior: multiple rapid width changes should result in only one final render (or verify the timer reset logic). May need to extract the debounce logic into a testable helper.
 
 ## Success Criteria
