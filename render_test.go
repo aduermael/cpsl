@@ -21,6 +21,20 @@ func TestWrapString(t *testing.T) {
 		{"emoji width", "Hi 👋 there", 0, 8, []string{"Hi 👋 ", "there"}},
 		{"ansi not counted", "\033[34;3mhello\033[0m", 0, 5, []string{"\033[34;3mhello\033[0m"}},
 		{"ansi re-emitted on wrap", "\033[34;3mabcdefgh\033[0m", 0, 5, []string{"\033[34;3mabcde", "\033[34;3mfgh\033[0m"}},
+
+		// Word-wrap behavior
+		{"word wrap basic", "hello world foo", 0, 11, []string{"hello world", "foo"}},
+		{"word wrap multi", "one two three four five", 0, 10, []string{"one two ", "three four", "five"}},
+		{"long word fallback", "abcdefghijklmno pq", 0, 10, []string{"abcdefghij", "klmno pq"}},
+		{"single word exact", "hello", 0, 5, []string{"hello"}},
+		{"single word overflow", "overflow", 0, 5, []string{"overf", "low"}},
+		{"startCol word wrap", "hello world", 4, 10, []string{"hello ", "world"}},
+		{"startCol forces wrap", "longword", 6, 10, []string{"", "longword"}},
+		{"ansi across word boundary", "\033[1mhello\033[0m \033[2mworld\033[0m", 0, 8, []string{"\033[1mhello\033[0m ", "\033[2mworld\033[0m"}},
+		{"ansi mid-word preserved", "\033[1mhel\033[31mlo\033[0m world", 0, 8, []string{"\033[1mhel\033[31mlo\033[0m ", "world"}},
+		{"multiple spaces", "a  b  c", 0, 80, []string{"a  b  c"}},
+		{"empty string", "", 0, 5, []string{""}},
+		{"only spaces", "   ", 0, 5, []string{"   "}},
 	}
 
 	for _, tt := range tests {
