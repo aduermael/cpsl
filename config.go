@@ -20,6 +20,7 @@ type Config struct {
 	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	ContainerImage        string          `json:"container_image,omitempty"`
+	DisplaySystemPrompts  bool            `json:"display_system_prompts,omitempty"`
 }
 
 // configuredProviders returns a set of provider names that have API keys configured.
