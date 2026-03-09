@@ -64,6 +64,18 @@ Manages the dev container's Dockerfile at .cpsl/Dockerfile.
 - Write to create/update, then build to apply. Prefer Dockerfile over ad-hoc installs for persistent tooling.`)
 	}
 
+	if toolNames["agent"] {
+		b.WriteString(`
+
+### agent
+Spawns a sub-agent to handle complex subtasks with its own context window.
+- Use for multi-step work: research, implementation, debugging, or exploration.
+- Each sub-agent runs independently — it won't consume your context.
+- Provide a clear, self-contained task description. The sub-agent has the same tools you do.
+- Prefer sub-agents for tasks that require multiple tool calls or produce verbose output.
+- For simple one-shot operations (single command, quick file read), act directly.`)
+	}
+
 	if toolNames[types.ServerToolWebSearch] {
 		b.WriteString(`
 

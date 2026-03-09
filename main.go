@@ -2572,6 +2572,9 @@ func (a *App) startAgent(userMessage string) {
 		tools = append(tools, NewGitTool(a.worktreePath))
 	}
 
+	// Server-side tools are handled by the LLM provider, not the client.
+	serverTools := []types.ToolDefinition{WebSearchToolDef()}
+
 	modelID := ""
 	if a.modelsLoaded {
 		modelID = a.config.resolveActiveModel(a.models)
@@ -2603,8 +2606,12 @@ func (a *App) startAgent(userMessage string) {
 
 	workDir := "/workspace"
 
-	// Server-side tools are handled by the LLM provider, not the client.
-	serverTools := []types.ToolDefinition{WebSearchToolDef()}
+	// Sub-agent tool: shares the langdag client and available tools.
+	maxTurns := a.config.SubAgentMaxTurns
+	if maxTurns <= 0 {
+		maxTurns = 15
+	}
+	tools = append(tools, NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir))
 
 	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir)
 
