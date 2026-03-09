@@ -237,6 +237,12 @@ func (c *ContainerClient) Status() (ContainerStatus, error) {
 	}, nil
 }
 
+// Rebuild builds a Docker image from the given Dockerfile, stops the current
+// container, and starts a new one with the built image.
+func (c *ContainerClient) Rebuild(dockerfilePath, workspace string, mounts []MountSpec) error {
+	return fmt.Errorf("rebuild not implemented")
+}
+
 // randomID generates a short random hex string for container naming.
 func randomID() string {
 	const chars = "abcdef0123456789"
