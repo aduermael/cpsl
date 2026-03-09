@@ -336,8 +336,13 @@ func styledInfo(msg string) string {
 }
 
 func styledSystemPrompt(msg string) string {
-	// dim italic + dark gray (90) — visually distinct from normal text
-	return "\033[2;3;90m" + msg + "\033[0m"
+	// dim italic — same style as tool calls / thinking indicator.
+	// Style each line individually so \n splits in buildBlockRows preserve it.
+	lines := strings.Split(msg, "\n")
+	for i, line := range lines {
+		lines[i] = "\033[2;3m" + line + "\033[0m"
+	}
+	return strings.Join(lines, "\n")
 }
 
 func renderMessage(msg chatMessage) string {
