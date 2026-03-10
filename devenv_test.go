@@ -43,7 +43,7 @@ func TestDevEnvTool_ReadExistingDockerfile(t *testing.T) {
 	os.MkdirAll(cpslDir, 0o755)
 
 	content := "FROM alpine:latest\nRUN apk add go\n"
-	os.WriteFile(filepath.Join(cpslDir, "Dockerfile"), []byte(content), 0o644)
+	os.WriteFile(filepath.Join(cpslDir, "custom.Dockerfile"), []byte(content), 0o644)
 
 	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "read"})
@@ -100,7 +100,7 @@ func TestDevEnvTool_WriteDockerfile(t *testing.T) {
 	}
 
 	// Verify file was written.
-	data, err := os.ReadFile(filepath.Join(cpslDir, "Dockerfile"))
+	data, err := os.ReadFile(filepath.Join(cpslDir, "custom.Dockerfile"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestDevEnvTool_BuildCallsRebuild(t *testing.T) {
 	dir := t.TempDir()
 	cpslDir := filepath.Join(dir, ".cpsl")
 	os.MkdirAll(cpslDir, 0o755)
-	os.WriteFile(filepath.Join(cpslDir, "Dockerfile"), []byte("FROM alpine:latest\n"), 0o644)
+	os.WriteFile(filepath.Join(cpslDir, "custom.Dockerfile"), []byte("FROM alpine:latest\n"), 0o644)
 
 	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
 		if len(args) >= 2 {
