@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"html"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -254,9 +255,11 @@ func (c *ContainerClient) Rebuild(imageName, dockerfilePath, workspace string, m
 	buildCmd.Stderr = &buildStderr
 
 	if err := buildCmd.Run(); err != nil {
+		// Docker BuildKit may HTML-encode characters like && → &amp;&amp; in error output.
+		errText := html.UnescapeString(strings.TrimSpace(buildStderr.String()))
 		return &ContainerError{
 			Code:    ErrStartFailed,
-			Message: fmt.Sprintf("docker build: %s", strings.TrimSpace(buildStderr.String())),
+			Message: fmt.Sprintf("docker build: %s", errText),
 		}
 	}
 

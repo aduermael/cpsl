@@ -12,28 +12,30 @@ import (
 
 // SubAgentTool spawns a sub-agent to handle complex subtasks autonomously.
 type SubAgentTool struct {
-	client       *langdag.Client
-	tools        []Tool
-	serverTools  []types.ToolDefinition
-	model        string
-	maxTurns     int
-	workDir      string
-	personality  string
-	parentEvents chan<- AgentEvent // set after construction; forwards live events to TUI
+	client         *langdag.Client
+	tools          []Tool
+	serverTools    []types.ToolDefinition
+	model          string
+	maxTurns       int
+	workDir        string
+	personality    string
+	containerImage string
+	parentEvents   chan<- AgentEvent // set after construction; forwards live events to TUI
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, workDir string, personality string) *SubAgentTool {
+func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, workDir string, personality string, containerImage string) *SubAgentTool {
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
 	return &SubAgentTool{
-		client:      client,
-		tools:       tools,
-		serverTools: serverTools,
-		model:       model,
-		maxTurns:    maxTurns,
-		workDir:     workDir,
-		personality: personality,
+		client:         client,
+		tools:          tools,
+		serverTools:    serverTools,
+		model:          model,
+		maxTurns:       maxTurns,
+		workDir:        workDir,
+		personality:    personality,
+		containerImage: containerImage,
 	}
 }
 
@@ -80,7 +82,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	}
 
 	// Build a sub-agent system prompt: reuse buildSystemPrompt with a preamble.
-	basePrompt := buildSystemPrompt(t.tools, t.serverTools, nil, t.workDir, t.personality)
+	basePrompt := buildSystemPrompt(t.tools, t.serverTools, nil, t.workDir, t.personality, t.containerImage)
 	systemPrompt := subAgentPreamble + "\n\n" + basePrompt
 
 	agent := NewAgent(t.client, t.tools, t.serverTools, systemPrompt, t.model)

@@ -160,7 +160,7 @@ func newTestClient(responses ...string) *langdag.Client {
 }
 
 func TestSubAgentToolDefinition(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "")
+	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "", "alpine:latest")
 	def := tool.Definition()
 	if def.Name != "agent" {
 		t.Errorf("name = %q, want agent", def.Name)
@@ -171,7 +171,7 @@ func TestSubAgentToolDefinition(t *testing.T) {
 }
 
 func TestSubAgentToolNoApproval(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "")
+	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "", "alpine:latest")
 	if tool.RequiresApproval(json.RawMessage(`{"task":"hello"}`)) {
 		t.Error("sub-agent tool should never require approval")
 	}
@@ -179,7 +179,7 @@ func TestSubAgentToolNoApproval(t *testing.T) {
 
 func TestSubAgentToolEmptyTask(t *testing.T) {
 	client := newTestClient("hello")
-	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "")
+	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "", "alpine:latest")
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":""}`))
 	if err == nil {
@@ -191,7 +191,7 @@ func TestSubAgentToolEmptyTask(t *testing.T) {
 }
 
 func TestSubAgentToolInvalidJSON(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "")
+	tool := NewSubAgentTool(nil, nil, nil, "", 10, "/workspace", "", "alpine:latest")
 	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -200,7 +200,7 @@ func TestSubAgentToolInvalidJSON(t *testing.T) {
 
 func TestSubAgentToolExecuteReturnsOutput(t *testing.T) {
 	client := newTestClient("Hello from the sub-agent!")
-	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "")
+	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"say hello"}`))
 	if err != nil {
@@ -215,7 +215,7 @@ func TestSubAgentToolForwardsEventsWithAgentID(t *testing.T) {
 	client := newTestClient("Sub-agent result text")
 
 	parentEvents := make(chan AgentEvent, 64)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "")
+	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, "/workspace", "", "alpine:latest")
 	tool.parentEvents = parentEvents
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do work"}`))

@@ -12,7 +12,7 @@ import (
 // Tool-specific guidelines are included only when the corresponding tool is available.
 // serverTools are provider-side tools (e.g. web search) declared but not executed by the client.
 // Structured into: Role, Tools, Practices, Communication, Skills, Environment.
-func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string) string {
+func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string, containerImage string) string {
 	toolNames := make(map[string]bool)
 	for _, t := range tools {
 		toolNames[t.Definition().Name] = true
@@ -54,13 +54,14 @@ When given a task:
 	b.WriteString("\n\n## Tools")
 
 	if toolNames["bash"] {
-		b.WriteString(`
+		b.WriteString(fmt.Sprintf(`
 
 ### bash
-Runs commands inside an isolated Docker container with the project at /workspace.
-- Explore files with grep, find, cat. Install packages as needed (container is ephemeral).
-- Read code before editing. Run tests after changes.
-- Pipe long output through head/tail/grep to keep results focused.`)
+Runs commands inside an isolated Docker container (image: %s) with the project at /workspace.
+- The base container is minimal — it may lack compilers, runtimes, and dev tools.
+- Before running project code, check if required tools are installed (e.g. 'which go' or 'python3 --version'). If missing, use devenv to build a proper environment first — don't try to run code that will fail.
+- Explore files with grep, find, cat. Run tests after changes.
+- Pipe long output through head/tail/grep to keep results focused.`, containerImage))
 	}
 
 	if toolNames["git"] {
@@ -74,13 +75,15 @@ Runs git commands on the host in the project worktree (not inside the container)
 	}
 
 	if toolNames["devenv"] {
-		b.WriteString(`
+		b.WriteString(fmt.Sprintf(`
 
 ### devenv
 Manages dev container Dockerfiles at .cpsl/<name>.Dockerfile (e.g. .cpsl/go.Dockerfile).
 - Use the 'name' parameter to pick a descriptive name (e.g. "go", "python"). Defaults to "custom".
 - Read first to check existing state. Adapt the project root Dockerfile if one exists.
-- Write to create/update, then build to apply. Prefer Dockerfile over ad-hoc installs for persistent tooling.`)
+- Write to create/update, then build to apply. Prefer Dockerfile over ad-hoc installs for persistent tooling.
+- IMPORTANT: Build a devenv BEFORE trying to run code that needs tools not in the base image (%s).
+- Write correct Dockerfiles: use the right base image and package manager (apt-get for debian/ubuntu, apk for alpine). Combine RUN steps with && to reduce layers. Always test that the Dockerfile works mentally before writing.`, containerImage))
 	}
 
 	if toolNames["scratchpad"] {

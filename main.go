@@ -2765,15 +2765,20 @@ func (a *App) startAgent(userMessage string) {
 	// Shared scratchpad for inter-agent communication.
 	tools = append(tools, NewScratchpadTool(&a.scratchpad))
 
+	containerImage := a.config.ContainerImage
+	if containerImage == "" {
+		containerImage = defaultContainerImage
+	}
+
 	// Sub-agent tool: shares the langdag client, available tools (including scratchpad).
 	maxTurns := a.config.SubAgentMaxTurns
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir, a.config.Personality)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir, a.config.Personality, containerImage)
 	tools = append(tools, subAgentTool)
 
-	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality)
+	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage)
 
 	if a.displaySystemPrompts {
 		a.messages = append(a.messages, chatMessage{kind: msgSystemPrompt, content: "── System Prompt ──\n" + systemPrompt})
