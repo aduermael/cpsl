@@ -460,7 +460,7 @@ func renderMessage(msg chatMessage) string {
 
 // ─── Commands and autocomplete ───
 
-var commands = []string{"/branches", "/clear", "/config", "/model", "/shell", "/worktrees"}
+var commands = []string{"/branches", "/clear", "/config", "/model", "/shell", "/tree", "/worktrees"}
 
 func filterCommands(prefix string) []string {
 	var matches []string
@@ -2231,6 +2231,15 @@ func (a *App) handleCommand(input string) {
 
 	case "/shell":
 		a.enterShellMode()
+
+	case "/tree":
+		tree, err := a.buildConversationTree(context.Background())
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: err.Error()})
+		} else {
+			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: tree})
+		}
+		a.render()
 
 	default:
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Unknown command: %s", cmd)})
