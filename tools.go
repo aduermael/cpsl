@@ -217,15 +217,19 @@ type DevEnvTool struct {
 	cpslDir   string // host path to .cpsl/ directory (contains Dockerfile)
 	workspace string // host workspace path (docker build context)
 	mounts    []MountSpec
+	projectID string                 // first 8 chars used in image tags
+	onRebuild func(imageName string) // called after successful rebuild
 }
 
 // NewDevEnvTool creates a DevEnvTool with the given container client and paths.
-func NewDevEnvTool(container *ContainerClient, cpslDir, workspace string, mounts []MountSpec) *DevEnvTool {
+func NewDevEnvTool(container *ContainerClient, cpslDir, workspace string, mounts []MountSpec, projectID string, onRebuild func(string)) *DevEnvTool {
 	return &DevEnvTool{
 		container: container,
 		cpslDir:   cpslDir,
 		workspace: workspace,
 		mounts:    mounts,
+		projectID: projectID,
+		onRebuild: onRebuild,
 	}
 }
 

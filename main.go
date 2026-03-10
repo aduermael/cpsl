@@ -2650,7 +2650,15 @@ func (a *App) startAgent(userMessage string) {
 				Source:      a.worktreePath,
 				Destination: "/workspace",
 			}}
-			tools = append(tools, NewDevEnvTool(a.container, cpslDir, a.worktreePath, mounts))
+			var projectID string
+			if repoRoot := gitRepoRoot(); repoRoot != "" {
+				projectID, _ = ensureProjectID(repoRoot)
+			}
+			onRebuild := func(imageName string) {
+				a.config.ContainerImage = imageName
+				_ = saveConfig(a.config)
+			}
+			tools = append(tools, NewDevEnvTool(a.container, cpslDir, a.worktreePath, mounts, projectID, onRebuild))
 		}
 	}
 	if a.worktreePath != "" {
