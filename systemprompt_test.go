@@ -37,7 +37,7 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 		stubTool{"devenv"},
 	}
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace")
+	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace", "")
 
 	sections := []string{
 		"expert coding agent",
@@ -60,7 +60,7 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 
 func TestBuildSystemPromptBashOnly(t *testing.T) {
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work")
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "")
 
 	if !strings.Contains(prompt, "### bash") {
 		t.Error("prompt missing bash section")
@@ -78,7 +78,7 @@ func TestBuildSystemPromptBashOnly(t *testing.T) {
 
 func TestBuildSystemPromptGitOnly(t *testing.T) {
 	tools := []Tool{stubTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work")
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "")
 
 	if !strings.Contains(prompt, "### git") {
 		t.Error("prompt missing git section")
@@ -89,7 +89,7 @@ func TestBuildSystemPromptGitOnly(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoTools(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work")
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "")
 
 	// Should still have the structural sections
 	if !strings.Contains(prompt, "## Tools") {
@@ -112,7 +112,7 @@ func TestBuildSystemPromptWithSkills(t *testing.T) {
 		{Name: "Testing", Description: "How to test", Content: "Write table-driven tests."},
 		{Name: "Style", Description: "Code style", Content: "Use gofmt."},
 	}
-	prompt := buildSystemPrompt(nil, nil, skills, "/work")
+	prompt := buildSystemPrompt(nil, nil, skills, "/work", "")
 
 	if !strings.Contains(prompt, "## Skills") {
 		t.Error("prompt missing Skills section")
@@ -135,7 +135,7 @@ func TestBuildSystemPromptWithSkills(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoSkills(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work")
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "")
 
 	if strings.Contains(prompt, "## Skills") {
 		t.Error("prompt should not contain Skills section when no skills loaded")
@@ -143,7 +143,7 @@ func TestBuildSystemPromptNoSkills(t *testing.T) {
 }
 
 func TestBuildSystemPromptEnvironment(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/my/project")
+	prompt := buildSystemPrompt(nil, nil, nil, "/my/project", "")
 
 	if !strings.Contains(prompt, "/my/project") {
 		t.Error("prompt missing working directory")
@@ -155,7 +155,7 @@ func TestBuildSystemPromptEnvironment(t *testing.T) {
 
 func TestBuildSystemPromptWebSearch(t *testing.T) {
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(nil, serverTools, nil, "/work")
+	prompt := buildSystemPrompt(nil, serverTools, nil, "/work", "")
 
 	if !strings.Contains(prompt, "### web_search") {
 		t.Error("prompt missing web_search section")
@@ -166,10 +166,27 @@ func TestBuildSystemPromptWebSearch(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoWebSearch(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work")
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "")
 
 	if strings.Contains(prompt, "### web_search") {
 		t.Error("prompt should not contain web_search section when not registered")
+	}
+}
+
+func TestBuildSystemPromptPersonality(t *testing.T) {
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "You are a pirate. Respond with nautical flair.")
+	if !strings.Contains(prompt, "## Personality") {
+		t.Error("prompt missing Personality section")
+	}
+	if !strings.Contains(prompt, "pirate") {
+		t.Error("prompt missing personality content")
+	}
+}
+
+func TestBuildSystemPromptNoPersonality(t *testing.T) {
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "")
+	if strings.Contains(prompt, "## Personality") {
+		t.Error("prompt should not contain Personality section when empty")
 	}
 }
 

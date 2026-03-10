@@ -12,7 +12,7 @@ import (
 // Tool-specific guidelines are included only when the corresponding tool is available.
 // serverTools are provider-side tools (e.g. web search) declared but not executed by the client.
 // Structured into: Role, Tools, Practices, Communication, Skills, Environment.
-func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string) string {
+func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string) string {
 	toolNames := make(map[string]bool)
 	for _, t := range tools {
 		toolNames[t.Definition().Name] = true
@@ -132,11 +132,20 @@ Searches the web for current information. Handled by the LLM provider — no inp
 
 ## Communication
 
-- Be direct and concise. Lead with actions, not lengthy explanations.
-- Explain your reasoning before significant changes so the user can course-correct.
+- Keep responses short. Prefer a few sentences over paragraphs. Omit filler and preamble.
+- Lead with the answer or action, not the reasoning. Show code, not explanations about code.
+- Only explain when the user needs context to make a decision or when the reasoning is non-obvious.
 - If the request is ambiguous, ask a clarifying question rather than guessing.
-- When stuck, say so and suggest alternatives rather than silently spinning.
-- Summarize what you did at the end of multi-step tasks.`)
+- When stuck, say so and suggest alternatives rather than silently spinning.`)
+
+	// --- Personality ---
+	if personality != "" {
+		b.WriteString(fmt.Sprintf(`
+
+## Personality
+
+%s`, personality))
+	}
 
 	// --- Skills ---
 	if len(skills) > 0 {

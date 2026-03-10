@@ -61,11 +61,27 @@ func filterModelsByProviders(models []ModelDef, providers map[string]bool) []Mod
 }
 
 // findModelByID returns the model with the given ID, or nil if not found.
+// Falls back to longest-prefix match (e.g. "grok-4-0709" matches "grok-4")
+// when no exact match exists, which handles API responses that return
+// versioned model IDs.
 func findModelByID(models []ModelDef, id string) *ModelDef {
 	for i := range models {
 		if models[i].ID == id {
 			return &models[i]
 		}
+	}
+	// Fallback: longest prefix match
+	bestIdx := -1
+	bestLen := 0
+	for i := range models {
+		mid := models[i].ID
+		if strings.HasPrefix(id, mid+"-") && len(mid) > bestLen {
+			bestIdx = i
+			bestLen = len(mid)
+		}
+	}
+	if bestIdx >= 0 {
+		return &models[bestIdx]
 	}
 	return nil
 }
@@ -295,13 +311,19 @@ func computeCost(models []ModelDef, modelID string, usage types.Usage) float64 {
 	return inputCost + outputCost
 }
 
-// formatCost formats a USD cost for display.
-// Small amounts show 4 decimal places, larger amounts show 2.
+// formatCost formats a USD cost for display with enough precision to show
+// at least one significant digit. Very small amounts get more decimal places.
 func formatCost(cost float64) string {
-	if cost < 0.01 {
+	switch {
+	case cost >= 0.01:
+		return fmt.Sprintf("$%.2f", cost)
+	case cost >= 0.001:
 		return fmt.Sprintf("$%.4f", cost)
+	case cost >= 0.0001:
+		return fmt.Sprintf("$%.5f", cost)
+	default:
+		return fmt.Sprintf("$%.6f", cost)
 	}
-	return fmt.Sprintf("$%.2f", cost)
 }
 
 // SWE-bench leaderboard types

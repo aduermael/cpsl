@@ -674,3 +674,57 @@ func TestFormatCostBoundary(t *testing.T) {
 		t.Errorf("formatCost(0.01) = %q, want $0.01", got)
 	}
 }
+
+func TestFormatCostVerySmall(t *testing.T) {
+	got := formatCost(0.0001)
+	if got != "$0.00010" {
+		t.Errorf("formatCost(0.0001) = %q, want $0.00010", got)
+	}
+}
+
+func TestFormatCostTiny(t *testing.T) {
+	got := formatCost(0.00001)
+	if got != "$0.000010" {
+		t.Errorf("formatCost(0.00001) = %q, want $0.000010", got)
+	}
+}
+
+// --- findModelByID prefix fallback tests ---
+
+func TestFindModelByIDExact(t *testing.T) {
+	models := []ModelDef{
+		{ID: "grok-4", PromptPrice: 3},
+	}
+	m := findModelByID(models, "grok-4")
+	if m == nil || m.ID != "grok-4" {
+		t.Errorf("findModelByID exact match failed")
+	}
+}
+
+func TestFindModelByIDPrefixFallback(t *testing.T) {
+	models := []ModelDef{
+		{ID: "grok-3", PromptPrice: 3},
+		{ID: "grok-3-mini", PromptPrice: 0.3},
+		{ID: "grok-4", PromptPrice: 3},
+	}
+	// "grok-4-0709" should match "grok-4" not "grok-3"
+	m := findModelByID(models, "grok-4-0709")
+	if m == nil || m.ID != "grok-4" {
+		t.Errorf("findModelByID prefix fallback: got %v, want grok-4", m)
+	}
+	// "grok-3-mini-beta" should match "grok-3-mini" (longest prefix)
+	m = findModelByID(models, "grok-3-mini-beta")
+	if m == nil || m.ID != "grok-3-mini" {
+		t.Errorf("findModelByID longest prefix: got %v, want grok-3-mini", m)
+	}
+}
+
+func TestFindModelByIDNoMatch(t *testing.T) {
+	models := []ModelDef{
+		{ID: "grok-4", PromptPrice: 3},
+	}
+	m := findModelByID(models, "totally-different")
+	if m != nil {
+		t.Errorf("findModelByID should return nil for no match, got %v", m)
+	}
+}

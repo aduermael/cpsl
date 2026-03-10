@@ -18,10 +18,11 @@ type SubAgentTool struct {
 	model        string
 	maxTurns     int
 	workDir      string
+	personality  string
 	parentEvents chan<- AgentEvent // set after construction; forwards live events to TUI
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, workDir string) *SubAgentTool {
+func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, workDir string, personality string) *SubAgentTool {
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
@@ -32,6 +33,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		model:       model,
 		maxTurns:    maxTurns,
 		workDir:     workDir,
+		personality: personality,
 	}
 }
 
@@ -78,7 +80,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	}
 
 	// Build a sub-agent system prompt: reuse buildSystemPrompt with a preamble.
-	basePrompt := buildSystemPrompt(t.tools, t.serverTools, nil, t.workDir)
+	basePrompt := buildSystemPrompt(t.tools, t.serverTools, nil, t.workDir, t.personality)
 	systemPrompt := subAgentPreamble + "\n\n" + basePrompt
 
 	agent := NewAgent(t.client, t.tools, t.serverTools, systemPrompt, t.model)

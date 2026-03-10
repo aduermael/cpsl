@@ -816,6 +816,7 @@ type App struct {
 	needsTextSep     bool
 	sessionCostUSD   float64
 	scratchpad       Scratchpad
+	lastModelID      string   // last model used, for detecting changes
 	subAgentBuf      string   // accumulates sub-agent streaming text
 	subAgentLines    []string // completed lines from sub-agent output
 
@@ -867,9 +868,14 @@ func (a *App) buildBlockRows() []string {
 		for _, logLine := range strings.Split(rendered, "\n") {
 			rows = append(rows, wrapString(logLine, 0, a.width)...)
 		}
-		// Add blank line after block, unless next message already has leadBlank
-		nextHasBlank := i+1 < len(a.messages) && a.messages[i+1].leadBlank
-		if !nextHasBlank {
+		// Add blank line after block, unless:
+		// - next message already has leadBlank, or
+		// - this is an assistant message followed by another assistant message
+		//   (consecutive assistant chunks already contain their own newlines)
+		nextIdx := i + 1
+		nextHasBlank := nextIdx < len(a.messages) && a.messages[nextIdx].leadBlank
+		nextIsAssistant := nextIdx < len(a.messages) && a.messages[nextIdx].kind == msgAssistant
+		if !nextHasBlank && !(msg.kind == msgAssistant && nextIsAssistant) {
 			rows = append(rows, "")
 		}
 	}
@@ -2246,6 +2252,7 @@ var cfgTabFields = [][]cfgField{
 		{label: "Container Image", get: func(c Config) string { if c.ContainerImage == "" { return defaultContainerImage }; return c.ContainerImage }, set: func(c *Config, v string) { c.ContainerImage = v }},
 		{label: "Show System Prompt", get: func(c Config) string { if c.DisplaySystemPrompts { return "on" }; return "off" }, toggle: func(c *Config) { c.DisplaySystemPrompts = !c.DisplaySystemPrompts }},
 		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
+		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
 	},
 }
 
@@ -2617,6 +2624,19 @@ func (a *App) enterShellMode() {
 
 // ─── Agent ───
 
+// showModelChange displays an info message when the active model changes.
+func (a *App) showModelChange(modelID string) {
+	if modelID == "" || modelID == a.lastModelID {
+		return
+	}
+	displayName := modelID
+	if m := findModelByID(a.models, modelID); m != nil {
+		displayName = m.DisplayName
+	}
+	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Using " + displayName})
+	a.lastModelID = modelID
+}
+
 func (a *App) startAgent(userMessage string) {
 	var tools []Tool
 	if a.containerReady && a.container != nil {
@@ -2676,14 +2696,16 @@ func (a *App) startAgent(userMessage string) {
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir, a.config.Personality)
 	tools = append(tools, subAgentTool)
 
-	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir)
+	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality)
 
 	if a.displaySystemPrompts {
 		a.messages = append(a.messages, chatMessage{kind: msgSystemPrompt, content: "── System Prompt ──\n" + systemPrompt})
 	}
+
+	a.showModelChange(modelID)
 
 	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID)
 	subAgentTool.parentEvents = agent.events
@@ -2874,6 +2896,7 @@ func (a *App) handleResult(result any) {
 			if a.sweLoaded && a.sweScores != nil {
 				matchSWEScores(a.models, a.sweScores)
 			}
+			a.showModelChange(a.config.resolveActiveModel(a.models))
 		}
 
 	case sweScoresMsg:

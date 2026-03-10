@@ -22,6 +22,7 @@ type Config struct {
 	ContainerImage        string          `json:"container_image,omitempty"`
 	DisplaySystemPrompts  bool            `json:"display_system_prompts,omitempty"`
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
+	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
 }
 
 // configuredProviders returns a set of provider names that have API keys configured.
