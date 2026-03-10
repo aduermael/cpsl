@@ -100,15 +100,23 @@ func (c Config) containerConfig() ContainerConfig {
 }
 
 func configPath() string {
-	return filepath.Join(configDir, configFile)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(configDir, configFile)
+	}
+	return filepath.Join(home, configDir, configFile)
 }
 
-// ensureConfigDir creates the .cpsl/ directory if it doesn't exist.
+// ensureConfigDir creates the ~/.cpsl/ directory if it doesn't exist.
 func ensureConfigDir() error {
-	return os.MkdirAll(configDir, 0o755)
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("getting home dir: %w", err)
+	}
+	return os.MkdirAll(filepath.Join(home, configDir), 0o755)
 }
 
-// loadConfig reads config from .cpsl/config.json.
+// loadConfig reads config from ~/.cpsl/config.json.
 // If the file doesn't exist, it creates it with defaults.
 // If the file is malformed, it returns defaults.
 // Merging: starts from defaults and overlays whatever the file contains,
@@ -170,7 +178,7 @@ func loadConfigFrom(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// saveConfig writes config to .cpsl/config.json.
+// saveConfig writes config to ~/.cpsl/config.json.
 func saveConfig(cfg Config) error {
 	if err := ensureConfigDir(); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)

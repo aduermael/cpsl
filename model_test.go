@@ -6,7 +6,7 @@ import (
 )
 
 // TestMain runs all tests in a temp directory so that saveConfig() calls
-// never clobber the real .cpsl/config.json in the project root.
+// never clobber the real ~/.cpsl/config.json.
 func TestMain(m *testing.M) {
 	tmp, err := os.MkdirTemp("", "cpsl-test-*")
 	if err != nil {
