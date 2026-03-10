@@ -10,7 +10,7 @@ import (
 )
 
 func TestDevEnvTool_Definition(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp/cpsl", "/tmp/workspace", nil)
+	tool := NewDevEnvTool(nil, "/tmp/cpsl", "/tmp/workspace", nil, "", nil)
 	def := tool.Definition()
 	if def.Name != "devenv" {
 		t.Errorf("Name = %q, want %q", def.Name, "devenv")
@@ -25,7 +25,7 @@ func TestDevEnvTool_ReadNoDockerfile(t *testing.T) {
 	cpslDir := filepath.Join(dir, ".cpsl")
 	workspace := dir
 
-	tool := NewDevEnvTool(nil, cpslDir, workspace, nil)
+	tool := NewDevEnvTool(nil, cpslDir, workspace, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -45,7 +45,7 @@ func TestDevEnvTool_ReadExistingDockerfile(t *testing.T) {
 	content := "FROM alpine:latest\nRUN apk add go\n"
 	os.WriteFile(filepath.Join(cpslDir, "Dockerfile"), []byte(content), 0o644)
 
-	tool := NewDevEnvTool(nil, cpslDir, dir, nil)
+	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -65,7 +65,7 @@ func TestDevEnvTool_ReadDetectsRootDockerfile(t *testing.T) {
 	rootContent := "FROM node:20\nWORKDIR /app\n"
 	os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(rootContent), 0o644)
 
-	tool := NewDevEnvTool(nil, cpslDir, dir, nil)
+	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -87,7 +87,7 @@ func TestDevEnvTool_WriteDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	cpslDir := filepath.Join(dir, ".cpsl")
 
-	tool := NewDevEnvTool(nil, cpslDir, dir, nil)
+	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	content := "FROM ubuntu:22.04\nRUN apt-get update\n"
 	input, _ := json.Marshal(devenvInput{Action: "write", Content: content})
 
@@ -113,7 +113,7 @@ func TestDevEnvTool_WriteEmptyContent(t *testing.T) {
 	dir := t.TempDir()
 	cpslDir := filepath.Join(dir, ".cpsl")
 
-	tool := NewDevEnvTool(nil, cpslDir, dir, nil)
+	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "write", Content: ""})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -129,7 +129,7 @@ func TestDevEnvTool_BuildNoDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	cpslDir := filepath.Join(dir, ".cpsl")
 
-	tool := NewDevEnvTool(nil, cpslDir, dir, nil)
+	tool := NewDevEnvTool(nil, cpslDir, dir, nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "build"})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -170,7 +170,7 @@ func TestDevEnvTool_BuildCallsRebuild(t *testing.T) {
 	container.containerID = "oldcontainer456"
 
 	mounts := []MountSpec{{Source: dir, Destination: "/workspace"}}
-	tool := NewDevEnvTool(container, cpslDir, dir, mounts)
+	tool := NewDevEnvTool(container, cpslDir, dir, mounts, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "build"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -186,7 +186,7 @@ func TestDevEnvTool_BuildCallsRebuild(t *testing.T) {
 }
 
 func TestDevEnvTool_InvalidAction(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil)
+	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil)
 	input, _ := json.Marshal(devenvInput{Action: "delete"})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -199,7 +199,7 @@ func TestDevEnvTool_InvalidAction(t *testing.T) {
 }
 
 func TestDevEnvTool_InvalidJSON(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil)
+	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil)
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{invalid`))
 	if err == nil {
@@ -208,7 +208,7 @@ func TestDevEnvTool_InvalidJSON(t *testing.T) {
 }
 
 func TestDevEnvTool_RequiresApproval(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil)
+	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil)
 	if tool.RequiresApproval(nil) {
 		t.Error("DevEnvTool should not require approval")
 	}
