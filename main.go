@@ -823,6 +823,10 @@ type App struct {
 	cfgEditCursor int
 	cfgDraft      Config
 
+	// Text prompt overlay (e.g. "Enter worktree name:")
+	promptLabel    string
+	promptCallback func(string) // called with entered text; nil when inactive
+
 	// CLI flags
 	displaySystemPrompts bool
 }
@@ -1027,6 +1031,10 @@ func (a *App) buildInputRows() []string {
 		}
 		rows = append(rows, sep)
 		return rows
+	}
+
+	if a.promptLabel != "" {
+		rows = append(rows, fmt.Sprintf("\033[33;1m%s\033[0m", a.promptLabel))
 	}
 
 	vlines := getVisualLines(a.input, a.cursor, a.width)
@@ -1973,6 +1981,20 @@ func (a *App) handleApprovalByte(ch byte) {
 }
 
 func (a *App) handleEnter() {
+	// Text prompt active — submit to callback.
+	if a.promptCallback != nil {
+		val := strings.TrimSpace(a.inputValue())
+		cb := a.promptCallback
+		a.promptLabel = ""
+		a.promptCallback = nil
+		a.resetInput()
+		if val != "" {
+			cb(val)
+		}
+		a.renderInput()
+		return
+	}
+
 	// Autocomplete first
 	if matches := a.autocompleteMatches(); len(matches) > 0 {
 		idx := a.autocompleteIdx
@@ -2162,12 +2184,8 @@ func (a *App) handleCommand(input string) {
 			a.render()
 			return
 		}
-		if len(wts) == 0 {
-			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "No worktrees found."})
-			a.render()
-			return
-		}
 		var lines []string
+		lines = append(lines, "+ New worktree")
 		for _, wt := range wts {
 			status := ""
 			if wt.Active {
@@ -2183,18 +2201,22 @@ func (a *App) handleCommand(input string) {
 		a.menuScrollOffset = 0
 		a.menuActive = true
 		a.menuAction = func(idx int) {
-			if idx >= 0 && idx < len(wts) {
-				selected := wts[idx]
-				a.worktreePath = selected.Path
-				a.status.WorktreeName = filepath.Base(selected.Path)
-				a.status.Branch = selected.Branch
-				a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to worktree '%s' (%s)", filepath.Base(selected.Path), selected.Branch)})
-			}
 			a.menuLines = nil
 			a.menuHeader = ""
 			a.menuActive = false
 			a.menuAction = nil
 			a.menuScrollOffset = 0
+
+			if idx == 0 {
+				// "New worktree" — prompt for a name.
+				a.promptForWorktreeName(repoRoot, baseDir)
+				return
+			}
+			wtIdx := idx - 1
+			if wtIdx >= 0 && wtIdx < len(wts) {
+				selected := wts[wtIdx]
+				a.switchToWorktree(selected.Path, filepath.Base(selected.Path), selected.Branch)
+			}
 		}
 		a.renderInput()
 
@@ -2205,6 +2227,46 @@ func (a *App) handleCommand(input string) {
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Unknown command: %s", cmd)})
 		a.render()
 	}
+}
+
+func (a *App) promptForWorktreeName(repoRoot, baseDir string) {
+	a.promptLabel = "Enter worktree name:"
+	a.promptCallback = func(name string) {
+		wtPath, err := createWorktree(repoRoot, baseDir, name)
+		if err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Failed to create worktree: %v", err)})
+			a.render()
+			return
+		}
+		branch := "cpsl-" + name
+		a.switchToWorktree(wtPath, name, branch)
+	}
+	a.resetInput()
+	a.renderInput()
+}
+
+func (a *App) switchToWorktree(wtPath, name, branch string) {
+	a.worktreePath = wtPath
+	a.status.WorktreeName = name
+	a.status.Branch = branch
+	_ = lockWorktree(wtPath, os.Getpid())
+
+	a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to worktree '%s' (%s)", name, branch)})
+
+	// Reboot container with new workspace if container is ready.
+	if a.containerReady && a.container != nil {
+		a.containerReady = false
+		go func() {
+			_ = a.container.Stop()
+			mounts := []MountSpec{{Source: wtPath, Destination: "/workspace"}}
+			if err := a.container.Start(wtPath, mounts); err != nil {
+				a.resultCh <- containerErrMsg{err: err}
+				return
+			}
+			a.resultCh <- containerReadyMsg{client: a.container}
+		}()
+	}
+	a.render()
 }
 
 func maskKey(key string) string {

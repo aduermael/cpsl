@@ -76,7 +76,7 @@ func TestCreateWorktree(t *testing.T) {
 	repo := initTestRepo(t)
 	baseDir := t.TempDir()
 
-	wtPath, err := createWorktree(repo, baseDir)
+	wtPath, err := createWorktree(repo, baseDir, "test")
 	if err != nil {
 		t.Fatalf("createWorktree: %v", err)
 	}
@@ -124,11 +124,11 @@ func TestListWorktrees_CleanAndDirty(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// Create two worktrees.
-	wt1, err := createWorktree(repo, baseDir)
+	wt1, err := createWorktree(repo, baseDir, "clean")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wt2, err := createWorktree(repo, baseDir)
+	wt2, err := createWorktree(repo, baseDir, "dirty")
 	if err != nil {
 		t.Fatal(err)
 	}

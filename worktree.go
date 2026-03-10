@@ -84,9 +84,9 @@ func worktreeBaseDir(projectUUID string) string {
 
 // createWorktree creates a new git worktree in baseDir from repoRoot.
 // Returns the path to the new worktree.
-func createWorktree(repoRoot, baseDir string) (string, error) {
-	branchName := fmt.Sprintf("cpsl-%d", time.Now().UnixNano())
-	wtPath := filepath.Join(baseDir, branchName)
+func createWorktree(repoRoot, baseDir, name string) (string, error) {
+	branchName := "cpsl-" + name
+	wtPath := filepath.Join(baseDir, name)
 
 	if err := os.MkdirAll(baseDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating worktree base dir: %w", err)
@@ -261,7 +261,7 @@ func selectWorktree(repoRoot string) (selected string, dirty []WorktreeInfo, err
 
 	// No worktrees exist — create one.
 	if len(worktrees) == 0 {
-		path, err := createWorktree(repoRoot, baseDir)
+		path, err := createWorktree(repoRoot, baseDir, fmt.Sprintf("auto-%d", time.Now().UnixNano()))
 		if err != nil {
 			return "", nil, fmt.Errorf("creating initial worktree: %w", err)
 		}

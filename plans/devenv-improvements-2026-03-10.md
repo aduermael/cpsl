@@ -69,7 +69,7 @@ Workspace and status bar rework:
 **Context**: Currently `resolveWorkspaceCmd` always uses worktrees (auto-creates if none exist). Change to use the repo working directory by default. Worktrees become opt-in via `/worktrees`.
 
 - [x] 3a: Simplify `resolveWorkspaceCmd` — remove the `selectWorktree` call. Use the repo root as workspace (or cwd if not in a git repo). No worktree creation on startup. Remove worktree locking on startup (only lock when user explicitly switches to a worktree via `/worktrees`).
-- [ ] 3b: Update `/worktrees` command — add a "New worktree" entry at the top of the menu. When selected, prompt the user for a worktree name (reuse the input buffer or show a simple text prompt), then call `createWorktree` with that name. After creation, switch to it (update `a.worktreePath`, `a.status`, reboot container with new workspace).
+- [x] 3b: Update `/worktrees` command — add a "New worktree" entry at the top of the menu. When selected, prompt the user for a worktree name (reuse the input buffer or show a simple text prompt), then call `createWorktree` with that name. After creation, switch to it (update `a.worktreePath`, `a.status`, reboot container with new workspace).
 
 ## Phase 4: Status Bar Rework
 
