@@ -657,30 +657,12 @@ func gitRepoRoot() string {
 // ─── Async init commands ───
 
 func resolveWorkspaceCmd(cfg Config) workspaceMsg {
-	var workspace string
-	repoRoot := gitRepoRoot()
-	if repoRoot != "" {
-		selected, _, err := selectWorktree(repoRoot)
-		if err != nil {
-			return workspaceMsg{}
-		}
-		if selected != "" {
-			workspace = selected
-		} else {
-			cwd, _ := os.Getwd()
-			workspace = cwd
-		}
-	} else {
-		cwd, _ := os.Getwd()
-		workspace = cwd
-	}
-
-	if repoRoot != "" && workspace != "" {
-		_ = lockWorktree(workspace, os.Getpid())
+	if repoRoot := gitRepoRoot(); repoRoot != "" {
 		ensureGitignoreLock(repoRoot)
+		return workspaceMsg{worktreePath: repoRoot}
 	}
-
-	return workspaceMsg{worktreePath: workspace}
+	cwd, _ := os.Getwd()
+	return workspaceMsg{worktreePath: cwd}
 }
 
 func bootContainerCmd(cfg Config, workspace string) any {
