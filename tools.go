@@ -321,7 +321,8 @@ func (t *DevEnvTool) buildAndReplace() (string, error) {
 		return "", fmt.Errorf("no Dockerfile at .cpsl/Dockerfile — use 'write' first")
 	}
 
-	if err := t.container.Rebuild(t.dockerfilePath(), t.workspace, t.mounts); err != nil {
+	imageName := fmt.Sprintf("cpsl-custom-%s", randomID())
+	if err := t.container.Rebuild(imageName, t.dockerfilePath(), t.workspace, t.mounts); err != nil {
 		return "", fmt.Errorf("rebuild failed: %w", err)
 	}
 	return "Container rebuilt successfully with the new Dockerfile.", nil

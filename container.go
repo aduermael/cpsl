@@ -238,11 +238,9 @@ func (c *ContainerClient) Status() (ContainerStatus, error) {
 }
 
 // Rebuild builds a Docker image from the given Dockerfile, stops the current
-// container, and starts a new one with the built image. The workspace is used
-// as the build context directory.
-func (c *ContainerClient) Rebuild(dockerfilePath, workspace string, mounts []MountSpec) error {
-	// Build the custom image.
-	imageName := fmt.Sprintf("cpsl-custom-%s", randomID())
+// container, and starts a new one with the built image. The caller provides the
+// desired image name; workspace is used as the build context directory.
+func (c *ContainerClient) Rebuild(imageName, dockerfilePath, workspace string, mounts []MountSpec) error {
 
 	buildCtx, buildCancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer buildCancel()

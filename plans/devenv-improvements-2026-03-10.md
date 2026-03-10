@@ -53,7 +53,7 @@ Workspace and status bar rework:
 
 **Context**: `container.go` `Rebuild` currently generates a random image name internally. Change it to accept the image name as a parameter so the caller controls naming. Also need to pass project ID into DevEnvTool.
 
-- [ ] 1a: Change `Rebuild(dockerfilePath, workspace string, mounts []MountSpec) error` to `Rebuild(imageName, dockerfilePath, workspace string, mounts []MountSpec) error` in `container.go`. Remove internal `cpsl-custom-<randomID>` generation. Update the one call site in `tools.go` `buildAndReplace()`.
+- [x] 1a: Change `Rebuild(dockerfilePath, workspace string, mounts []MountSpec) error` to `Rebuild(imageName, dockerfilePath, workspace string, mounts []MountSpec) error` in `container.go`. Remove internal `cpsl-custom-<randomID>` generation. Update the one call site in `tools.go` `buildAndReplace()`.
 - [ ] 1b: Add `projectID string` and `onRebuild func(imageName string)` fields to `DevEnvTool` struct. Update `NewDevEnvTool` to accept these. Update the call site in `main.go` `startAgent()` to pass the project ID (from `ensureProjectID(gitRepoRoot())`) and a callback that sets `a.config.ContainerImage = imageName` and calls `saveConfig(a.config)`.
 
 ## Phase 2: Named Dockerfiles
