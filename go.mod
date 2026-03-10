@@ -5,7 +5,7 @@ go 1.25.6
 require (
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.40.0
-	langdag.com/langdag v0.4.0
+	langdag.com/langdag v0.5.1
 )
 
 require (

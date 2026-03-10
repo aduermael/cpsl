@@ -549,11 +549,6 @@ func truncateWithEllipsis(s string, maxLen int) string {
 
 // ─── Async message types ───
 
-type modelsMsg struct {
-	models []ModelDef
-	err    error
-}
-
 type sweScoresMsg struct {
 	scores map[string]float64
 	err    error
@@ -758,10 +753,6 @@ func fetchStatusCmd(worktreePath string) statusInfoMsg {
 	return statusInfoMsg{info: info}
 }
 
-func fetchModelsCmd() modelsMsg {
-	return modelsMsg{models: builtinModels()}
-}
-
 func fetchSWEScoresCmd() sweScoresMsg {
 	scores, err := fetchSWEScores()
 	return sweScoresMsg{scores: scores, err: err}
@@ -802,8 +793,6 @@ type App struct {
 	pasteStore       map[int]string
 	mode             appMode
 	models           []ModelDef
-	modelsErr        error
-	modelsLoaded     bool
 	sweScores        map[string]float64
 	sweLoaded        bool
 	container        *ContainerClient
@@ -2064,13 +2053,8 @@ func (a *App) handleCommand(input string) {
 		a.enterConfigMode()
 
 	case "/model":
-		if !a.modelsLoaded {
+		if a.models == nil {
 			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Models are still loading... please try again in a moment."})
-			a.render()
-			return
-		}
-		if a.modelsErr != nil {
-			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Failed to load models: %v", a.modelsErr)})
 			a.render()
 			return
 		}
@@ -2117,7 +2101,7 @@ func (a *App) handleCommand(input string) {
 				if err := saveConfig(a.config); err != nil {
 					a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving model: %v", err)})
 				} else {
-					a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Model set to %s.", selected.DisplayName)})
+					a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Model set to %s.", selected.ID)})
 				}
 			}
 			a.menuLines = nil
@@ -2650,11 +2634,7 @@ func (a *App) showModelChange(modelID string) {
 	if modelID == "" || modelID == a.lastModelID {
 		return
 	}
-	displayName := modelID
-	if m := findModelByID(a.models, modelID); m != nil {
-		displayName = m.DisplayName
-	}
-	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Using " + displayName})
+	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Using " + modelID})
 	a.lastModelID = modelID
 }
 
@@ -2678,9 +2658,11 @@ func (a *App) startAgent(userMessage string) {
 	// Server-side tools are handled by the LLM provider, not the client.
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
 
-	modelID := ""
-	if a.modelsLoaded {
-		modelID = a.config.resolveActiveModel(a.models)
+	modelID := a.config.resolveActiveModel(a.models)
+	if modelID == "" {
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: "model not found, `/model` to pick a valid one"})
+		a.render()
+		return
 	}
 
 	var modelProvider string
@@ -2869,7 +2851,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 
 func (a *App) startInit() {
 	cfg := a.config
-	go func() { a.resultCh <- fetchModelsCmd() }()
 	go func() { a.resultCh <- fetchSWEScoresCmd() }()
 	go func() { a.resultCh <- resolveWorkspaceCmd(cfg) }()
 	go func() {
@@ -2906,25 +2887,11 @@ func (a *App) drainResults() {
 
 func (a *App) handleResult(result any) {
 	switch msg := result.(type) {
-	case modelsMsg:
-		a.modelsLoaded = true
-		a.modelsErr = msg.err
-		if msg.err == nil {
-			a.models = msg.models
-			if a.modelCatalog != nil {
-				enrichModelsFromCatalog(a.models, a.modelCatalog)
-			}
-			if a.sweLoaded && a.sweScores != nil {
-				matchSWEScores(a.models, a.sweScores)
-			}
-			a.showModelChange(a.config.resolveActiveModel(a.models))
-		}
-
 	case sweScoresMsg:
 		a.sweLoaded = true
 		if msg.err == nil {
 			a.sweScores = msg.scores
-			if a.modelsLoaded && a.models != nil {
+			if a.models != nil {
 				matchSWEScores(a.models, a.sweScores)
 			}
 		}
@@ -2932,9 +2899,11 @@ func (a *App) handleResult(result any) {
 	case catalogMsg:
 		if msg.catalog != nil {
 			a.modelCatalog = msg.catalog
-			if a.modelsLoaded && a.models != nil {
-				enrichModelsFromCatalog(a.models, a.modelCatalog)
+			a.models = modelsFromCatalog(msg.catalog)
+			if a.sweLoaded && a.sweScores != nil {
+				matchSWEScores(a.models, a.sweScores)
 			}
+			a.showModelChange(a.config.resolveActiveModel(a.models))
 		}
 
 	case langdagReadyMsg:

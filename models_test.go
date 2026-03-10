@@ -7,17 +7,17 @@ import (
 	"langdag.com/langdag/types"
 )
 
-// testModels returns a known model list for testing (native API IDs).
+// testModels returns a known model list for testing.
 func testModels() []ModelDef {
 	return []ModelDef{
-		{Provider: ProviderAnthropic, ID: "claude-sonnet-4-0-20250514", DisplayName: "Claude Sonnet 4", PromptPrice: 3.0, CompletionPrice: 15.0},
-		{Provider: ProviderAnthropic, ID: "claude-haiku-4-5-20250414", DisplayName: "Claude Haiku 4.5", PromptPrice: 0.8, CompletionPrice: 4.0},
-		{Provider: ProviderAnthropic, ID: "claude-opus-4-0-20250514", DisplayName: "Claude Opus 4", PromptPrice: 15.0, CompletionPrice: 75.0},
-		{Provider: ProviderGrok, ID: "grok-3", DisplayName: "Grok 3", PromptPrice: 3.0, CompletionPrice: 15.0},
-		{Provider: ProviderGrok, ID: "grok-3-mini", DisplayName: "Grok 3 Mini", PromptPrice: 0.3, CompletionPrice: 0.5},
-		{Provider: ProviderOpenAI, ID: "gpt-4o", DisplayName: "GPT-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
-		{Provider: ProviderOpenAI, ID: "gpt-4o-mini", DisplayName: "GPT-4o Mini", PromptPrice: 0.15, CompletionPrice: 0.6},
-		{Provider: ProviderOpenAI, ID: "o3-mini", DisplayName: "o3-mini", PromptPrice: 1.1, CompletionPrice: 4.4},
+		{Provider: ProviderAnthropic, ID: "claude-sonnet-4-0-20250514", PromptPrice: 3.0, CompletionPrice: 15.0},
+		{Provider: ProviderAnthropic, ID: "claude-haiku-4-5-20250414", PromptPrice: 0.8, CompletionPrice: 4.0},
+		{Provider: ProviderAnthropic, ID: "claude-opus-4-0-20250514", PromptPrice: 15.0, CompletionPrice: 75.0},
+		{Provider: ProviderGrok, ID: "grok-3", PromptPrice: 3.0, CompletionPrice: 15.0},
+		{Provider: ProviderGrok, ID: "grok-3-mini", PromptPrice: 0.3, CompletionPrice: 0.5},
+		{Provider: ProviderOpenAI, ID: "gpt-4o", PromptPrice: 2.5, CompletionPrice: 10.0},
+		{Provider: ProviderOpenAI, ID: "gpt-4o-mini", PromptPrice: 0.15, CompletionPrice: 0.6},
+		{Provider: ProviderOpenAI, ID: "o3-mini", PromptPrice: 1.1, CompletionPrice: 4.4},
 	}
 }
 
@@ -199,51 +199,53 @@ func TestFormatPriceZero(t *testing.T) {
 	}
 }
 
-// --- builtinModels tests ---
+// --- modelsFromCatalog tests ---
 
-func TestBuiltinModelsNotEmpty(t *testing.T) {
-	models := builtinModels()
-	if len(models) == 0 {
-		t.Error("builtinModels should return at least one model")
+func TestModelsFromCatalog(t *testing.T) {
+	catalog := &langdag.ModelCatalog{
+		Providers: map[string][]langdag.ModelPricing{
+			"anthropic": {
+				{ID: "claude-opus-4-6", InputPricePer1M: 5, OutputPricePer1M: 25, ContextWindow: 200000},
+			},
+			"grok": {
+				{ID: "grok-3", InputPricePer1M: 3, OutputPricePer1M: 15, ContextWindow: 131072},
+			},
+		},
+	}
+	models := modelsFromCatalog(catalog)
+	if len(models) != 2 {
+		t.Fatalf("expected 2 models, got %d", len(models))
+	}
+	// anthropic comes first in supportedProviders order
+	if models[0].ID != "claude-opus-4-6" || models[0].Provider != "anthropic" {
+		t.Errorf("first model: got %s/%s, want claude-opus-4-6/anthropic", models[0].ID, models[0].Provider)
+	}
+	if models[0].PromptPrice != 5 || models[0].CompletionPrice != 25 {
+		t.Errorf("pricing: got %f/%f, want 5/25", models[0].PromptPrice, models[0].CompletionPrice)
+	}
+	if models[0].ContextWindow != 200000 {
+		t.Errorf("context: got %d, want 200000", models[0].ContextWindow)
 	}
 }
 
-func TestBuiltinModelsHaveRequiredFields(t *testing.T) {
-	for _, m := range builtinModels() {
-		if m.Provider == "" {
-			t.Errorf("model %q has empty provider", m.ID)
-		}
-		if m.ID == "" {
-			t.Errorf("model %q has empty ID", m.DisplayName)
-		}
-		if m.DisplayName == "" {
-			t.Errorf("model %q has empty display name", m.ID)
-		}
+func TestModelsFromCatalogNil(t *testing.T) {
+	models := modelsFromCatalog(nil)
+	if models != nil {
+		t.Errorf("expected nil for nil catalog, got %d models", len(models))
 	}
 }
 
-func TestBuiltinModelsHaveMultipleProviders(t *testing.T) {
-	providers := make(map[string]bool)
-	for _, m := range builtinModels() {
-		providers[m.Provider] = true
+func TestModelsFromCatalogSkipsUnknownProviders(t *testing.T) {
+	catalog := &langdag.ModelCatalog{
+		Providers: map[string][]langdag.ModelPricing{
+			"anthropic":        {{ID: "claude-opus-4-6", InputPricePer1M: 5, OutputPricePer1M: 25, ContextWindow: 200000}},
+			"unknown-provider": {{ID: "mystery-model", InputPricePer1M: 1, OutputPricePer1M: 2, ContextWindow: 100000}},
+		},
 	}
-	if len(providers) < 2 {
-		t.Errorf("expected at least 2 providers in builtin models, got %d", len(providers))
-	}
-}
-
-func TestModelsJSONLoadsAllEntries(t *testing.T) {
-	models := builtinModels()
-	if len(models) < 20 {
-		t.Errorf("expected at least 20 models from models.json, got %d", len(models))
-	}
-	providers := make(map[string]int)
+	models := modelsFromCatalog(catalog)
 	for _, m := range models {
-		providers[m.Provider]++
-	}
-	for _, p := range []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini} {
-		if providers[p] == 0 {
-			t.Errorf("expected at least one model for provider %q", p)
+		if m.Provider == "unknown-provider" {
+			t.Errorf("should not include models from unknown providers")
 		}
 	}
 }
@@ -436,19 +438,19 @@ func TestMatchSWEScoresEmptyScores(t *testing.T) {
 
 func sortTestModels() []ModelDef {
 	return []ModelDef{
-		{Provider: "openai", ID: "gpt-4o", DisplayName: "GPT-4o", PromptPrice: 2.5, ContextWindow: 128000},
-		{Provider: "anthropic", ID: "claude-opus", DisplayName: "Claude Opus", PromptPrice: 15.0, ContextWindow: 200000},
-		{Provider: "gemini", ID: "gemini-pro", DisplayName: "Gemini Pro", PromptPrice: 1.25, ContextWindow: 1000000},
+		{Provider: "openai", ID: "gpt-4o", PromptPrice: 2.5, ContextWindow: 128000},
+		{Provider: "anthropic", ID: "claude-opus", PromptPrice: 15.0, ContextWindow: 200000},
+		{Provider: "gemini", ID: "gemini-pro", PromptPrice: 1.25, ContextWindow: 1000000},
 	}
 }
 
 func TestSortModelsByColNameAsc(t *testing.T) {
 	m := sortTestModels()
 	sortModelsByCol(m, 0, true)
-	want := []string{"Claude Opus", "Gemini Pro", "GPT-4o"}
+	want := []string{"claude-opus", "gemini-pro", "gpt-4o"}
 	for i, w := range want {
-		if m[i].DisplayName != w {
-			t.Errorf("index %d: got %s, want %s", i, m[i].DisplayName, w)
+		if m[i].ID != w {
+			t.Errorf("index %d: got %s, want %s", i, m[i].ID, w)
 		}
 	}
 }
@@ -456,10 +458,10 @@ func TestSortModelsByColNameAsc(t *testing.T) {
 func TestSortModelsByColNameDesc(t *testing.T) {
 	m := sortTestModels()
 	sortModelsByCol(m, 0, false)
-	want := []string{"GPT-4o", "Gemini Pro", "Claude Opus"}
+	want := []string{"gpt-4o", "gemini-pro", "claude-opus"}
 	for i, w := range want {
-		if m[i].DisplayName != w {
-			t.Errorf("index %d: got %s, want %s", i, m[i].DisplayName, w)
+		if m[i].ID != w {
+			t.Errorf("index %d: got %s, want %s", i, m[i].ID, w)
 		}
 	}
 }
@@ -527,57 +529,6 @@ func TestSortColFromName(t *testing.T) {
 	}
 }
 
-// --- enrichModelsFromCatalog tests ---
-
-func TestEnrichModelsFromCatalog(t *testing.T) {
-	models := []ModelDef{
-		{Provider: "anthropic", ID: "claude-sonnet-4-0-20250514", DisplayName: "Claude Sonnet 4"},
-		{Provider: "openai", ID: "gpt-4o", DisplayName: "GPT-4o"},
-		{Provider: "grok", ID: "unknown-model", DisplayName: "Unknown"},
-	}
-
-	catalog := &langdag.ModelCatalog{
-		Providers: map[string][]langdag.ModelPricing{
-			"anthropic": {
-				{ID: "claude-sonnet-4-0-20250514", InputPricePer1M: 3.0, OutputPricePer1M: 15.0, ContextWindow: 200000},
-			},
-			"openai": {
-				{ID: "gpt-4o", InputPricePer1M: 2.5, OutputPricePer1M: 10.0, ContextWindow: 128000},
-			},
-		},
-	}
-
-	enrichModelsFromCatalog(models, catalog)
-
-	// Matched models get catalog pricing
-	if models[0].PromptPrice != 3.0 {
-		t.Errorf("claude sonnet input price: got %f, want 3.0", models[0].PromptPrice)
-	}
-	if models[0].CompletionPrice != 15.0 {
-		t.Errorf("claude sonnet output price: got %f, want 15.0", models[0].CompletionPrice)
-	}
-	if models[0].ContextWindow != 200000 {
-		t.Errorf("claude sonnet context: got %d, want 200000", models[0].ContextWindow)
-	}
-	if models[1].PromptPrice != 2.5 {
-		t.Errorf("gpt-4o input price: got %f, want 2.5", models[1].PromptPrice)
-	}
-
-	// Unmatched model keeps zero values
-	if models[2].PromptPrice != 0 {
-		t.Errorf("unknown model should have zero price, got %f", models[2].PromptPrice)
-	}
-}
-
-func TestEnrichModelsNilCatalog(t *testing.T) {
-	models := []ModelDef{
-		{Provider: "anthropic", ID: "test", DisplayName: "Test", PromptPrice: 5.0},
-	}
-	enrichModelsFromCatalog(models, nil)
-	if models[0].PromptPrice != 5.0 {
-		t.Errorf("nil catalog should not modify prices, got %f", models[0].PromptPrice)
-	}
-}
 
 // --- computeCost tests ---
 
@@ -689,42 +640,3 @@ func TestFormatCostTiny(t *testing.T) {
 	}
 }
 
-// --- findModelByID prefix fallback tests ---
-
-func TestFindModelByIDExact(t *testing.T) {
-	models := []ModelDef{
-		{ID: "grok-4", PromptPrice: 3},
-	}
-	m := findModelByID(models, "grok-4")
-	if m == nil || m.ID != "grok-4" {
-		t.Errorf("findModelByID exact match failed")
-	}
-}
-
-func TestFindModelByIDPrefixFallback(t *testing.T) {
-	models := []ModelDef{
-		{ID: "grok-3", PromptPrice: 3},
-		{ID: "grok-3-mini", PromptPrice: 0.3},
-		{ID: "grok-4", PromptPrice: 3},
-	}
-	// "grok-4-0709" should match "grok-4" not "grok-3"
-	m := findModelByID(models, "grok-4-0709")
-	if m == nil || m.ID != "grok-4" {
-		t.Errorf("findModelByID prefix fallback: got %v, want grok-4", m)
-	}
-	// "grok-3-mini-beta" should match "grok-3-mini" (longest prefix)
-	m = findModelByID(models, "grok-3-mini-beta")
-	if m == nil || m.ID != "grok-3-mini" {
-		t.Errorf("findModelByID longest prefix: got %v, want grok-3-mini", m)
-	}
-}
-
-func TestFindModelByIDNoMatch(t *testing.T) {
-	models := []ModelDef{
-		{ID: "grok-4", PromptPrice: 3},
-	}
-	m := findModelByID(models, "totally-different")
-	if m != nil {
-		t.Errorf("findModelByID should return nil for no match, got %v", m)
-	}
-}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,9 +14,6 @@ import (
 	"langdag.com/langdag/types"
 )
 
-//go:embed models.json
-var modelsJSON []byte
-
 // Provider constants for supported AI providers.
 const (
 	ProviderAnthropic = "anthropic"
@@ -26,25 +22,37 @@ const (
 	ProviderGemini    = "gemini"
 )
 
+// supportedProviders lists providers in display order.
+var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini}
+
 // ModelDef describes a model available for selection.
-// IDs are native API model identifiers (not OpenRouter format).
-// models.json provides provider, id, and display_name; pricing and context
-// window are populated at runtime from the langdag model catalog.
+// Models are derived from the langdag model catalog at runtime.
 type ModelDef struct {
-	Provider        string  `json:"provider"`
-	ID              string  `json:"id"`
-	DisplayName     string  `json:"display_name"`
-	PromptPrice     float64 `json:"-"` // USD per million input tokens (from catalog)
-	CompletionPrice float64 `json:"-"` // USD per million output tokens (from catalog)
-	ContextWindow   int     `json:"-"` // tokens (from catalog)
-	SWEScore        float64 `json:"-"` // SWE-bench Verified score (0 = no data)
+	Provider        string
+	ID              string
+	PromptPrice     float64 // USD per million input tokens
+	CompletionPrice float64 // USD per million output tokens
+	ContextWindow   int     // tokens
+	SWEScore        float64 // SWE-bench Verified score (0 = no data)
 }
 
-// builtinModels returns the list of supported models loaded from the embedded models.json.
-func builtinModels() []ModelDef {
+// modelsFromCatalog builds the model list from the langdag catalog.
+// Only models from supported providers are included.
+func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
+	if catalog == nil {
+		return nil
+	}
 	var models []ModelDef
-	if err := json.Unmarshal(modelsJSON, &models); err != nil {
-		panic(fmt.Sprintf("failed to parse embedded models.json: %v", err))
+	for _, provider := range supportedProviders {
+		for _, p := range catalog.ForProvider(provider) {
+			models = append(models, ModelDef{
+				Provider:        provider,
+				ID:              p.ID,
+				PromptPrice:     p.InputPricePer1M,
+				CompletionPrice: p.OutputPricePer1M,
+				ContextWindow:   p.ContextWindow,
+			})
+		}
 	}
 	return models
 }
@@ -61,39 +69,23 @@ func filterModelsByProviders(models []ModelDef, providers map[string]bool) []Mod
 }
 
 // findModelByID returns the model with the given ID, or nil if not found.
-// Falls back to longest-prefix match (e.g. "grok-4-0709" matches "grok-4")
-// when no exact match exists, which handles API responses that return
-// versioned model IDs.
 func findModelByID(models []ModelDef, id string) *ModelDef {
 	for i := range models {
 		if models[i].ID == id {
 			return &models[i]
 		}
 	}
-	// Fallback: longest prefix match
-	bestIdx := -1
-	bestLen := 0
-	for i := range models {
-		mid := models[i].ID
-		if strings.HasPrefix(id, mid+"-") && len(mid) > bestLen {
-			bestIdx = i
-			bestLen = len(mid)
-		}
-	}
-	if bestIdx >= 0 {
-		return &models[bestIdx]
-	}
 	return nil
 }
 
 // sortModelsByCol sorts models in place by the given column.
-// col: 0=Name, 1=Provider, 2=Price(prompt), 3=ContextWindow.
+// col: 0=Model(ID), 1=Provider, 2=Price(prompt), 3=ContextWindow.
 func sortModelsByCol(models []ModelDef, col int, asc bool) {
 	sort.SliceStable(models, func(i, j int) bool {
 		var less bool
 		switch col {
 		case 0:
-			less = strings.ToLower(models[i].DisplayName) < strings.ToLower(models[j].DisplayName)
+			less = strings.ToLower(models[i].ID) < strings.ToLower(models[j].ID)
 		case 1:
 			less = strings.ToLower(models[i].Provider) < strings.ToLower(models[j].Provider)
 		case 2:
@@ -101,7 +93,7 @@ func sortModelsByCol(models []ModelDef, col int, asc bool) {
 		case 3:
 			less = models[i].ContextWindow < models[j].ContextWindow
 		default:
-			less = strings.ToLower(models[i].DisplayName) < strings.ToLower(models[j].DisplayName)
+			less = strings.ToLower(models[i].ID) < strings.ToLower(models[j].ID)
 		}
 		if !asc {
 			return !less
@@ -179,13 +171,13 @@ func formatContextWindow(tokens int) string {
 }
 
 // formatModelMenuLines formats models as aligned multi-column menu lines.
-// Columns: Name, Provider, Price (prompt), Context Window.
+// Columns: Model (ID), Provider, Price (prompt), Context Window.
 // Returns a header string and the data lines.
 // The active model is marked with ● at the end.
 // sortCol (0-3) determines which column header is highlighted.
 func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortAsc bool) (string, []string) {
 	// Column headers
-	headers := [4]string{"Name", "Provider", "Price", "Context"}
+	headers := [4]string{"Model", "Provider", "Price", "Context"}
 
 	// Compute column widths (at least as wide as headers)
 	maxName := len(headers[0])
@@ -200,7 +192,7 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 	entries := make([]entry, len(models))
 	for i, m := range models {
 		e := entry{
-			name:   m.DisplayName,
+			name:   m.ID,
 			prov:   m.Provider,
 			price:  formatPricePerM(m.PromptPrice, m.CompletionPrice),
 			ctx:    formatContextWindow(m.ContextWindow),
@@ -266,29 +258,6 @@ func catalogCachePath() string {
 		home = "."
 	}
 	return filepath.Join(home, ".cpsl", "model_catalog.json")
-}
-
-// enrichModelsFromCatalog updates model pricing and context window from the
-// langdag catalog, falling back to models.json values when a model isn't found.
-func enrichModelsFromCatalog(models []ModelDef, catalog *langdag.ModelCatalog) {
-	if catalog == nil {
-		return
-	}
-	for i := range models {
-		pricing, _, found := catalog.LookupModel(models[i].ID)
-		if !found {
-			continue
-		}
-		if pricing.InputPricePer1M > 0 {
-			models[i].PromptPrice = pricing.InputPricePer1M
-		}
-		if pricing.OutputPricePer1M > 0 {
-			models[i].CompletionPrice = pricing.OutputPricePer1M
-		}
-		if pricing.ContextWindow > 0 {
-			models[i].ContextWindow = pricing.ContextWindow
-		}
-	}
 }
 
 // computeCost calculates the USD cost for a single LLM call based on token
