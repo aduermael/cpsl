@@ -21,9 +21,9 @@ func TestRenderTree_LinearConversation(t *testing.T) {
 		{ID: "4", ParentID: "3", NodeType: types.NodeTypeAssistant, Content: "Sure, let me look.", Model: "claude-sonnet-4-20250514", TokensIn: 500, TokensOut: 200},
 	}
 
-	result := a.renderTree(nodes, "1")
+	result := a.renderTree(nodes)
 
-	// All lines should start at column 0 (flat spine, no indentation).
+	// All lines should start at column 0 (no indentation).
 	for _, line := range strings.Split(strings.TrimRight(result, "\n"), "\n") {
 		if line == "" || strings.HasPrefix(line, "Total:") {
 			continue
@@ -54,7 +54,7 @@ func TestRenderTree_WithToolCalls(t *testing.T) {
 		{ID: "5", ParentID: "4", NodeType: types.NodeTypeAssistant, Content: "Here are the files."},
 	}
 
-	result := a.renderTree(nodes, "1")
+	result := a.renderTree(nodes)
 	lines := strings.Split(strings.TrimRight(result, "\n"), "\n")
 
 	// Tool call and result lines should be indented.
@@ -68,7 +68,7 @@ func TestRenderTree_WithToolCalls(t *testing.T) {
 		t.Errorf("expected tool call line to be indented, got:\n%s", result)
 	}
 
-	// User/Assistant lines should NOT be indented (flat spine).
+	// User/Assistant lines should NOT be indented.
 	for _, line := range lines {
 		if strings.Contains(line, "Run ls") && strings.HasPrefix(line, " ") {
 			t.Errorf("user line should not be indented: %q", line)
@@ -79,28 +79,85 @@ func TestRenderTree_WithToolCalls(t *testing.T) {
 	}
 }
 
-func TestRenderTree_Branching(t *testing.T) {
+func TestRenderTree_ToolResultAsUserNode(t *testing.T) {
 	a := &App{}
 
-	// Tree with a branch: user asked two different follow-ups from same assistant response.
+	// Simulates the real langdag storage where tool results are stored as
+	// user nodes via PromptFrom, and assistant tool_use is stored as JSON.
 	nodes := []*types.Node{
-		{ID: "1", NodeType: types.NodeTypeUser, Content: "Start"},
-		{ID: "2", ParentID: "1", NodeType: types.NodeTypeAssistant, Content: "OK"},
-		{ID: "3a", ParentID: "2", NodeType: types.NodeTypeUser, Content: "Branch A"},
-		{ID: "3b", ParentID: "2", NodeType: types.NodeTypeUser, Content: "Branch B"},
+		{ID: "1", NodeType: types.NodeTypeUser, Content: "Run hello world"},
+		{ID: "2", ParentID: "1", NodeType: types.NodeTypeAssistant,
+			Content: `[{"type":"tool_use","id":"call_1","name":"bash","input":{"command":"go run main.go"}},{"type":"text","text":"Let me run that."}]`},
+		{ID: "3", ParentID: "2", NodeType: types.NodeTypeUser,
+			Content: `[{"type":"tool_result","tool_use_id":"call_1","content":"Hello, World!"}]`},
+		{ID: "4", ParentID: "3", NodeType: types.NodeTypeAssistant, Content: "Done!"},
 	}
 
-	result := a.renderTree(nodes, "1")
+	result := a.renderTree(nodes)
 
-	if !strings.Contains(result, "Branch A") {
-		t.Errorf("expected tree to contain 'Branch A', got:\n%s", result)
+	// Tool result user node should NOT show as "You:".
+	if strings.Contains(result, "You: [{") {
+		t.Errorf("tool_result user node should not display raw JSON, got:\n%s", result)
 	}
-	if !strings.Contains(result, "Branch B") {
-		t.Errorf("expected tree to contain 'Branch B', got:\n%s", result)
+
+	// Should show the tool name from the assistant node.
+	if !strings.Contains(result, "bash") {
+		t.Errorf("expected tool name 'bash' in tree, got:\n%s", result)
 	}
-	// Should use tree connectors for branching.
-	if !strings.Contains(result, "├─") {
-		t.Errorf("expected tree to use ├─ connector for branching, got:\n%s", result)
+
+	// Tool result should show as "✓ bash" (tool name, not output), indented.
+	foundToolResult := false
+	for _, line := range strings.Split(strings.TrimRight(result, "\n"), "\n") {
+		if strings.Contains(line, "✓") && strings.Contains(line, "bash") {
+			foundToolResult = true
+			if !strings.HasPrefix(line, "  ") {
+				t.Errorf("tool result line should be indented: %q", line)
+			}
+		}
+	}
+	if !foundToolResult {
+		t.Errorf("expected '✓ bash' tool result line, got:\n%s", result)
+	}
+	// Should NOT show tool output content in tree.
+	if strings.Contains(result, "Hello, World!") {
+		t.Errorf("tree should not show tool output, got:\n%s", result)
+	}
+
+	// The actual user message should still show as "You:" at column 0.
+	for _, line := range strings.Split(strings.TrimRight(result, "\n"), "\n") {
+		if strings.Contains(line, "You:") && strings.HasPrefix(line, " ") {
+			t.Errorf("user line should not be indented: %q", line)
+		}
+	}
+
+	// Assistant lines should be at column 0.
+	for _, line := range strings.Split(strings.TrimRight(result, "\n"), "\n") {
+		if strings.Contains(line, "Assistant") && strings.HasPrefix(line, " ") {
+			t.Errorf("assistant line should not be indented: %q", line)
+		}
+		if strings.Contains(line, "Done!") && strings.HasPrefix(line, " ") {
+			t.Errorf("assistant line should not be indented: %q", line)
+		}
+	}
+}
+
+func TestRenderTree_ToolResultError(t *testing.T) {
+	a := &App{}
+
+	nodes := []*types.Node{
+		{ID: "1", NodeType: types.NodeTypeUser, Content: "Do something"},
+		{ID: "2", ParentID: "1", NodeType: types.NodeTypeAssistant,
+			Content: `[{"type":"tool_use","id":"call_1","name":"bash","input":{}}]`},
+		{ID: "3", ParentID: "2", NodeType: types.NodeTypeUser,
+			Content: `[{"type":"tool_result","tool_use_id":"call_1","content":"command not found","is_error":true}]`},
+		{ID: "4", ParentID: "3", NodeType: types.NodeTypeAssistant, Content: "That failed."},
+	}
+
+	result := a.renderTree(nodes)
+
+	// Should show error marker (✗) not success marker (✓).
+	if !strings.Contains(result, "✗") {
+		t.Errorf("expected error marker ✗ for failed tool result, got:\n%s", result)
 	}
 }
 

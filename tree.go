@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -24,9 +25,9 @@ func (a *App) nodeCost(n *types.Node) float64 {
 	return computeCost(a.models, n.Model, usage)
 }
 
-// buildConversationTree retrieves the full subtree for the current
-// conversation and renders it as a text tree. Returns empty string if
-// there is no active conversation.
+// buildConversationTree retrieves the active conversation path (root to
+// current node) and renders it as flat text. User/Assistant at column 0,
+// tool calls/results indented beneath their assistant.
 func (a *App) buildConversationTree(ctx context.Context) (string, error) {
 	if a.langdagClient == nil {
 		return "", fmt.Errorf("no API client available")
@@ -35,96 +36,95 @@ func (a *App) buildConversationTree(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("no active conversation")
 	}
 
-	// Walk up to find the root.
 	ancestors, err := a.langdagClient.GetAncestors(ctx, a.agentNodeID)
 	if err != nil {
 		return "", fmt.Errorf("GetAncestors: %w", err)
 	}
-	var rootID string
-	if len(ancestors) > 0 {
-		rootID = ancestors[0].ID
-	} else {
-		rootID = a.agentNodeID
-	}
-
-	// Get full subtree from root.
-	nodes, err := a.langdagClient.GetSubtree(ctx, rootID)
-	if err != nil {
-		return "", fmt.Errorf("GetSubtree: %w", err)
-	}
-	if len(nodes) == 0 {
+	if len(ancestors) == 0 {
 		return "", fmt.Errorf("empty conversation tree")
 	}
 
-	return a.renderTree(nodes, rootID), nil
+	return a.renderTree(ancestors), nil
 }
 
-// renderTree builds a text tree from a flat list of nodes.
-// The main conversation spine (user/assistant) renders flat.
-// Only tool_call/tool_result nodes are indented. Genuine branches
-// (multiple children) get tree connectors.
-func (a *App) renderTree(nodes []*types.Node, rootID string) string {
-	byID := make(map[string]*types.Node, len(nodes))
-	children := make(map[string][]string)
-	for _, n := range nodes {
-		byID[n.ID] = n
-		if n.ParentID != "" {
-			children[n.ParentID] = append(children[n.ParentID], n.ID)
-		}
-	}
-
+// renderTree renders a linear node path. User/Assistant lines are at column 0.
+// Tool calls from assistant nodes are merged with subsequent tool results into
+// compact "✓ toolname" / "✗ toolname" lines, indented under the assistant.
+func (a *App) renderTree(nodes []*types.Node) string {
 	var b strings.Builder
 	var totalCost float64
+	// pendingTools holds tool names from the last assistant's tool_use blocks,
+	// keyed by tool_use ID so we can match them with results.
+	var pendingTools []toolUseInfo
 
-	// branchPrefix: indentation from genuine branches (multiple children).
-	// Within that prefix, tool nodes get an extra "  " indent.
-	var walk func(id, branchPrefix string, inBranch, isLast bool)
-	walk = func(id, branchPrefix string, inBranch, isLast bool) {
-		n := byID[id]
-		if n == nil {
-			return
-		}
-
+	for _, n := range nodes {
 		totalCost += a.nodeCost(n)
-		isToolNode := n.NodeType == types.NodeTypeToolCall || n.NodeType == types.NodeTypeToolResult
 
-		if line := a.formatTreeNode(n); line != "" {
-			prefix := branchPrefix
-			if inBranch {
-				if isLast {
-					prefix += "└─ "
-				} else {
-					prefix += "├─ "
+		switch {
+		case n.NodeType == types.NodeTypeUser && isToolResultContent(n.Content):
+			// Merge tool results with pending tool names from the assistant.
+			results := parseToolResults(n.Content)
+			for _, r := range results {
+				name := "tool"
+				for _, pt := range pendingTools {
+					if pt.id == r.toolUseID {
+						name = pt.name
+						break
+					}
 				}
-			} else if isToolNode {
-				prefix += "  "
+				status := "\033[32m✓\033[0m"
+				if r.isError {
+					status = "\033[31m✗\033[0m"
+				}
+				b.WriteString("  " + status + " " + name + "\n")
 			}
-			b.WriteString(prefix + line + "\n")
-		}
+			pendingTools = nil
 
-		// Compute prefix for children within this branch.
-		childBranchPrefix := branchPrefix
-		if inBranch {
-			if isLast {
-				childBranchPrefix += "   "
-			} else {
-				childBranchPrefix += "│  "
+		case n.NodeType == types.NodeTypeToolCall:
+			name := extractToolName(n.Content)
+			if name == "" {
+				name = "tool"
 			}
-		}
+			b.WriteString("  \033[33m⚙ " + name + "\033[0m\n")
 
-		kids := children[id]
-		if len(kids) > 1 {
-			// Genuine branch — use tree connectors for children.
-			for i, kid := range kids {
-				walk(kid, childBranchPrefix, true, i == len(kids)-1)
+		case n.NodeType == types.NodeTypeToolResult:
+			status := "\033[32m✓\033[0m"
+			if strings.Contains(n.Content, "\"is_error\":true") || strings.Contains(n.Content, "error") {
+				status = "\033[31m✗\033[0m"
 			}
-		} else if len(kids) == 1 {
-			// Linear — continue flat.
-			walk(kids[0], childBranchPrefix, false, true)
+			b.WriteString("  " + status + " \033[2mresult\033[0m\n")
+
+		case n.NodeType == types.NodeTypeAssistant:
+			pendingTools = nil
+			label := "\033[1;34mAssistant\033[0m"
+			var meta []string
+			if n.Model != "" {
+				meta = append(meta, shortModel(n.Model))
+			}
+			if cost := a.nodeCost(n); cost > 0 {
+				meta = append(meta, formatCost(cost))
+			}
+			if n.TokensIn > 0 || n.TokensOut > 0 {
+				meta = append(meta, fmt.Sprintf("%dtok in, %dtok out", n.TokensIn+n.TokensCacheRead, n.TokensOut))
+			}
+			if len(meta) > 0 {
+				label += " \033[2m(" + strings.Join(meta, ", ") + ")\033[0m"
+			}
+			preview, tools := parseAssistantContent(n.Content)
+			if preview != "" {
+				label += " " + truncate(preview, 60)
+			}
+			pendingTools = tools
+			b.WriteString(label + "\n")
+
+		default:
+			pendingTools = nil
+			lines, _ := a.formatTreeNode(n)
+			for _, line := range lines {
+				b.WriteString(line + "\n")
+			}
 		}
 	}
-
-	walk(rootID, "", false, true)
 
 	if totalCost > 0 {
 		b.WriteString(fmt.Sprintf("\nTotal: %s", formatCost(totalCost)))
@@ -133,52 +133,80 @@ func (a *App) renderTree(nodes []*types.Node, rootID string) string {
 	return b.String()
 }
 
-// formatTreeNode returns a one-line summary for a node.
-// Returns empty string for node types we want to skip.
-func (a *App) formatTreeNode(n *types.Node) string {
+type toolUseInfo struct {
+	id   string
+	name string
+}
+
+type toolResultInfo struct {
+	toolUseID string
+	isError   bool
+}
+
+// formatTreeNode returns display lines for a node.
+// Only used for user nodes (real messages) in the default renderTree path.
+func (a *App) formatTreeNode(n *types.Node) (lines []string, toolLike bool) {
 	switch n.NodeType {
 	case types.NodeTypeUser:
-		return "\033[1mYou:\033[0m " + truncate(firstLine(n.Content), 80)
-
-	case types.NodeTypeAssistant:
-		label := "\033[1;34mAssistant\033[0m"
-		var meta []string
-		if n.Model != "" {
-			meta = append(meta, shortModel(n.Model))
-		}
-		if cost := a.nodeCost(n); cost > 0 {
-			meta = append(meta, formatCost(cost))
-		}
-		if n.TokensIn > 0 || n.TokensOut > 0 {
-			meta = append(meta, fmt.Sprintf("%dtok in, %dtok out", n.TokensIn+n.TokensCacheRead, n.TokensOut))
-		}
-		if len(meta) > 0 {
-			label += " \033[2m(" + strings.Join(meta, ", ") + ")\033[0m"
-		}
-		preview := truncate(firstLine(n.Content), 60)
-		if preview != "" {
-			label += " " + preview
-		}
-		return label
-
-	case types.NodeTypeToolCall:
-		// Show tool name from content (which is typically JSON with "name" field).
-		name := extractToolName(n.Content)
-		if name != "" {
-			return "\033[33m⚙ " + name + "\033[0m"
-		}
-		return "\033[33m⚙ tool_call\033[0m"
-
-	case types.NodeTypeToolResult:
-		status := "\033[32m✓\033[0m"
-		if strings.Contains(n.Content, "\"is_error\":true") || strings.Contains(n.Content, "error") {
-			status = "\033[31m✗\033[0m"
-		}
-		return status + " \033[2mresult\033[0m"
-
+		return []string{"\033[1mYou:\033[0m " + truncate(firstLine(n.Content), 80)}, false
 	default:
-		return ""
+		return nil, false
 	}
+}
+
+// parseAssistantContent extracts a text preview and tool_use info from
+// assistant node content. If content is plain text, returns it as preview.
+// If content is a JSON content block array, extracts text and tool info.
+func parseAssistantContent(content string) (preview string, tools []toolUseInfo) {
+	trimmed := strings.TrimSpace(content)
+	if trimmed == "" || trimmed[0] != '[' {
+		return firstLine(trimmed), nil
+	}
+	var blocks []types.ContentBlock
+	if err := json.Unmarshal([]byte(trimmed), &blocks); err != nil {
+		return "", nil
+	}
+	for _, b := range blocks {
+		switch b.Type {
+		case "text":
+			if preview == "" && b.Text != "" {
+				preview = firstLine(b.Text)
+			}
+		case "tool_use":
+			name := b.Name
+			if name == "" {
+				name = "tool"
+			}
+			tools = append(tools, toolUseInfo{id: b.ID, name: name})
+		}
+	}
+	return preview, tools
+}
+
+// isToolResultContent returns true if content is a JSON array containing
+// tool_result blocks (stored by PromptFrom when sending tool results back).
+func isToolResultContent(content string) bool {
+	trimmed := strings.TrimSpace(content)
+	return len(trimmed) > 0 && trimmed[0] == '[' &&
+		strings.Contains(trimmed, `"type":"tool_result"`)
+}
+
+// parseToolResults extracts tool result info from a JSON content block array.
+func parseToolResults(content string) []toolResultInfo {
+	var blocks []types.ContentBlock
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &blocks); err != nil {
+		return nil
+	}
+	var results []toolResultInfo
+	for _, b := range blocks {
+		if b.Type == "tool_result" {
+			results = append(results, toolResultInfo{
+				toolUseID: b.ToolUseID,
+				isError:   b.IsError,
+			})
+		}
+	}
+	return results
 }
 
 // shortModel returns a shortened model name for display.
