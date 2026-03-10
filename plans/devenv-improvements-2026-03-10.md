@@ -60,9 +60,9 @@ Workspace and status bar rework:
 
 **Context**: Currently one Dockerfile at `.cpsl/Dockerfile`. Change to `.cpsl/<name>.Dockerfile` with a `name` field in the tool input.
 
-- [ ] 2a: Add `name` field to `devenvInput` struct and tool `InputSchema`. Optional, default "custom". Validate: lowercase alphanumeric plus hyphens only, max 30 chars.
-- [ ] 2b: Update `dockerfilePath()` to use the name: `.cpsl/<name>.Dockerfile`. Update `readDockerfile` — if no named Dockerfile exists, also check for legacy `.cpsl/Dockerfile` and mention it can be migrated. Update `writeDockerfile` — write to `<name>.Dockerfile`, remove legacy `Dockerfile` if it exists.
-- [ ] 2c: Update `buildAndReplace()` — compute image name as `cpsl-<first8 of projectID>:<name>`, call `Rebuild(imageName, ...)`. On success, call `onRebuild(imageName)`. Handle missing projectID gracefully (fall back to `cpsl-local:<name>`).
+- [x] 2a: Add `name` field to `devenvInput` struct and tool `InputSchema`. Optional, default "custom". Validate: lowercase alphanumeric plus hyphens only, max 30 chars.
+- [x] 2b: Update `dockerfilePath()` to use the name: `.cpsl/<name>.Dockerfile`. Update `readDockerfile` — if no named Dockerfile exists, also check for legacy `.cpsl/Dockerfile` and mention it can be migrated. Update `writeDockerfile` — write to `<name>.Dockerfile`, remove legacy `Dockerfile` if it exists.
+- [x] 2c: Update `buildAndReplace()` — compute image name as `cpsl-<first8 of projectID>:<name>`, call `Rebuild(imageName, ...)`. On success, call `onRebuild(imageName)`. Handle missing projectID gracefully (fall back to `cpsl-local:<name>`).
 
 ## Phase 3: No Worktrees by Default
 

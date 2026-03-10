@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"langdag.com/langdag/types"
@@ -236,7 +237,7 @@ func NewDevEnvTool(container *ContainerClient, cpslDir, workspace string, mounts
 func (t *DevEnvTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "devenv",
-		Description: "Manage the dev container Dockerfile at .cpsl/Dockerfile. Actions: 'read' shows current Dockerfile (or detects project root Dockerfile), 'write' creates/updates it, 'build' builds the image and hot-swaps the running container. Use this to install languages, tools, or system deps persistently.",
+		Description: "Manage dev container Dockerfiles at .cpsl/<name>.Dockerfile. Actions: 'read' shows current Dockerfile (or detects project root Dockerfile), 'write' creates/updates it, 'build' builds the image and hot-swaps the running container. Use this to install languages, tools, or system deps persistently.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -244,6 +245,10 @@ func (t *DevEnvTool) Definition() types.ToolDefinition {
 					"type": "string",
 					"enum": ["read", "write", "build"],
 					"description": "read: view current Dockerfile, write: set Dockerfile content, build: build image and replace container"
+				},
+				"name": {
+					"type": "string",
+					"description": "Dockerfile name (e.g. 'go', 'python'). Lowercase alphanumeric and hyphens only, max 30 chars. Defaults to 'custom'."
 				},
 				"content": {
 					"type": "string",
@@ -257,8 +262,11 @@ func (t *DevEnvTool) Definition() types.ToolDefinition {
 
 type devenvInput struct {
 	Action  string `json:"action"`
+	Name    string `json:"name,omitempty"`
 	Content string `json:"content,omitempty"`
 }
+
+var devenvNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 func (t *DevEnvTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var in devenvInput
@@ -266,13 +274,20 @@ func (t *DevEnvTool) Execute(ctx context.Context, input json.RawMessage) (string
 		return "", fmt.Errorf("invalid devenv input: %w", err)
 	}
 
+	if in.Name == "" {
+		in.Name = "custom"
+	}
+	if len(in.Name) > 30 || !devenvNameRe.MatchString(in.Name) {
+		return "", fmt.Errorf("invalid name %q: must be 1-30 lowercase alphanumeric/hyphen chars", in.Name)
+	}
+
 	switch in.Action {
 	case "read":
-		return t.readDockerfile()
+		return t.readDockerfile(in.Name)
 	case "write":
-		return t.writeDockerfile(in.Content)
+		return t.writeDockerfile(in.Name, in.Content)
 	case "build":
-		return t.buildAndReplace()
+		return t.buildAndReplace(in.Name)
 	default:
 		return "", fmt.Errorf("unknown action %q: must be read, write, or build", in.Action)
 	}
@@ -282,20 +297,30 @@ func (t *DevEnvTool) RequiresApproval(_ json.RawMessage) bool {
 	return false
 }
 
-// dockerfilePath returns the path to .cpsl/Dockerfile.
-func (t *DevEnvTool) dockerfilePath() string {
+// dockerfilePath returns the path to .cpsl/<name>.Dockerfile.
+func (t *DevEnvTool) dockerfilePath(name string) string {
+	return filepath.Join(t.cpslDir, name+".Dockerfile")
+}
+
+// legacyDockerfilePath returns the path to the old .cpsl/Dockerfile.
+func (t *DevEnvTool) legacyDockerfilePath() string {
 	return filepath.Join(t.cpslDir, "Dockerfile")
 }
 
-func (t *DevEnvTool) readDockerfile() (string, error) {
-	data, err := os.ReadFile(t.dockerfilePath())
+func (t *DevEnvTool) readDockerfile(name string) (string, error) {
+	data, err := os.ReadFile(t.dockerfilePath(name))
 	if err != nil {
 		if os.IsNotExist(err) {
-			msg := "No Dockerfile exists at .cpsl/Dockerfile yet. Use the 'write' action to create one."
+			// Check for legacy .cpsl/Dockerfile.
+			if legacyData, legacyErr := os.ReadFile(t.legacyDockerfilePath()); legacyErr == nil {
+				return fmt.Sprintf("No .cpsl/%s.Dockerfile found, but a legacy .cpsl/Dockerfile exists (will be migrated on next write):\n\n%s", name, string(legacyData)), nil
+			}
+
+			msg := fmt.Sprintf("No Dockerfile exists at .cpsl/%s.Dockerfile yet. Use the 'write' action to create one.", name)
 			// Check for a Dockerfile in the project root.
 			rootDockerfile := filepath.Join(t.workspace, "Dockerfile")
 			if rootData, rootErr := os.ReadFile(rootDockerfile); rootErr == nil {
-				msg += fmt.Sprintf("\n\nNote: A Dockerfile exists in the project root. You can use it as a base for .cpsl/Dockerfile:\n\n```\n%s```", string(rootData))
+				msg += fmt.Sprintf("\n\nNote: A Dockerfile exists in the project root. You can use it as a base:\n\n```\n%s```", string(rootData))
 			}
 			return msg, nil
 		}
@@ -304,7 +329,7 @@ func (t *DevEnvTool) readDockerfile() (string, error) {
 	return string(data), nil
 }
 
-func (t *DevEnvTool) writeDockerfile(content string) (string, error) {
+func (t *DevEnvTool) writeDockerfile(name, content string) (string, error) {
 	if content == "" {
 		return "", fmt.Errorf("content is required for write action")
 	}
@@ -314,22 +339,42 @@ func (t *DevEnvTool) writeDockerfile(content string) (string, error) {
 		return "", fmt.Errorf("creating .cpsl directory: %w", err)
 	}
 
-	if err := os.WriteFile(t.dockerfilePath(), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(t.dockerfilePath(name), []byte(content), 0o644); err != nil {
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
 	}
-	return "Dockerfile written to .cpsl/Dockerfile. Use the 'build' action to build and apply it.", nil
+
+	msg := fmt.Sprintf("Dockerfile written to .cpsl/%s.Dockerfile. Use the 'build' action to build and apply it.", name)
+
+	// Remove legacy .cpsl/Dockerfile if it exists.
+	if _, err := os.Stat(t.legacyDockerfilePath()); err == nil {
+		os.Remove(t.legacyDockerfilePath())
+		msg += " (Removed legacy .cpsl/Dockerfile.)"
+	}
+
+	return msg, nil
 }
 
-func (t *DevEnvTool) buildAndReplace() (string, error) {
-	if _, err := os.Stat(t.dockerfilePath()); os.IsNotExist(err) {
-		return "", fmt.Errorf("no Dockerfile at .cpsl/Dockerfile — use 'write' first")
+func (t *DevEnvTool) buildAndReplace(name string) (string, error) {
+	if _, err := os.Stat(t.dockerfilePath(name)); os.IsNotExist(err) {
+		return "", fmt.Errorf("no Dockerfile at .cpsl/%s.Dockerfile — use 'write' first", name)
 	}
 
-	imageName := fmt.Sprintf("cpsl-custom-%s", randomID())
-	if err := t.container.Rebuild(imageName, t.dockerfilePath(), t.workspace, t.mounts); err != nil {
+	// Deterministic image name: cpsl-<shortProjectID>:<name>.
+	prefix := "cpsl-local"
+	if len(t.projectID) >= 8 {
+		prefix = "cpsl-" + t.projectID[:8]
+	}
+	imageName := prefix + ":" + name
+
+	if err := t.container.Rebuild(imageName, t.dockerfilePath(name), t.workspace, t.mounts); err != nil {
 		return "", fmt.Errorf("rebuild failed: %w", err)
 	}
-	return "Container rebuilt successfully with the new Dockerfile.", nil
+
+	if t.onRebuild != nil {
+		t.onRebuild(imageName)
+	}
+
+	return fmt.Sprintf("Container rebuilt successfully with image %s.", imageName), nil
 }
 
 // WebSearchToolDef returns a server-side web search tool definition.
