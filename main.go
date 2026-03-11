@@ -793,6 +793,16 @@ func fetchSWEScoresCmd() sweScoresMsg {
 	return sweScoresMsg{scores: scores, err: err}
 }
 
+// ─── Attachment types ───
+
+// Attachment holds metadata and encoded content for a file or image attached to a message.
+type Attachment struct {
+	Path      string // original file path (may be temp path for clipboard images)
+	MediaType string // MIME type (e.g. "image/png", "application/pdf")
+	Data      string // base64-encoded file content
+	IsImage   bool   // whether this is an image attachment
+}
+
 // ─── App struct ───
 
 type App struct {
@@ -827,6 +837,8 @@ type App struct {
 	config           Config
 	pasteCount       int
 	pasteStore       map[int]string
+	attachmentCount  int
+	attachments      map[int]Attachment
 	mode             appMode
 	models           []ModelDef
 	sweScores        map[string]float64
@@ -1955,10 +1967,22 @@ func (a *App) handlePossibleBracketedPaste(readByte func() (byte, bool)) {
 					break
 				}
 				if e0 == '[' {
-					e1, _ := readByte()
-					e2, _ := readByte()
-					e3, _ := readByte()
-					e4, _ := readByte()
+					e1, ok := readByte()
+					if !ok {
+						break
+					}
+					e2, ok := readByte()
+					if !ok {
+						break
+					}
+					e3, ok := readByte()
+					if !ok {
+						break
+					}
+					e4, ok := readByte()
+					if !ok {
+						break
+					}
 					if e1 == '2' && e2 == '0' && e3 == '1' && e4 == '~' {
 						break
 					}
@@ -2036,6 +2060,10 @@ func (a *App) handlePaste(content string) {
 	if a.awaitingApproval {
 		return
 	}
+	// Normalize line endings: strip \r so CRLF becomes LF and lone CR becomes nothing.
+	// Without this, \r in the input buffer is rendered literally by the terminal,
+	// causing the cursor to jump to column 0 and overwrite visible text.
+	content = strings.ReplaceAll(content, "\r", "")
 	if len(content) >= a.config.PasteCollapseMinChars {
 		a.pasteCount++
 		if a.pasteStore == nil {

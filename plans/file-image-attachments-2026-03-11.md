@@ -45,7 +45,7 @@ When sending, `expandAttachments()` converts the message text + attachment place
 ```
 
 ## Phase 1: File path detection in paste/drop
-- [ ] 1a: Add `Attachment` struct and attachment store fields to `App` (`attachments`, `attachmentCount`)
+- [x] 1a: Add `Attachment` struct and attachment store fields to `App` (`attachments`, `attachmentCount`)
 - [ ] 1b: Add `isFilePath()` helper that checks if a pasted string looks like an absolute file path (starts with `/` or `~`, exists on disk)
 - [ ] 1c: Add `isImageExt()` helper for image extensions (png, jpg, jpeg, gif, webp, bmp, tiff, svg)
 - [ ] 1d: Add `mimeForExt()` helper that returns MIME type from file extension (image/png, image/jpeg, application/pdf, etc.)
