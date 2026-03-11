@@ -531,6 +531,30 @@ func expandPastes(s string, store map[int]string) string {
 	})
 }
 
+// ─── Attachment helpers ───
+
+// isFilePath reports whether s looks like an absolute file path that exists on disk.
+// It handles shell-escaped paths (backslash-spaces from terminal drag-drop) and
+// tilde-prefixed home-dir paths.
+func isFilePath(s string) (string, bool) {
+	// Unescape backslash-spaces (common in terminal drag-drop).
+	p := strings.ReplaceAll(s, "\\ ", " ")
+	// Expand tilde.
+	if strings.HasPrefix(p, "~/") {
+		if home, err := os.UserHomeDir(); err == nil {
+			p = filepath.Join(home, p[2:])
+		}
+	}
+	if !filepath.IsAbs(p) {
+		return "", false
+	}
+	info, err := os.Stat(p)
+	if err != nil || info.IsDir() {
+		return "", false
+	}
+	return p, true
+}
+
 // ─── Tool result helpers ───
 
 func toolCallSummary(toolName string, input json.RawMessage) string {
