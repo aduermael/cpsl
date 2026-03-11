@@ -2,6 +2,12 @@
 
 Add support for attaching images and files to chat messages via drag-and-drop, paste, or clipboard.
 
+## Langdag Dependency Note
+
+No changes to langdag are needed for this feature. The existing `contentToRawMessage()` in `conversation.go:267` already passes JSON arrays through as content block arrays, and `types.ContentBlock` already supports `type:"image"` (with `media_type` + `data`) and `type:"document"`. All provider protocols (Anthropic, OpenAI, Gemini, Grok) already map these to their native image formats. Everything is app-layer work in CPSL.
+
+If langdag changes become necessary during implementation, spec them out here for the langdag team rather than working around them in CPSL.
+
 ## Codebase Context
 
 - **Input handling**: `main.go` — `handlePaste()` receives bracketed paste content as a string, already supports collapsing large pastes with `[pasted #N | N chars]` placeholders
