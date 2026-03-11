@@ -2250,6 +2250,19 @@ func (a *App) tryAttachFile(s string) (string, bool) {
 	return fmt.Sprintf("[File #%d]", a.attachmentCount), true
 }
 
+// clipboardHasImage checks if the macOS clipboard contains image data.
+func clipboardHasImage() bool {
+	out, err := exec.Command("osascript", "-e",
+		"clipboard info").Output()
+	if err != nil {
+		return false
+	}
+	// clipboard info returns lines like "«class PNGf», 12345"
+	s := string(out)
+	return strings.Contains(s, "PNGf") || strings.Contains(s, "TIFF") ||
+		strings.Contains(s, "GIFf") || strings.Contains(s, "JPEG")
+}
+
 func (a *App) handleApprovalByte(ch byte) {
 	switch ch {
 	case 'y', 'Y':

@@ -57,7 +57,7 @@ When sending, `expandAttachments()` converts the message text + attachment place
 - [x] 2c: Clear `attachments` and `attachmentCount` on `resetInput()` or after message send (similar to `pasteStore`)
 
 ## Phase 3: Clipboard image paste (macOS)
-- [ ] 3a: Add `clipboardHasImage()` function — uses `osascript` to check if the clipboard contains image data (class `«class PNGf»` or similar)
+- [x] 3a: Add `clipboardHasImage()` function — uses `osascript` to check if the clipboard contains image data (class `«class PNGf»` or similar)
 - [ ] 3b: Add `clipboardSaveImage()` function — uses `osascript`/`pbpaste` to write clipboard image data to a temp file under `.cpsl/tmp/`, returns the path. Create `.cpsl/tmp/` if it doesn't exist
 - [ ] 3c: Detect clipboard image paste — when `handlePaste()` receives empty or non-path content AND `clipboardHasImage()` is true, call `clipboardSaveImage()`, then process the temp file as an attachment. This handles Cmd+V with a screenshot in the clipboard
 
