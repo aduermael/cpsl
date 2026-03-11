@@ -24,6 +24,14 @@ type Config struct {
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
 	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
 	ThemeColor            int             `json:"theme_color,omitempty"` // ANSI color index (0-15) from terminal theme
+	HistoryMaxEntries     int             `json:"history_max_entries,omitempty"`
+}
+
+func (c Config) effectiveMaxHistory() int {
+	if c.HistoryMaxEntries > 0 {
+		return c.HistoryMaxEntries
+	}
+	return 100
 }
 
 // configuredProviders returns a set of provider names that have API keys configured.

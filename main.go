@@ -411,7 +411,13 @@ func buildLogo(colorIndex int) []string {
 // ─── Styling helpers ───
 
 func styledUserMsg(content string) string {
-	return "\033[1m▸ " + renderInlineMarkdown(content) + "\033[0m"
+	// Style each line individually so \n splits in buildBlockRows preserve it.
+	lines := strings.Split(renderInlineMarkdown(content), "\n")
+	lines[0] = "\033[1m▸ " + lines[0] + "\033[0m"
+	for i := 1; i < len(lines); i++ {
+		lines[i] = "\033[1m" + lines[i] + "\033[0m"
+	}
+	return strings.Join(lines, "\n")
 }
 
 func styledAssistantText(content string) string {
@@ -802,8 +808,9 @@ type App struct {
 	scrollShift   int // rows scrolled off top when content > terminal height
 
 	// Input buffer (from simple-chat)
-	input  []rune
-	cursor int
+	input   []rune
+	cursor  int
+	history *History
 
 	// Event channels
 	resultCh chan any
@@ -1280,7 +1287,14 @@ func (a *App) renderInput() {
 
 // ─── Input helpers (from simple-chat) ───
 
+func (a *App) abandonHistoryNav() {
+	if a.history != nil && a.history.IsNavigating() {
+		a.history.Reset()
+	}
+}
+
 func (a *App) insertAtCursor(r rune) {
+	a.abandonHistoryNav()
 	a.input = append(a.input, 0)
 	copy(a.input[a.cursor+1:], a.input[a.cursor:])
 	a.input[a.cursor] = r
@@ -1294,6 +1308,7 @@ func (a *App) insertText(s string) {
 }
 
 func (a *App) deleteBeforeCursor() {
+	a.abandonHistoryNav()
 	if a.cursor <= 0 {
 		return
 	}
@@ -1303,6 +1318,7 @@ func (a *App) deleteBeforeCursor() {
 }
 
 func (a *App) deleteAtCursor() {
+	a.abandonHistoryNav()
 	if a.cursor >= len(a.input) {
 		return
 	}
@@ -1311,6 +1327,7 @@ func (a *App) deleteAtCursor() {
 }
 
 func (a *App) deleteWordBackward() {
+	a.abandonHistoryNav()
 	if a.cursor <= 0 {
 		return
 	}
@@ -1325,6 +1342,7 @@ func (a *App) deleteWordBackward() {
 }
 
 func (a *App) killLine() {
+	a.abandonHistoryNav()
 	// Delete from cursor to end of current line (or end of input)
 	end := a.cursor
 	for end < len(a.input) && a.input[end] != '\n' {
@@ -1334,6 +1352,7 @@ func (a *App) killLine() {
 }
 
 func (a *App) killToStart() {
+	a.abandonHistoryNav()
 	// Delete from cursor to start of current line
 	start := a.cursor
 	for start > 0 && a.input[start-1] != '\n' {
@@ -1837,7 +1856,14 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 				a.autocompleteIdx = len(matches) - 1
 			}
 		} else {
-			a.moveUp()
+			lineIdx, _ := cursorVisualPos(a.input, a.cursor, a.width)
+			if lineIdx == 0 && a.history != nil {
+				if val, changed := a.history.Up(a.inputValue()); changed {
+					a.setInputValue(val)
+				}
+			} else {
+				a.moveUp()
+			}
 		}
 		a.renderInput()
 	case 'B': // Down
@@ -1858,7 +1884,15 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 				a.autocompleteIdx = 0
 			}
 		} else {
-			a.moveDown()
+			lineIdx, _ := cursorVisualPos(a.input, a.cursor, a.width)
+			vlines := getVisualLines(a.input, a.cursor, a.width)
+			if lineIdx >= len(vlines)-1 && a.history != nil {
+				if val, changed := a.history.Down(a.inputValue()); changed {
+					a.setInputValue(val)
+				}
+			} else {
+				a.moveDown()
+			}
 		}
 		a.renderInput()
 	case 'C': // Right
@@ -2069,6 +2103,10 @@ func (a *App) handleEnter() {
 	val := strings.TrimSpace(strings.ReplaceAll(a.inputValue(), "\r", ""))
 	if val == "" {
 		return
+	}
+
+	if a.history != nil {
+		a.history.Add(val)
 	}
 
 	if strings.HasPrefix(val, "/") {
@@ -3051,6 +3089,8 @@ func (a *App) handleResult(result any) {
 
 	case workspaceMsg:
 		a.worktreePath = msg.worktreePath
+		a.history = newHistory(msg.worktreePath, a.config.effectiveMaxHistory())
+		a.history.Load()
 		cfg := a.config
 		wtPath := msg.worktreePath
 		go func() { a.resultCh <- fetchStatusCmd(wtPath) }()
