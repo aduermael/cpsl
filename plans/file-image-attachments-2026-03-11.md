@@ -63,7 +63,7 @@ When sending, `expandAttachments()` converts the message text + attachment place
 
 ## Phase 4: Multi-file and edge cases
 - [x] 4a: Handle multiple file paths in a single paste (newline-separated paths from dragging multiple files)
-- [ ] 4b: Add file size limit check — reject files over a reasonable limit (e.g. 20MB) with an error message in the input, since they'll be base64-encoded in the API payload
+- [x] 4b: Add file size limit check — reject files over a reasonable limit (e.g. 20MB) with an error message in the input, since they'll be base64-encoded in the API payload
 - [ ] 4c: Add `.cpsl/tmp/` cleanup — delete temp clipboard images older than 24h on app startup
 
 ## Success Criteria

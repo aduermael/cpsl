@@ -28,9 +28,10 @@ import (
 // ─── Constants ───
 
 const (
-	promptPrefix     = "▸ "
-	promptPrefixCols = 2
-	charsPerToken    = 4 // rough estimate for context bar
+	promptPrefix       = "▸ "
+	promptPrefixCols   = 2
+	charsPerToken      = 4 // rough estimate for context bar
+	maxAttachmentBytes = 20 << 20 // 20 MB
 )
 
 // ─── Block and message types ───
@@ -2262,6 +2263,14 @@ func (a *App) tryAttachFile(s string) (string, bool) {
 	resolved, ok := isFilePath(s)
 	if !ok {
 		return "", false
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return "", false
+	}
+	if info.Size() > maxAttachmentBytes {
+		return fmt.Sprintf("[file too large: %s (%d MB limit)]",
+			filepath.Base(resolved), maxAttachmentBytes>>20), true
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
