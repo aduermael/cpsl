@@ -555,6 +555,15 @@ func isFilePath(s string) (string, bool) {
 	return p, true
 }
 
+// isImageExt reports whether the file extension indicates an image format.
+func isImageExt(path string) bool {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".svg":
+		return true
+	}
+	return false
+}
+
 // ─── Tool result helpers ───
 
 func toolCallSummary(toolName string, input json.RawMessage) string {
