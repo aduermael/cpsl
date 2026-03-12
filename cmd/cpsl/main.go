@@ -3505,11 +3505,13 @@ func (a *App) startAgent(userMessage string) {
 	}
 
 	// Sub-agent tool: shares the langdag client, available tools (including scratchpad).
+	// Uses exploration model if configured, otherwise falls back to active model.
 	maxTurns := a.config.SubAgentMaxTurns
 	if maxTurns <= 0 {
 		maxTurns = 15
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, modelID, maxTurns, workDir, a.config.Personality, containerImage)
+	explorationModelID := a.config.resolveExplorationModel(a.models)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, explorationModelID, maxTurns, workDir, a.config.Personality, containerImage)
 	tools = append(tools, subAgentTool)
 
 	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage)
