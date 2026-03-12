@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"html"
@@ -351,14 +353,22 @@ func (t *DevEnvTool) writeDockerfile(content string) (string, error) {
 }
 
 func (t *DevEnvTool) buildAndReplace() (string, error) {
-	if _, err := os.Stat(t.dockerfilePath()); os.IsNotExist(err) {
+	dfPath := t.dockerfilePath()
+	if _, err := os.Stat(dfPath); os.IsNotExist(err) {
 		return "", fmt.Errorf("no Dockerfile at .cpsl/Dockerfile — use 'write' first")
 	}
 
-	// Deterministic image name: cpsl-<shortProjectID>:dev.
-	imageName := "cpsl-local:dev"
+	// Deterministic image name: cpsl-<shortProjectID>:<hash[:12]>.
+	content, err := os.ReadFile(dfPath)
+	if err != nil {
+		return "", fmt.Errorf("reading Dockerfile: %w", err)
+	}
+	hash := sha256.Sum256(content)
+	hashStr := hex.EncodeToString(hash[:])[:12]
+
+	imageName := "cpsl-local:" + hashStr
 	if len(t.projectID) >= 8 {
-		imageName = "cpsl-" + t.projectID[:8] + ":dev"
+		imageName = "cpsl-" + t.projectID[:8] + ":" + hashStr
 	}
 
 	if t.onStatus != nil {
