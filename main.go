@@ -2902,11 +2902,21 @@ func (a *App) enterConfigMode() {
 func (a *App) exitConfigMode(save bool) {
 	if save {
 		a.globalConfig = a.cfgDraft
+		a.projectConfig = a.cfgProjectDraft
 		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
 		a.displaySystemPrompts = a.config.DisplaySystemPrompts
+		var saveErr bool
 		if err := saveConfig(a.globalConfig); err != nil {
-			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving config: %v", err)})
-		} else {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving global config: %v", err)})
+			saveErr = true
+		}
+		if a.repoRoot != "" {
+			if err := saveProjectConfig(a.repoRoot, a.projectConfig); err != nil {
+				a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving project config: %v", err)})
+				saveErr = true
+			}
+		}
+		if !saveErr {
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Config saved."})
 		}
 		// Reinitialize langdag client with updated config
