@@ -1101,7 +1101,8 @@ type App struct {
 	cfgEditing    bool
 	cfgEditBuf    []rune
 	cfgEditCursor int
-	cfgDraft      Config
+	cfgDraft        Config
+	cfgProjectDraft ProjectConfig
 
 	// Text prompt overlay (e.g. "Enter worktree name:")
 	promptLabel    string
@@ -2860,7 +2861,7 @@ func maskKey(key string) string {
 
 // ─── Config editor ───
 
-var cfgTabNames = []string{"API Keys", "Settings"}
+var cfgTabNames = []string{"API Keys", "Global", "Project"}
 
 type cfgField struct {
 	label   string
@@ -2893,6 +2894,7 @@ func (a *App) enterConfigMode() {
 	a.cfgEditBuf = nil
 	a.cfgEditCursor = 0
 	a.cfgDraft = a.globalConfig
+	a.cfgProjectDraft = a.projectConfig
 	a.renderInput()
 }
 
@@ -2919,10 +2921,44 @@ func (a *App) exitConfigMode(save bool) {
 }
 
 func (a *App) cfgCurrentFields() []cfgField {
+	if a.cfgTab == 2 { // Project tab — generated dynamically
+		return a.projectTabFields()
+	}
 	if a.cfgTab >= 0 && a.cfgTab < len(cfgTabFields) {
 		return cfgTabFields[a.cfgTab]
 	}
 	return nil
+}
+
+func (a *App) projectTabFields() []cfgField {
+	return []cfgField{
+		{
+			label: "Active Model",
+			get:   func(_ Config) string { return a.cfgProjectDraft.ActiveModel },
+			set:   func(_ *Config, v string) { a.cfgProjectDraft.ActiveModel = v },
+		},
+		{
+			label: "Personality",
+			get:   func(_ Config) string { return a.cfgProjectDraft.Personality },
+			set:   func(_ *Config, v string) { a.cfgProjectDraft.Personality = v },
+		},
+		{
+			label: "Sub-Agent Max Turns",
+			get: func(_ Config) string {
+				if a.cfgProjectDraft.SubAgentMaxTurns == 0 {
+					return ""
+				}
+				return strconv.Itoa(a.cfgProjectDraft.SubAgentMaxTurns)
+			},
+			set: func(_ *Config, v string) {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					a.cfgProjectDraft.SubAgentMaxTurns = n
+				} else {
+					a.cfgProjectDraft.SubAgentMaxTurns = 0
+				}
+			},
+		},
+	}
 }
 
 func (a *App) buildConfigRows() []string {
