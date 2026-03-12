@@ -68,8 +68,8 @@ Wait — re-reading the spec: "display 5 lines at most with ... in the middle if
 - exactly 5: show first 2 + last 3 (= all 5, no ellipsis needed since 2+3=5)
 - >5: show first 2 + `...` + last 2
 
-- [ ] 1a: Update `collapseToolResult()` with new thresholds (≤4 → all, 5 → first 2 + last 3, >5 → first 2 + `...` + last 2)
-- [ ] 1b: Update `TestCollapseToolResult` and add cases for 4, 5, 6, and >6 lines
+- [x] 1a: Update `collapseToolResult()` with new thresholds (≤4 → all, 5 → first 2 + last 3, >5 → first 2 + `...` + last 2)
+- [x] 1b: Update `TestCollapseToolResult` and add cases for 4, 5, 6, and >6 lines
 
 ## Phase 2: Add box rendering function
 

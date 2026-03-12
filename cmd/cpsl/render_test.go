@@ -265,18 +265,53 @@ func TestCollapseBlankRows(t *testing.T) {
 }
 
 func TestCollapseToolResult(t *testing.T) {
-	short := "line1\nline2\nline3"
-	if collapseToolResult(short) != short {
-		t.Errorf("collapseToolResult should not change short results")
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "3 lines unchanged",
+			input: "a\nb\nc",
+			want:  "a\nb\nc",
+		},
+		{
+			name:  "4 lines unchanged",
+			input: "a\nb\nc\nd",
+			want:  "a\nb\nc\nd",
+		},
+		{
+			name:  "5 lines shows first 2 + last 3",
+			input: "a\nb\nc\nd\ne",
+			want:  "a\nb\nc\nd\ne",
+		},
+		{
+			name:  "6 lines shows first 2 + ... + last 2",
+			input: "a\nb\nc\nd\ne\nf",
+			want:  "a\nb\n...\ne\nf",
+		},
+		{
+			name:  "20 lines shows first 2 + ... + last 2",
+			input: "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20",
+			want:  "1\n2\n...\n19\n20",
+		},
+		{
+			name:  "empty string",
+			input: "",
+			want:  "",
+		},
+		{
+			name:  "single line",
+			input: "only",
+			want:  "only",
+		},
 	}
-
-	var lines []string
-	for i := range 20 {
-		lines = append(lines, strings.Repeat("x", i+1))
-	}
-	long := strings.Join(lines, "\n")
-	collapsed := collapseToolResult(long)
-	if !strings.Contains(collapsed, "lines omitted") {
-		t.Errorf("collapseToolResult should collapse long results, got %q", collapsed)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := collapseToolResult(tt.input)
+			if got != tt.want {
+				t.Errorf("collapseToolResult(%q) = %q, want %q", tt.input, got, tt.want)
+			}
+		})
 	}
 }
