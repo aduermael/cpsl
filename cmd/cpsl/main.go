@@ -512,7 +512,7 @@ func renderMessage(msg chatMessage) string {
 
 // ─── Commands and autocomplete ───
 
-var commands = []string{"/branches", "/clear", "/config", "/model", "/session", "/shell", "/worktrees"}
+var commands = []string{"/branches", "/clear", "/compact", "/config", "/model", "/session", "/shell", "/worktrees"}
 var sessionSubcommands = []string{"/session list", "/session load", "/session show"}
 
 func filterCommands(prefix string) []string {
@@ -2659,6 +2659,9 @@ func (a *App) handleCommand(input string) {
 		a.scratchpad.Clear()
 		a.render()
 
+	case "/compact":
+		a.handleCompactCommand(input)
+
 	case "/config":
 		a.enterConfigMode()
 
@@ -2784,6 +2787,50 @@ func (a *App) handleCommand(input string) {
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Unknown command: %s", cmd)})
 		a.render()
 	}
+}
+
+// handleCompactCommand handles /compact [focus hint].
+func (a *App) handleCompactCommand(input string) {
+	if a.langdagClient == nil {
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: "No API client available."})
+		a.render()
+		return
+	}
+	if a.agentNodeID == "" {
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: "No active conversation to compact."})
+		a.render()
+		return
+	}
+
+	// Extract optional focus hint from the command args.
+	focusHint := ""
+	rest := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(input), "/compact"))
+	if rest != "" {
+		focusHint = rest
+	}
+
+	// Use exploration model for cheap summarization.
+	model := a.config.resolveExplorationModel(a.models)
+	if model == "" {
+		model = a.config.resolveActiveModel(a.models)
+	}
+
+	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Compacting conversation..."})
+	a.render()
+
+	result, err := compactConversation(context.Background(), a.langdagClient, a.agentNodeID, model, focusHint)
+	if err != nil {
+		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Compact failed: %v", err)})
+		a.render()
+		return
+	}
+
+	a.agentNodeID = result.NewNodeID
+	a.messages = append(a.messages, chatMessage{
+		kind:    msgSuccess,
+		content: fmt.Sprintf("Compacted: %d nodes → summary + %d recent nodes", result.OriginalNodes, result.KeptNodes),
+	})
+	a.render()
 }
 
 func (a *App) promptForWorktreeName(repoRoot, baseDir string) {
