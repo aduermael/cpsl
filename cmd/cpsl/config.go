@@ -17,6 +17,7 @@ type Config struct {
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
 	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
 	ActiveModel           string          `json:"active_model,omitempty"`
+	ExplorationModel      string          `json:"exploration_model,omitempty"` // model for sub-agents; falls back to ActiveModel
 	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	DisplaySystemPrompts  bool            `json:"display_system_prompts,omitempty"`
@@ -90,10 +91,27 @@ func (c Config) resolveActiveModel(models []ModelDef) string {
 	return available[0].ID
 }
 
+// resolveExplorationModel returns the model ID for sub-agents/exploration.
+// Falls back to resolveActiveModel if ExplorationModel is unset or invalid.
+func (c Config) resolveExplorationModel(models []ModelDef) string {
+	if c.ExplorationModel == "" {
+		return c.resolveActiveModel(models)
+	}
+	available := c.availableModels(models)
+	for _, m := range available {
+		if m.ID == c.ExplorationModel {
+			return c.ExplorationModel
+		}
+	}
+	// Configured but invalid — fall back.
+	return c.resolveActiveModel(models)
+}
+
 // ProjectConfig holds per-project overrides loaded from <repo>/.cpsl/config.json.
 // Fields use omitempty so zero values mean "not overridden" (fall back to global).
 type ProjectConfig struct {
 	ActiveModel      string `json:"active_model,omitempty"`
+	ExplorationModel string `json:"exploration_model,omitempty"`
 	Personality      string `json:"personality,omitempty"`
 	SubAgentMaxTurns int    `json:"sub_agent_max_turns,omitempty"`
 }
@@ -103,6 +121,9 @@ func mergeConfigs(global Config, project ProjectConfig) Config {
 	merged := global
 	if project.ActiveModel != "" {
 		merged.ActiveModel = project.ActiveModel
+	}
+	if project.ExplorationModel != "" {
+		merged.ExplorationModel = project.ExplorationModel
 	}
 	if project.Personality != "" {
 		merged.Personality = project.Personality

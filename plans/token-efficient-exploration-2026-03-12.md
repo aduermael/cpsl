@@ -53,7 +53,7 @@ Add native tools (alongside bash) that the agent can use for common file operati
 
 Add a separate model slot for exploration/sub-agent work. Make `/model` open the config where model fields can be edited with an inline picker.
 
-- [ ] 2a: **Add `ExplorationModel` to Config** — new field in `Config` struct and `ProjectConfig`. Falls back to `ActiveModel` if empty. Add to config JSON serialization.
+- [x] 2a: **Add `ExplorationModel` to Config** — new field in `Config` struct and `ProjectConfig`. Falls back to `ActiveModel` if empty. Add to config JSON serialization.
 - [ ] 2b: **Add exploration model to config UI** — add "Exploration Model" field to both Global (tab 1) and Project (tab 2) config tabs. When the user presses Enter on a model field, show the model picker inline (reuse the existing `/model` menu as a picker within the config editor).
 - [ ] 2c: **Change `/model` to open config** — instead of showing a standalone model picker, `/model` should open `/config` and navigate to the relevant tab where model fields live. Pressing Enter on "Active Model" or "Exploration Model" opens the model selector.
 - [ ] 2d: **Route sub-agents to exploration model** — in `SubAgentTool`, use `config.ExplorationModel` (resolved) instead of the parent's `active_model`. If exploration model is unset, fall back to active model.
