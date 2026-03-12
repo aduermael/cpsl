@@ -60,7 +60,7 @@ Move all `package main` source files from repo root into `cmd/cpsl/`. This is a 
 
 **Build command changes:** `go build .` → `go build ./cmd/cpsl`
 
-- [ ] 4a: Create `cmd/cpsl/` and move all root `.go` files and `dockerfiles/` into it. Move `simple-chat/` to `cmd/simple-chat/` and `debug/` to `cmd/debug/`
+- [x] 4a: Create `cmd/cpsl/` and move all root `.go` files and `dockerfiles/` into it. Move `simple-chat/` to `cmd/simple-chat/` and `debug/` to `cmd/debug/`
 - [ ] 4b: Verify `go build ./cmd/cpsl`, `go test ./cmd/cpsl/`, `go build ./cmd/simple-chat`, `go build ./cmd/debug/` all succeed. Fix any broken embed paths or imports
 - [ ] 4c: Update `.gitignore` for new binary output paths. Update README build instructions if needed
 
