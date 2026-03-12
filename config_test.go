@@ -206,3 +206,134 @@ func TestSaveConfigCreatesDir(t *testing.T) {
 		t.Errorf("PasteCollapseMinChars = %d, want 3", loaded.PasteCollapseMinChars)
 	}
 }
+
+// ─── Project config tests ───
+
+func TestLoadProjectConfigMissingFile(t *testing.T) {
+	dir := t.TempDir()
+	pc := loadProjectConfig(dir)
+	if pc != (ProjectConfig{}) {
+		t.Errorf("loadProjectConfig = %+v, want empty", pc)
+	}
+}
+
+func TestLoadProjectConfigEmptyRepoRoot(t *testing.T) {
+	pc := loadProjectConfig("")
+	if pc != (ProjectConfig{}) {
+		t.Errorf("loadProjectConfig(\"\") = %+v, want empty", pc)
+	}
+}
+
+func TestLoadProjectConfigMalformedJSON(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, configDir)
+	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, configFile), []byte("{bad}"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pc := loadProjectConfig(dir)
+	if pc != (ProjectConfig{}) {
+		t.Errorf("loadProjectConfig = %+v, want empty on malformed JSON", pc)
+	}
+}
+
+func TestProjectConfigRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	original := ProjectConfig{
+		ActiveModel:      "gpt-4",
+		Personality:      "concise",
+		SubAgentMaxTurns: 10,
+	}
+	if err := saveProjectConfig(dir, original); err != nil {
+		t.Fatalf("saveProjectConfig: %v", err)
+	}
+	loaded := loadProjectConfig(dir)
+	if loaded != original {
+		t.Errorf("loaded = %+v, want %+v", loaded, original)
+	}
+}
+
+func TestSaveProjectConfigCreatesDir(t *testing.T) {
+	dir := t.TempDir()
+	subdir := filepath.Join(dir, "nested", "repo")
+	pc := ProjectConfig{ActiveModel: "claude-3"}
+	if err := saveProjectConfig(subdir, pc); err != nil {
+		t.Fatalf("saveProjectConfig: %v", err)
+	}
+	loaded := loadProjectConfig(subdir)
+	if loaded.ActiveModel != "claude-3" {
+		t.Errorf("ActiveModel = %q, want %q", loaded.ActiveModel, "claude-3")
+	}
+}
+
+func TestMergeConfigsProjectOverrides(t *testing.T) {
+	global := Config{
+		PasteCollapseMinChars: 200,
+		ActiveModel:           "default-model",
+		Personality:           "friendly",
+		SubAgentMaxTurns:      15,
+		AnthropicAPIKey:       "key123",
+	}
+	project := ProjectConfig{
+		ActiveModel:      "project-model",
+		SubAgentMaxTurns: 5,
+	}
+	merged := mergeConfigs(global, project)
+
+	// Overridden fields
+	if merged.ActiveModel != "project-model" {
+		t.Errorf("ActiveModel = %q, want %q", merged.ActiveModel, "project-model")
+	}
+	if merged.SubAgentMaxTurns != 5 {
+		t.Errorf("SubAgentMaxTurns = %d, want 5", merged.SubAgentMaxTurns)
+	}
+	// Non-overridden project field falls back to global
+	if merged.Personality != "friendly" {
+		t.Errorf("Personality = %q, want %q (global fallback)", merged.Personality, "friendly")
+	}
+	// Global-only fields unchanged
+	if merged.PasteCollapseMinChars != 200 {
+		t.Errorf("PasteCollapseMinChars = %d, want 200", merged.PasteCollapseMinChars)
+	}
+	if merged.AnthropicAPIKey != "key123" {
+		t.Errorf("AnthropicAPIKey = %q, want %q", merged.AnthropicAPIKey, "key123")
+	}
+}
+
+func TestMergeConfigsEmptyProject(t *testing.T) {
+	global := Config{
+		PasteCollapseMinChars: 200,
+		ActiveModel:           "default-model",
+		Personality:           "friendly",
+		SubAgentMaxTurns:      15,
+	}
+	merged := mergeConfigs(global, ProjectConfig{})
+	if !reflect.DeepEqual(merged, global) {
+		t.Errorf("merged = %+v, want %+v (unchanged global)", merged, global)
+	}
+}
+
+func TestMergeConfigsAllOverridden(t *testing.T) {
+	global := Config{
+		ActiveModel:      "global-model",
+		Personality:      "verbose",
+		SubAgentMaxTurns: 15,
+	}
+	project := ProjectConfig{
+		ActiveModel:      "proj-model",
+		Personality:      "terse",
+		SubAgentMaxTurns: 3,
+	}
+	merged := mergeConfigs(global, project)
+	if merged.ActiveModel != "proj-model" {
+		t.Errorf("ActiveModel = %q, want %q", merged.ActiveModel, "proj-model")
+	}
+	if merged.Personality != "terse" {
+		t.Errorf("Personality = %q, want %q", merged.Personality, "terse")
+	}
+	if merged.SubAgentMaxTurns != 3 {
+		t.Errorf("SubAgentMaxTurns = %d, want 3", merged.SubAgentMaxTurns)
+	}
+}
