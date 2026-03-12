@@ -125,7 +125,7 @@ Currently saves to global config. Change to: save to project config by default (
 
 - [x] 3a: Create `ProjectConfig` struct in config.go with fields: `ActiveModel`, `Personality`, `SubAgentMaxTurns`. Add `loadProjectConfig(repoRoot)` and `saveProjectConfig(repoRoot, cfg)` functions
 - [x] 3b: Add `mergeConfigs(global Config, project ProjectConfig) Config` function. For each overridable field: use project value if non-zero, else global
-- [ ] 3c: Add `globalConfig`, `projectConfig`, `repoRoot` fields to App struct. Update `newApp()` / init to load both configs and merge into `a.config`
+- [x] 3c: Add `globalConfig`, `projectConfig`, `repoRoot` fields to App struct. Update `newApp()` / init to load both configs and merge into `a.config`
 - [ ] 3d: Update `/model` command to save `ActiveModel` to project config instead of global
 - [ ] 3e: Add tests for project config loading, saving, merging, and fallback behavior
 

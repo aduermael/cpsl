@@ -1044,7 +1044,10 @@ type App struct {
 	// Chat state
 	sessionID        string
 	messages         []chatMessage
-	config           Config
+	globalConfig     Config        // loaded from ~/.cpsl/config.json
+	projectConfig    ProjectConfig // loaded from <repo>/.cpsl/config.json
+	config           Config        // merged effective config (globalConfig + projectConfig)
+	repoRoot         string        // git repo root, for project config path
 	pasteCount       int
 	pasteStore       map[int]string
 	attachmentCount  int
@@ -1123,10 +1126,11 @@ func newApp() *App {
 	sessID := fmt.Sprintf("%08x", sid)
 
 	return &App{
-		sessionID: sessID,
-		config:    cfg,
-		resultCh:  make(chan any, 16),
-		stopCh:    make(chan struct{}),
+		sessionID:    sessID,
+		globalConfig: cfg,
+		config:       cfg, // no project config yet; will merge on workspaceMsg
+		resultCh:     make(chan any, 16),
+		stopCh:       make(chan struct{}),
 	}
 }
 
@@ -1267,10 +1271,11 @@ func (a *App) refreshModelMenu() {
 	} else if a.menuCursor >= a.menuScrollOffset+maxVisible {
 		a.menuScrollOffset = a.menuCursor - maxVisible + 1
 	}
-	// Persist sort preferences
-	a.config.ModelSortCol = sortColNames[a.menuSortCol]
-	a.config.ModelSortDirs = sortAscToMap(a.menuSortAsc)
-	_ = saveConfig(a.config)
+	// Persist sort preferences (global-only)
+	a.globalConfig.ModelSortCol = sortColNames[a.menuSortCol]
+	a.globalConfig.ModelSortDirs = sortAscToMap(a.menuSortAsc)
+	a.config = mergeConfigs(a.globalConfig, a.projectConfig)
+	_ = saveConfig(a.globalConfig)
 }
 
 func (a *App) buildInputRows() []string {
@@ -2875,15 +2880,16 @@ func (a *App) enterConfigMode() {
 	a.cfgEditing = false
 	a.cfgEditBuf = nil
 	a.cfgEditCursor = 0
-	a.cfgDraft = a.config
+	a.cfgDraft = a.globalConfig
 	a.renderInput()
 }
 
 func (a *App) exitConfigMode(save bool) {
 	if save {
-		a.config = a.cfgDraft
+		a.globalConfig = a.cfgDraft
+		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
 		a.displaySystemPrompts = a.config.DisplaySystemPrompts
-		if err := saveConfig(a.config); err != nil {
+		if err := saveConfig(a.globalConfig); err != nil {
 			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving config: %v", err)})
 		} else {
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Config saved."})
@@ -3571,6 +3577,9 @@ func (a *App) handleResult(result any) {
 
 	case workspaceMsg:
 		a.worktreePath = msg.worktreePath
+		a.repoRoot = msg.worktreePath
+		a.projectConfig = loadProjectConfig(a.repoRoot)
+		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
 		a.history = newHistory(msg.worktreePath, a.config.effectiveMaxHistory())
 		a.history.Load()
 		wtPath := msg.worktreePath
