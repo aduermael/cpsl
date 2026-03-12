@@ -24,7 +24,7 @@ func processMarkdownLine(line string, inCodeBlock bool) (result string, newState
 
 	if inCodeBlock {
 		// Inside a fenced code block: reverse video (same as inline code).
-		return "\033[7m" + line + "\033[27m", true, false
+		return "\033[48;5;236m\033[38;5;248m" + line + "\033[0m", true, false
 	}
 
 	// Heading lines: # H1 (bold+underline), ## H2 (bold), ### H3 (bold)

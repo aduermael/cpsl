@@ -34,9 +34,9 @@ The TUI renders messages via `buildBlockRows()` (main.go:1144) which calls `rend
 
 **Approach:** Make `applyANSI()` smarter about partial resets (49m cancels 48;5;Nm), OR switch inline code to use `\033[7m`/`\033[27m` (reverse video) which doesn't have the background-fill issue and matches what tests already expect. Reverse video is cleaner since it adapts to the terminal theme.
 
-- [ ] 2a: Switch inline code to reverse video (`\033[7m`/`\033[27m`) — this matches the existing tests and avoids background bleed entirely
-- [ ] 2b: Verify the fix works with wrapping by checking the `wrapString()` activeSeqs handling for `\033[27m` (reverse-off) — it may also need the same partial-reset fix
-- [ ] 2c: Update or verify markdown_test.go expectations match the new rendering
+- [x] 2a: Switch inline code to reverse video (`\033[7m`/`\033[27m`) — this matches the existing tests and avoids background bleed entirely
+- [x] 2b: Verify the fix works with wrapping by checking the `wrapString()` activeSeqs handling for `\033[27m` (reverse-off) — it may also need the same partial-reset fix
+- [x] 2c: Update or verify markdown_test.go expectations match the new rendering
 
 ## Phase 3: Fix fenced code block background
 
