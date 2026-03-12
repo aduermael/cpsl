@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/base64"
@@ -845,16 +846,24 @@ func resolveWorkspaceCmd(cfg Config) workspaceMsg {
 }
 
 func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- any) {
+	ch <- containerStatusMsg{text: "checking docker…"}
+
 	ccfg := cfg.containerConfig()
 	client := NewContainerClient(ccfg)
-
-	ch <- containerStatusMsg{text: "checking docker…"}
 
 	if !client.IsAvailable() {
 		ch <- containerStatusMsg{text: "docker not running"}
 		ch <- containerErrMsg{err: fmt.Errorf(
 			"Docker is not running. Please start Docker Desktop and try again.")}
 		return
+	}
+
+	// Build from .cpsl/Dockerfile (write base template if none exists).
+	imageName := buildContainerImage(cfg, workspace, ch)
+	if imageName != "" {
+		client.mu.Lock()
+		client.config.Image = imageName
+		client.mu.Unlock()
 	}
 
 	ch <- containerStatusMsg{text: "starting…"}
@@ -874,6 +883,58 @@ func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- 
 	}
 
 	ch <- containerReadyMsg{client: client, worktreePath: workspace}
+}
+
+// buildContainerImage builds a Docker image from .cpsl/Dockerfile in the workspace.
+// If no Dockerfile exists, it writes the embedded base template first.
+// Returns the built image name, or empty string on failure (caller falls back to raw image).
+func buildContainerImage(cfg Config, workspace string, ch chan<- any) string {
+	cpslDir := filepath.Join(workspace, ".cpsl")
+	dockerfilePath := filepath.Join(cpslDir, "Dockerfile")
+
+	// If user already configured a custom image and no Dockerfile exists, skip building.
+	if cfg.ContainerImage != "" {
+		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+			return ""
+		}
+	}
+
+	// Write the embedded base template if no Dockerfile exists.
+	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
+		_ = os.MkdirAll(cpslDir, 0o755)
+		if err := os.WriteFile(dockerfilePath, []byte(BaseDockerfile), 0o644); err != nil {
+			return ""
+		}
+	}
+
+	// Derive image name from project ID.
+	imageName := "cpsl-local:dev"
+	if repoRoot := gitRepoRoot(); repoRoot != "" {
+		if projectID, err := ensureProjectID(repoRoot); err == nil && len(projectID) >= 8 {
+			imageName = "cpsl-" + projectID[:8] + ":dev"
+		}
+	}
+
+	ch <- containerStatusMsg{text: "building image…"}
+
+	buildCtx, buildCancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer buildCancel()
+
+	buildCmd := dockerCommand(buildCtx, "docker", "build",
+		"-t", imageName,
+		"-f", dockerfilePath,
+		workspace,
+	)
+	var buildStderr bytes.Buffer
+	buildCmd.Stderr = &buildStderr
+
+	if err := buildCmd.Run(); err != nil {
+		// Build failed — fall back to raw default image.
+		ch <- containerStatusMsg{text: "build failed, using default image"}
+		return ""
+	}
+
+	return imageName
 }
 
 func fetchStatusCmd(worktreePath string) statusInfoMsg {

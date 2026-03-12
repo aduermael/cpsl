@@ -72,7 +72,7 @@ Update the devenv skill doc to note that the base image includes exploration too
 - [x] 1a: Create `dockerfiles/base.Dockerfile` (debian:bookworm-slim + git, tree, ca-certificates, ripgrep, WORKDIR /workspace)
 - [x] 1b: Add `dockerfiles.go` with `//go:embed dockerfiles/base.Dockerfile` exposing `var BaseDockerfile string`
 - [x] 1c: Change `defaultContainerImage` in config.go from `"alpine:latest"` to `"debian:bookworm-slim"`
-- [ ] 1d: In `bootContainerCmd()`, after docker-available check: if no `.cpsl/Dockerfile` exists, write the embedded template there. Then build the image from `.cpsl/Dockerfile` (status: "building image…"). Start the container with the built image. On build failure, fall back to starting with the raw default image
+- [x] 1d: In `bootContainerCmd()`, after docker-available check: if no `.cpsl/Dockerfile` exists, write the embedded template there. Then build the image from `.cpsl/Dockerfile` (status: "building image…"). Start the container with the built image. On build failure, fall back to starting with the raw default image
 
 ## Phase 2: System prompt and devenv skill updates
 - [ ] 2a: Replace the bash tool's `"Explore files with grep, find, cat"` line with layered exploration guidance (structure → content with `rg` as primary tool → read → history), ~4-5 lines
