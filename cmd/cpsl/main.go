@@ -2322,7 +2322,7 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 	// Check for bracketed paste: ESC [ 2 0 0 ~
 	// Also handles modifyOtherKeys: ESC [ 2 7 ; <mod> ; <code> ~
 	if b == '2' {
-		a.handleCSIDigit2(readByte)
+		a.handleCSIDigit2(readByte, a.handlePaste)
 		return
 	}
 
@@ -2466,7 +2466,52 @@ func (a *App) handleModifyOtherKeys(mod, code int) {
 	}
 }
 
-func (a *App) handleCSIDigit2(readByte func() (byte, bool)) {
+// readBracketedPaste reads paste content until the end marker ESC [ 2 0 1 ~.
+// Called after the start marker ESC [ 2 0 0 ~ has already been consumed.
+func readBracketedPaste(readByte func() (byte, bool)) string {
+	var content []byte
+	for {
+		ch, ok := readByte()
+		if !ok {
+			break
+		}
+		if ch == '\033' {
+			e0, ok := readByte()
+			if !ok {
+				break
+			}
+			if e0 == '[' {
+				e1, ok := readByte()
+				if !ok {
+					break
+				}
+				e2, ok := readByte()
+				if !ok {
+					break
+				}
+				e3, ok := readByte()
+				if !ok {
+					break
+				}
+				e4, ok := readByte()
+				if !ok {
+					break
+				}
+				if e1 == '2' && e2 == '0' && e3 == '1' && e4 == '~' {
+					break
+				}
+				content = append(content, '\033', e0, e1, e2, e3, e4)
+			} else {
+				content = append(content, '\033', e0)
+			}
+		} else {
+			content = append(content, ch)
+		}
+	}
+	return string(content)
+}
+
+func (a *App) handleCSIDigit2(readByte func() (byte, bool), onPaste func(string)) {
 	// We've read ESC [ 2, check for 0 0 ~
 	b0, ok := readByte()
 	if !ok {
@@ -2482,47 +2527,7 @@ func (a *App) handleCSIDigit2(readByte func() (byte, bool)) {
 	}
 
 	if b0 == '0' && b1 == '0' && b2 == '~' {
-		// Bracketed paste start - read until ESC [ 2 0 1 ~
-		var content []byte
-		for {
-			ch, ok := readByte()
-			if !ok {
-				break
-			}
-			if ch == '\033' {
-				e0, ok := readByte()
-				if !ok {
-					break
-				}
-				if e0 == '[' {
-					e1, ok := readByte()
-					if !ok {
-						break
-					}
-					e2, ok := readByte()
-					if !ok {
-						break
-					}
-					e3, ok := readByte()
-					if !ok {
-						break
-					}
-					e4, ok := readByte()
-					if !ok {
-						break
-					}
-					if e1 == '2' && e2 == '0' && e3 == '1' && e4 == '~' {
-						break
-					}
-					content = append(content, '\033', e0, e1, e2, e3, e4)
-				} else {
-					content = append(content, '\033', e0)
-				}
-			} else {
-				content = append(content, ch)
-			}
-		}
-		a.handlePaste(string(content))
+		onPaste(readBracketedPaste(readByte))
 		return
 	}
 
@@ -3659,6 +3664,15 @@ func (a *App) handleConfigEditByte(ch byte, stdinCh chan byte, readByte func() (
 		case 'F': // End
 			a.cfgEditCursor = len(a.cfgEditBuf)
 			a.renderInput()
+		case '2': // Bracketed paste or modifyOtherKeys
+			a.handleCSIDigit2(readByte, func(s string) {
+				pasted := []rune(s)
+				tail := make([]rune, len(a.cfgEditBuf[a.cfgEditCursor:]))
+				copy(tail, a.cfgEditBuf[a.cfgEditCursor:])
+				a.cfgEditBuf = append(a.cfgEditBuf[:a.cfgEditCursor], append(pasted, tail...)...)
+				a.cfgEditCursor += len(pasted)
+				a.renderInput()
+			})
 		case '3': // Delete
 			if t, ok := readByte(); ok && t == '~' {
 				if a.cfgEditCursor < len(a.cfgEditBuf) {
