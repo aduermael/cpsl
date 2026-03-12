@@ -23,7 +23,7 @@ Clean up the repo structure: remove junk, add README/LICENSE, move Go source out
 ## Phase 1: Clean up junk files and .gitignore
 
 - [x] 1a: Remove `bar2.txt`, `hello.sh`, and stale `main` binary from the repo
-- [ ] 1b: Update `.gitignore` to cover common Go artifacts (binaries in `cmd/`, `*.exe`, `.DS_Store` already covered)
+- [x] 1b: Update `.gitignore` to cover common Go artifacts (binaries in `cmd/`, `*.exe`, `.DS_Store` already covered)
 
 ## Phase 2: Add README and LICENSE
 

@@ -1,7 +1,16 @@
+# Binaries
 cpsl
 main
 debug/debug
-.cpsl/
-.DS_Store
-.cpsl-lock
 simple-chat/simple-chat
+cmd/cpsl/cpsl
+cmd/debug/debug
+cmd/simple-chat/simple-chat
+*.exe
+
+# App data
+.cpsl/
+.cpsl-lock
+
+# OS
+.DS_Store
