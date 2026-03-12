@@ -1,8 +1,8 @@
 # Binaries
 cpsl
 main
-debug/debug
-simple-chat/simple-chat
+debug
+simple-chat
 cmd/cpsl/cpsl
 cmd/debug/debug
 cmd/simple-chat/simple-chat

@@ -16,14 +16,14 @@ A terminal-based chat interface for LLM agents with Docker container support, gi
 Requires Go 1.25+.
 
 ```sh
-go build -o cpsl .
+go build -o cpsl ./cmd/cpsl
 ```
 
 Additional commands:
 
 ```sh
-go build ./simple-chat   # minimal chat client
-go build ./debug          # debug utilities
+go build ./cmd/simple-chat   # minimal chat client
+go build ./cmd/debug          # debug utilities
 ```
 
 ## Run
@@ -41,10 +41,11 @@ go test ./...
 ## Project Structure
 
 ```
-*.go              Main application source (package main)
-dockerfiles/      Dockerfiles for container support
-simple-chat/      Minimal chat client
-debug/            Debug utilities
+cmd/cpsl/         Main application source (package main)
+cmd/cpsl/prompts/ System prompt templates (embedded)
+cmd/cpsl/dockerfiles/ Dockerfiles for container support (embedded)
+cmd/simple-chat/  Minimal chat client
+cmd/debug/        Debug utilities
 plans/            Project planning docs
 ```
 
