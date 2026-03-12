@@ -119,7 +119,7 @@ Currently saves to global config. Change to: save to project config by default (
 - [x] 2c: Update `DevEnvTool.buildAndReplace` to use same hash-based naming
 - [x] 2d: Update `bootContainerCmd`: no longer needs `cfg.containerConfig()` for initial image. Use `defaultContainerImage` as fallback only when build fails. Update `onRebuild` callback to set `a.containerImage` instead of saving to config
 - [x] 2e: Remove `ContainerImage` from Config struct, `containerConfig()` method, `/config` UI field, and `defaultContainerImage` references that are no longer needed. Keep the constant for the fallback image
-- [ ] 2f: Update tests for buildContainerImage, containerConfig removal, and config serialization
+- [x] 2f: Update tests for buildContainerImage, containerConfig removal, and config serialization
 
 ## Phase 3: Project config layer
 

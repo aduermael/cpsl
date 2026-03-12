@@ -284,8 +284,8 @@ func TestDevEnvTool_OnRebuildCallback(t *testing.T) {
 		t.Errorf("expected success message, got: %s", result)
 	}
 
-	// Image tag is now always :dev regardless of name.
-	expectedImage := "cpsl-abcdef12:dev"
+	// Image tag uses hash of Dockerfile content.
+	expectedImage := "cpsl-abcdef12:3c9030126559"
 	if callbackImage != expectedImage {
 		t.Errorf("onRebuild called with %q, want %q", callbackImage, expectedImage)
 	}
