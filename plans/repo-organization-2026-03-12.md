@@ -66,4 +66,4 @@ Move all `package main` source files from repo root into `cmd/cpsl/`. This is a 
 
 ## Phase 5: Final verification
 
-- [ ] 5a: Run full test suite (`go test ./...`), verify build, confirm no leftover files at root. Clean up any stale references in `.cpsl/` config or `.claude/` memory
+- [x] 5a: Run full test suite (`go test ./...`), verify build, confirm no leftover files at root. Clean up any stale references in `.cpsl/` config or `.claude/` memory
