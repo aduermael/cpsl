@@ -36,7 +36,8 @@ Add native tools (alongside bash) that the agent can use for common file operati
 - [x] 1b: **Grep tool** — content search. Input: `pattern` (regex), optional `path`, optional `glob` (file filter), optional `context` (lines around match), optional `output_mode` (`files_with_matches` default, `content`, `count`). Wraps `rg` inside the container. Returns only matching lines/files, not full files.
 - [x] 1c: **Read tool** — file reader with partial support. Input: `file_path`, optional `offset` (start line), optional `limit` (max lines, default 2000). Executes in container (e.g. `sed -n` or `awk` for line ranges). Returns content with line numbers. Truncates lines over 2000 chars.
 - [x] 1d: **Update system prompt** — add tool-specific guidance: prefer Glob/Grep/Read over bash for file operations. Keep bash for running builds, tests, and commands that aren't file reads. Mirror Claude Code's approach: "Do NOT use Bash to run cat, head, tail, grep, find, rg when a dedicated tool exists."
-- [ ] 1e: **Ensure container has required tools** — verify `rg` is in the base Dockerfile. If glob/grep/read tools depend on specific binaries, document them as devenv requirements. The devenv tool can fix missing tools.
+- [x] 1e: **Ensure container has required tools** — verify `rg` is in the base Dockerfile. If glob/grep/read tools depend on specific binaries, document them as devenv requirements. The devenv tool can fix missing tools.
+  - Verified: `ripgrep` already in base Dockerfile (`apt-get install -y ... ripgrep`). All three tools use `rg` and `awk` — both present in base image.
 - [ ] 1f: **Test all three tools** — verify correct behavior in the Docker container context (paths relative to `/workspace`), edge cases (missing files, binary files, no matches, very large output), and output conciseness.
 
 **Key design decisions:**
