@@ -1908,8 +1908,8 @@ done:
 
 // handleByte processes a single byte from stdin. Returns true if the app should quit.
 func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) bool {
-	// Config editor mode intercept
-	if a.cfgActive {
+	// Config editor mode intercept (unless a model picker menu is active)
+	if a.cfgActive && !a.menuActive {
 		a.handleConfigByte(ch, stdinCh, readByte)
 		return false
 	}
@@ -2663,77 +2663,15 @@ func (a *App) handleCommand(input string) {
 		a.enterConfigMode()
 
 	case "/model":
-		if a.models == nil {
-			a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Models are still loading... please try again in a moment."})
-			a.render()
-			return
-		}
-		available := a.config.availableModels(a.models)
-		if len(available) == 0 {
-			a.messages = append(a.messages, chatMessage{kind: msgError, content: "No API keys configured. Use /config to add a key first."})
-			a.render()
-			return
-		}
-		// Phase 3: inline model selection with menu
-		activeID := a.config.resolveActiveModel(a.models)
-		a.menuModels = available
-		a.menuActiveID = activeID
-		a.menuSortCol = sortColFromName(a.config.ModelSortCol)
-		a.menuSortAsc = sortAscFromMap(a.config.ModelSortDirs)
-		asc := a.menuSortAsc[a.menuSortCol]
-		sortModelsByCol(a.menuModels, a.menuSortCol, asc)
-		header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, asc)
-		activeIdx := 0
-		for i, m := range a.menuModels {
-			if m.ID == activeID {
-				activeIdx = i
-				break
-			}
-		}
-		a.menuHeader = header
-		a.menuLines = lines
-		a.menuCursor = activeIdx
-		// Scroll so active model is visible
-		maxVisible := getTerminalHeight() * 60 / 100
-		if maxVisible < 1 {
-			maxVisible = 1
-		}
-		if activeIdx >= maxVisible {
-			a.menuScrollOffset = activeIdx - maxVisible + 1
+		// Open config at the model fields tab. If in a repo, go to Project tab;
+		// otherwise Global tab. Cursor starts on Active Model.
+		a.enterConfigMode()
+		if a.repoRoot != "" {
+			a.cfgTab = 2 // Project tab
 		} else {
-			a.menuScrollOffset = 0
+			a.cfgTab = 1 // Global tab
 		}
-		a.menuActive = true
-		a.menuAction = func(idx int) {
-			if idx >= 0 && idx < len(a.menuModels) {
-				selected := a.menuModels[idx]
-				a.projectConfig.ActiveModel = selected.ID
-				a.config = mergeConfigs(a.globalConfig, a.projectConfig)
-				if a.repoRoot != "" {
-					if err := saveProjectConfig(a.repoRoot, a.projectConfig); err != nil {
-						a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving model: %v", err)})
-					} else {
-						a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Model set to %s.", selected.ID)})
-					}
-				} else {
-					// No project context — save to global config
-					a.globalConfig.ActiveModel = selected.ID
-					a.config = mergeConfigs(a.globalConfig, a.projectConfig)
-					if err := saveConfig(a.globalConfig); err != nil {
-						a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving model: %v", err)})
-					} else {
-						a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Model set to %s.", selected.ID)})
-					}
-				}
-			}
-			a.menuLines = nil
-			a.menuHeader = ""
-			a.menuActive = false
-			a.menuAction = nil
-			a.menuScrollOffset = 0
-			a.menuModels = nil
-			a.menuActiveID = ""
-		}
+		a.cfgCursor = 0 // Active Model is the first field
 		a.renderInput()
 
 	case "/branches":
@@ -2926,21 +2864,14 @@ type cfgField struct {
 	set        func(*Config, string)
 	toggle     func(*Config)          // if non-nil, Enter toggles instead of opening editor
 	globalHint func(Config) string    // if set, shows "(global: X)" when field value is empty
+	picker     func(*App)             // if non-nil, Enter opens a picker (e.g. model selector) instead of editor
 }
 
-var cfgTabFields = [][]cfgField{
-	{ // Tab 0: API Keys
-		{label: "Anthropic", get: func(c Config) string { return c.AnthropicAPIKey }, display: func(c Config) string { return maskKey(c.AnthropicAPIKey) }, set: func(c *Config, v string) { c.AnthropicAPIKey = v }},
-		{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
-		{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
-		{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
-	},
-	{ // Tab 1: Settings
-		{label: "Paste Collapse", get: func(c Config) string { return strconv.Itoa(c.PasteCollapseMinChars) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil { c.PasteCollapseMinChars = n } }},
-		{label: "Show System Prompt", get: func(c Config) string { if c.DisplaySystemPrompts { return "on" }; return "off" }, toggle: func(c *Config) { c.DisplaySystemPrompts = !c.DisplaySystemPrompts }},
-		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
-		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
-	},
+var cfgAPIKeyFields = []cfgField{
+	{label: "Anthropic", get: func(c Config) string { return c.AnthropicAPIKey }, display: func(c Config) string { return maskKey(c.AnthropicAPIKey) }, set: func(c *Config, v string) { c.AnthropicAPIKey = v }},
+	{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
+	{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
+	{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
 }
 
 func (a *App) enterConfigMode() {
@@ -2987,14 +2918,85 @@ func (a *App) exitConfigMode(save bool) {
 	a.render()
 }
 
+// openConfigModelPicker opens an inline model menu within the config editor.
+// getCurrentID returns the currently selected model ID (for highlighting).
+// onSelect is called with the chosen model ID when the user makes a selection.
+func (a *App) openConfigModelPicker(getCurrentID func() string, onSelect func(string)) {
+	if a.models == nil {
+		return
+	}
+	available := a.cfgDraft.availableModels(a.models)
+	if len(available) == 0 {
+		return
+	}
+
+	activeID := getCurrentID()
+	a.menuModels = available
+	a.menuActiveID = activeID
+	a.menuSortCol = sortColFromName(a.cfgDraft.ModelSortCol)
+	a.menuSortAsc = sortAscFromMap(a.cfgDraft.ModelSortDirs)
+	asc := a.menuSortAsc[a.menuSortCol]
+	sortModelsByCol(a.menuModels, a.menuSortCol, asc)
+	header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, asc)
+
+	activeIdx := 0
+	for i, m := range a.menuModels {
+		if m.ID == activeID {
+			activeIdx = i
+			break
+		}
+	}
+
+	a.menuHeader = header
+	a.menuLines = lines
+	a.menuCursor = activeIdx
+	maxVisible := getTerminalHeight() * 60 / 100
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	if activeIdx >= maxVisible {
+		a.menuScrollOffset = activeIdx - maxVisible + 1
+	} else {
+		a.menuScrollOffset = 0
+	}
+	a.menuActive = true
+	a.menuAction = func(idx int) {
+		if idx >= 0 && idx < len(a.menuModels) {
+			onSelect(a.menuModels[idx].ID)
+		}
+		a.menuLines = nil
+		a.menuHeader = ""
+		a.menuActive = false
+		a.menuAction = nil
+		a.menuScrollOffset = 0
+		a.menuModels = nil
+		a.menuActiveID = ""
+		// Config mode stays active — renderInput will show config fields again.
+	}
+	a.renderInput()
+}
+
 func (a *App) cfgCurrentFields() []cfgField {
-	if a.cfgTab == 2 { // Project tab — generated dynamically
+	switch a.cfgTab {
+	case 0:
+		return cfgAPIKeyFields
+	case 1:
+		return a.settingsTabFields()
+	case 2:
 		return a.projectTabFields()
 	}
-	if a.cfgTab >= 0 && a.cfgTab < len(cfgTabFields) {
-		return cfgTabFields[a.cfgTab]
-	}
 	return nil
+}
+
+func (a *App) settingsTabFields() []cfgField {
+	return []cfgField{
+		{label: "Active Model", get: func(c Config) string { return c.ActiveModel }, set: func(c *Config, v string) { c.ActiveModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ActiveModel }, func(id string) { a.cfgDraft.ActiveModel = id }) }},
+		{label: "Exploration Model", get: func(c Config) string { return c.ExplorationModel }, set: func(c *Config, v string) { c.ExplorationModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ExplorationModel }, func(id string) { a.cfgDraft.ExplorationModel = id }) }},
+		{label: "Paste Collapse", get: func(c Config) string { return strconv.Itoa(c.PasteCollapseMinChars) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil { c.PasteCollapseMinChars = n } }},
+		{label: "Show System Prompt", get: func(c Config) string { if c.DisplaySystemPrompts { return "on" }; return "off" }, toggle: func(c *Config) { c.DisplaySystemPrompts = !c.DisplaySystemPrompts }},
+		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
+		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
+	}
 }
 
 func (a *App) projectTabFields() []cfgField {
@@ -3004,6 +3006,14 @@ func (a *App) projectTabFields() []cfgField {
 			get:        func(_ Config) string { return a.cfgProjectDraft.ActiveModel },
 			set:        func(_ *Config, v string) { a.cfgProjectDraft.ActiveModel = v },
 			globalHint: func(c Config) string { return c.ActiveModel },
+			picker:     func(a *App) { a.openConfigModelPicker(func() string { return a.cfgProjectDraft.ActiveModel }, func(id string) { a.cfgProjectDraft.ActiveModel = id }) },
+		},
+		{
+			label:      "Exploration Model",
+			get:        func(_ Config) string { return a.cfgProjectDraft.ExplorationModel },
+			set:        func(_ *Config, v string) { a.cfgProjectDraft.ExplorationModel = v },
+			globalHint: func(c Config) string { return c.ExplorationModel },
+			picker:     func(a *App) { a.openConfigModelPicker(func() string { return a.cfgProjectDraft.ExplorationModel }, func(id string) { a.cfgProjectDraft.ExplorationModel = id }) },
 		},
 		{
 			label:      "Personality",
@@ -3055,6 +3065,11 @@ func (a *App) buildConfigRows() []string {
 	if a.cfgTab == 2 && a.repoRoot == "" {
 		rows = append(rows, "\033[2mNo project detected (not in a git repository)\033[0m")
 		rows = append(rows, "\033[2m←/→=tab  Esc=close  Ctrl+S=save & close\033[0m")
+		return rows
+	}
+
+	// When a model picker menu is active, just show the tab bar (menu renders separately)
+	if a.menuActive {
 		return rows
 	}
 
@@ -3170,14 +3185,16 @@ func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte
 			}
 		}
 
-	case ch == '\r': // Enter - toggle or start editing current field
+	case ch == '\r': // Enter - toggle, picker, or start editing current field
 		if a.cfgTab == 2 && a.repoRoot == "" {
 			break // Project tab non-editable without a repo
 		}
 		fields := a.cfgCurrentFields()
 		if len(fields) > 0 && a.cfgCursor < len(fields) {
 			f := fields[a.cfgCursor]
-			if f.toggle != nil {
+			if f.picker != nil {
+				f.picker(a)
+			} else if f.toggle != nil {
 				f.toggle(&a.cfgDraft)
 			} else {
 				a.cfgEditing = true

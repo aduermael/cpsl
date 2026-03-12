@@ -351,7 +351,7 @@ func TestCfgTabNamesStructure(t *testing.T) {
 func TestProjectTabFieldLabels(t *testing.T) {
 	a := &App{}
 	fields := a.projectTabFields()
-	wantLabels := []string{"Active Model", "Personality", "Sub-Agent Max Turns"}
+	wantLabels := []string{"Active Model", "Exploration Model", "Personality", "Sub-Agent Max Turns"}
 	if len(fields) != len(wantLabels) {
 		t.Fatalf("projectTabFields returned %d fields, want %d", len(fields), len(wantLabels))
 	}
@@ -368,8 +368,9 @@ func TestProjectTabFieldLabels(t *testing.T) {
 func TestProjectTabFieldGetSet(t *testing.T) {
 	a := &App{
 		cfgProjectDraft: ProjectConfig{
-			ActiveModel: "test-model",
-			Personality: "brief",
+			ActiveModel:      "test-model",
+			ExplorationModel: "explore-model",
+			Personality:      "brief",
 			SubAgentMaxTurns: 7,
 		},
 	}
@@ -379,10 +380,13 @@ func TestProjectTabFieldGetSet(t *testing.T) {
 	if v := fields[0].get(Config{}); v != "test-model" {
 		t.Errorf("ActiveModel get = %q, want %q", v, "test-model")
 	}
-	if v := fields[1].get(Config{}); v != "brief" {
+	if v := fields[1].get(Config{}); v != "explore-model" {
+		t.Errorf("ExplorationModel get = %q, want %q", v, "explore-model")
+	}
+	if v := fields[2].get(Config{}); v != "brief" {
 		t.Errorf("Personality get = %q, want %q", v, "brief")
 	}
-	if v := fields[2].get(Config{}); v != "7" {
+	if v := fields[3].get(Config{}); v != "7" {
 		t.Errorf("SubAgentMaxTurns get = %q, want %q", v, "7")
 	}
 
@@ -391,11 +395,15 @@ func TestProjectTabFieldGetSet(t *testing.T) {
 	if a.cfgProjectDraft.ActiveModel != "new-model" {
 		t.Errorf("after set, ActiveModel = %q, want %q", a.cfgProjectDraft.ActiveModel, "new-model")
 	}
-	fields[1].set(nil, "verbose")
+	fields[1].set(nil, "new-explore")
+	if a.cfgProjectDraft.ExplorationModel != "new-explore" {
+		t.Errorf("after set, ExplorationModel = %q, want %q", a.cfgProjectDraft.ExplorationModel, "new-explore")
+	}
+	fields[2].set(nil, "verbose")
 	if a.cfgProjectDraft.Personality != "verbose" {
 		t.Errorf("after set, Personality = %q, want %q", a.cfgProjectDraft.Personality, "verbose")
 	}
-	fields[2].set(nil, "20")
+	fields[3].set(nil, "20")
 	if a.cfgProjectDraft.SubAgentMaxTurns != 20 {
 		t.Errorf("after set, SubAgentMaxTurns = %d, want 20", a.cfgProjectDraft.SubAgentMaxTurns)
 	}
@@ -404,7 +412,7 @@ func TestProjectTabFieldGetSet(t *testing.T) {
 func TestProjectTabSubAgentClearsOnEmpty(t *testing.T) {
 	a := &App{cfgProjectDraft: ProjectConfig{SubAgentMaxTurns: 10}}
 	fields := a.projectTabFields()
-	fields[2].set(nil, "")
+	fields[3].set(nil, "") // Sub-Agent Max Turns is at index 3 now
 	if a.cfgProjectDraft.SubAgentMaxTurns != 0 {
 		t.Errorf("SubAgentMaxTurns = %d, want 0 after clearing", a.cfgProjectDraft.SubAgentMaxTurns)
 	}
