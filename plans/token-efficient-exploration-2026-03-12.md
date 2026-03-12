@@ -32,7 +32,7 @@ The agent has:
 
 Add native tools (alongside bash) that the agent can use for common file operations. These execute commands inside the Docker container but provide structured I/O. The container already has `rg` and standard tools installed; if a tool is missing, the agent can use devenv to add it.
 
-- [ ] 1a: **Glob tool** — pattern-based file finder. Input: `pattern` (glob string, supports `**`), optional `path` (directory). Executes in container (e.g. wraps `rg --files -g <pattern>` or `find`). Output: sorted list of matching file paths, one per line. No file contents.
+- [x] 1a: **Glob tool** — pattern-based file finder. Input: `pattern` (glob string, supports `**`), optional `path` (directory). Executes in container (e.g. wraps `rg --files -g <pattern>` or `find`). Output: sorted list of matching file paths, one per line. No file contents.
 - [ ] 1b: **Grep tool** — content search. Input: `pattern` (regex), optional `path`, optional `glob` (file filter), optional `context` (lines around match), optional `output_mode` (`files_with_matches` default, `content`, `count`). Wraps `rg` inside the container. Returns only matching lines/files, not full files.
 - [ ] 1c: **Read tool** — file reader with partial support. Input: `file_path`, optional `offset` (start line), optional `limit` (max lines, default 2000). Executes in container (e.g. `sed -n` or `awk` for line ranges). Returns content with line numbers. Truncates lines over 2000 chars.
 - [ ] 1d: **Update system prompt** — add tool-specific guidance: prefer Glob/Grep/Read over bash for file operations. Keep bash for running builds, tests, and commands that aren't file reads. Mirror Claude Code's approach: "Do NOT use Bash to run cat, head, tail, grep, find, rg when a dedicated tool exists."
