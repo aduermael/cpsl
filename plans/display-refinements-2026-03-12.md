@@ -50,9 +50,9 @@ The TUI renders messages via `buildBlockRows()` (main.go:1144) which calls `rend
 
 Option 1 is simpler and more predictable. The padding needs to account for visual width (ANSI sequences don't count).
 
-- [ ] 3a: In `buildBlockRows()`, after wrapping code block lines, pad each resulting row to full terminal width with the code block background active
-- [ ] 3b: Ensure the `\033[0m` reset comes AFTER the padding, not before
-- [ ] 3c: Test that code block lines fill terminal width and wrapped code lines also get full-width background
+- [x] 3a: In `buildBlockRows()`, after wrapping code block lines, pad each resulting row to full terminal width with the code block background active
+- [x] 3b: Ensure the `\033[0m` reset comes AFTER the padding, not before
+- [x] 3c: Test that code block lines fill terminal width and wrapped code lines also get full-width background
 
 ## Phase 4: Dim command output further
 

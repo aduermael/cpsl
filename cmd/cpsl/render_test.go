@@ -178,6 +178,62 @@ func TestToolCallSummary(t *testing.T) {
 	}
 }
 
+func TestPadCodeBlockRow(t *testing.T) {
+	tests := []struct {
+		name  string
+		row   string
+		width int
+		want  string
+	}{
+		{
+			"pads short line",
+			"\033[48;5;236m\033[38;5;248mhi\033[0m",
+			10,
+			"\033[48;5;236m\033[38;5;248mhi        \033[0m",
+		},
+		{
+			"exact width no padding",
+			"\033[48;5;236m\033[38;5;248m1234567890\033[0m",
+			10,
+			"\033[48;5;236m\033[38;5;248m1234567890\033[0m",
+		},
+		{
+			"no trailing reset adds one",
+			"\033[48;5;236m\033[38;5;248mab",
+			5,
+			"\033[48;5;236m\033[38;5;248mab   \033[0m",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := padCodeBlockRow(tt.row, tt.width)
+			if got != tt.want {
+				t.Errorf("padCodeBlockRow(%q, %d)\n  got  %q\n  want %q", tt.row, tt.width, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestVisibleWidth(t *testing.T) {
+	tests := []struct {
+		name string
+		s    string
+		want int
+	}{
+		{"plain", "hello", 5},
+		{"ansi", "\033[1mhello\033[0m", 5},
+		{"emoji", "hi 👋", 5},
+		{"empty", "", 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := visibleWidth(tt.s); got != tt.want {
+				t.Errorf("visibleWidth(%q) = %d, want %d", tt.s, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestCollapseBlankRows(t *testing.T) {
 	tests := []struct {
 		name string

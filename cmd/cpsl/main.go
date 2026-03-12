@@ -194,6 +194,27 @@ func cursorVisualPos(input []rune, cursor int, width int) (int, int) {
 // ansiEscRe matches ANSI escape sequences (CSI and OSC).
 var ansiEscRe = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]|\x1b\].*?\x1b\\`)
 
+// visibleWidth returns the visual column width of s, ignoring ANSI escapes.
+func visibleWidth(s string) int {
+	return uniseg.StringWidth(ansiEscRe.ReplaceAllString(s, ""))
+}
+
+// padCodeBlockRow pads a code block row with spaces so the background fills
+// the full terminal width. It ensures \033[0m comes after the padding.
+func padCodeBlockRow(row string, width int) string {
+	const reset = "\033[0m"
+	stripped := row
+	hasReset := strings.HasSuffix(row, reset)
+	if hasReset {
+		stripped = row[:len(row)-len(reset)]
+	}
+	vw := visibleWidth(stripped)
+	if pad := width - vw; pad > 0 {
+		stripped += strings.Repeat(" ", pad)
+	}
+	return stripped + reset
+}
+
 // wrapString splits a string into visual rows of at most `w` columns.
 // It is ANSI-aware: escape sequences don't count toward visual width, and
 // active styling is re-emitted on continuation lines. Character widths are
@@ -1148,6 +1169,7 @@ func (a *App) buildBlockRows() []string {
 	for i, msg := range a.messages {
 		rendered := renderMessage(msg)
 		for _, logLine := range strings.Split(rendered, "\n") {
+			wasInCodeBlock := inCodeBlock
 			if msg.kind == msgAssistant {
 				var skip bool
 				logLine, inCodeBlock, skip = processMarkdownLine(logLine, inCodeBlock)
@@ -1155,7 +1177,13 @@ func (a *App) buildBlockRows() []string {
 					continue
 				}
 			}
-			rows = append(rows, wrapString(logLine, 0, a.width)...)
+			wrapped := wrapString(logLine, 0, a.width)
+			if wasInCodeBlock && msg.kind == msgAssistant {
+				for j := range wrapped {
+					wrapped[j] = padCodeBlockRow(wrapped[j], a.width)
+				}
+			}
+			rows = append(rows, wrapped...)
 		}
 		// Add blank line after block, unless:
 		// - next message already has leadBlank, or
@@ -1171,10 +1199,17 @@ func (a *App) buildBlockRows() []string {
 	// Show streaming text or thinking indicator above the input area
 	if a.streamingText != "" {
 		for _, logLine := range strings.Split(a.streamingText, "\n") {
+			wasInCodeBlock := inCodeBlock
 			var skip bool
 			logLine, inCodeBlock, skip = processMarkdownLine(logLine, inCodeBlock)
 			if !skip {
-				rows = append(rows, wrapString(logLine, 0, a.width)...)
+				wrapped := wrapString(logLine, 0, a.width)
+				if wasInCodeBlock {
+					for j := range wrapped {
+						wrapped[j] = padCodeBlockRow(wrapped[j], a.width)
+					}
+				}
+				rows = append(rows, wrapped...)
 			}
 		}
 		rows = append(rows, "")
