@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -857,7 +859,7 @@ func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- 
 	}
 
 	// Build from .cpsl/Dockerfile (write base template if none exists).
-	imageName := buildContainerImage(cfg, workspace, ch)
+	imageName := buildContainerImage(workspace, ch)
 	if imageName != "" {
 		client.mu.Lock()
 		client.config.Image = imageName
@@ -885,17 +887,12 @@ func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- 
 
 // buildContainerImage builds a Docker image from .cpsl/Dockerfile in the workspace.
 // If no Dockerfile exists, it writes the embedded base template first.
+// Image tag is deterministic: cpsl-<projectID[:8]>:<sha256[:12]> based on Dockerfile content.
+// If the image already exists (docker image inspect), the build is skipped.
 // Returns the built image name, or empty string on failure (caller falls back to raw image).
-func buildContainerImage(cfg Config, workspace string, ch chan<- any) string {
+func buildContainerImage(workspace string, ch chan<- any) string {
 	cpslDir := filepath.Join(workspace, ".cpsl")
 	dockerfilePath := filepath.Join(cpslDir, "Dockerfile")
-
-	// If user already configured a custom image and no Dockerfile exists, skip building.
-	if cfg.ContainerImage != "" {
-		if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-			return ""
-		}
-	}
 
 	// Write the embedded base template if no Dockerfile exists.
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
@@ -905,12 +902,28 @@ func buildContainerImage(cfg Config, workspace string, ch chan<- any) string {
 		}
 	}
 
-	// Derive image name from project ID.
-	imageName := "cpsl-local:dev"
+	// Read Dockerfile content and compute hash for deterministic tag.
+	content, err := os.ReadFile(dockerfilePath)
+	if err != nil {
+		return ""
+	}
+	hash := sha256.Sum256(content)
+	hashStr := hex.EncodeToString(hash[:])[:12]
+
+	// Derive image name from project ID + content hash.
+	imageName := "cpsl-local:" + hashStr
 	if repoRoot := gitRepoRoot(); repoRoot != "" {
 		if projectID, err := ensureProjectID(repoRoot); err == nil && len(projectID) >= 8 {
-			imageName = "cpsl-" + projectID[:8] + ":dev"
+			imageName = "cpsl-" + projectID[:8] + ":" + hashStr
 		}
+	}
+
+	// Check if image already exists — skip build if so (cache hit).
+	inspectCtx, inspectCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer inspectCancel()
+	inspectCmd := dockerCommand(inspectCtx, "docker", "image", "inspect", imageName)
+	if inspectCmd.Run() == nil {
+		return imageName
 	}
 
 	ch <- containerStatusMsg{text: "building image…"}
