@@ -75,9 +75,9 @@ Update the devenv skill doc to note that the base image includes exploration too
 - [x] 1d: In `bootContainerCmd()`, after docker-available check: if no `.cpsl/Dockerfile` exists, write the embedded template there. Then build the image from `.cpsl/Dockerfile` (status: "building image…"). Start the container with the built image. On build failure, fall back to starting with the raw default image
 
 ## Phase 2: System prompt and devenv skill updates
-- [ ] 2a: Replace the bash tool's `"Explore files with grep, find, cat"` line with layered exploration guidance (structure → content with `rg` as primary tool → read → history), ~4-5 lines
-- [ ] 2b: Update devenv skill doc to note Debian is the default base, exploration tools are pre-installed, and Alpine is available for advanced users who create their own Dockerfile
-- [ ] 2c: Add a test verifying the exploration guidance appears in the system prompt when bash tool is present
+- [x] 2a: Replace the bash tool's `"Explore files with grep, find, cat"` line with layered exploration guidance (structure → content with `rg` as primary tool → read → history), ~4-5 lines
+- [x] 2b: Update devenv skill doc to note Debian is the default base, exploration tools are pre-installed, and Alpine is available for advanced users who create their own Dockerfile
+- [x] 2c: Add a test verifying the exploration guidance appears in the system prompt when bash tool is present
 
 ## Success Criteria
 - Fresh project with no `.cpsl/Dockerfile`: startup writes the template, builds it, container has `git`, `rg`, `grep`, `find`, `tree` working immediately

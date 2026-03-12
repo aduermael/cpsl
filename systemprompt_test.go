@@ -78,6 +78,25 @@ func TestBuildSystemPromptBashOnly(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPromptBashExplorationGuidance(t *testing.T) {
+	tools := []Tool{stubTool{"bash"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim")
+
+	// Verify layered exploration strategy is present
+	expectations := []string{
+		"Explore files in layers",
+		"tree or find",
+		"rg (ripgrep)",
+		"cat/head/tail",
+		"git log/git blame",
+	}
+	for _, s := range expectations {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("bash exploration guidance missing %q", s)
+		}
+	}
+}
+
 func TestBuildSystemPromptGitOnly(t *testing.T) {
 	tools := []Tool{stubTool{"git"}}
 	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest")

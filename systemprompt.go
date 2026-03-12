@@ -71,8 +71,13 @@ Runs commands inside an isolated Docker container (image: %s) with the project a
 - The base container is minimal — it may lack compilers, runtimes, and dev tools.
 - Before running project code, check if required tools are installed (e.g. 'which go' or 'python3 --version'). If missing, use devenv to build a proper image — don't ad-hoc install or try to run code that will fail.
 - Do NOT install tools/runtimes via bash (e.g. apt-get install, apk add). Those installs are ephemeral and lost on container restart. Use devenv instead to persist them in the image.
-- Explore files with grep, find, cat. Run tests after changes.
-- Pipe long output through head/tail/grep to keep results focused.`, containerImage))
+- Explore files in layers — cheap to expensive:
+  1. Structure: tree or find (filenames only, fast overview)
+  2. Search: rg (ripgrep) is the primary code search tool — fast, .gitignore-aware, recursive. Fall back to grep -rn if needed
+  3. Read: cat/head/tail on specific files (expensive — be selective)
+  4. History: git log/git blame when understanding changes matters
+- Pipe long output through head/tail/grep to keep results focused.
+- Run tests after changes.`, containerImage))
 	}
 
 	if toolNames["git"] {

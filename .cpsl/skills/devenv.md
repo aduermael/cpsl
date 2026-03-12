@@ -5,6 +5,8 @@ description: Guidelines for setting up and extending the single project dev cont
 
 There is ONE dev environment per project: .cpsl/Dockerfile. Every tool installation goes here. Never create a second Dockerfile for a different purpose.
 
+The default base image is `debian:bookworm-slim` with exploration tools pre-installed: git, ripgrep (`rg`), tree, GNU grep, and findutils. On first startup, if no `.cpsl/Dockerfile` exists, the embedded base template is written and built automatically — so new projects get these tools out of the box. If you need Alpine, create your own `.cpsl/Dockerfile` with `alpine:3` as the base.
+
 ## The invariant
 
 The Dockerfile grows over time. It never shrinks (unless you're removing something intentionally). If the project needs Go today and TypeScript tomorrow, tomorrow's Dockerfile has both. The running container always reflects the latest build.
