@@ -104,6 +104,7 @@ const (
 	EventUsage                                 // token usage from an LLM call
 	EventDone                                  // agent loop finished
 	EventError                                 // error occurred
+	EventCompacted                             // conversation was auto-compacted
 	EventSubAgentDelta                         // sub-agent streaming text
 	EventSubAgentStatus                        // sub-agent status (tool calls, completion)
 )
@@ -146,13 +147,14 @@ type ApprovalResponse struct {
 
 // Agent orchestrates LLM calls and tool execution.
 type Agent struct {
-	id            string
-	client        *langdag.Client
-	tools         map[string]Tool
-	toolDefs      []types.ToolDefinition
-	systemPrompt  string
-	model         string
-	contextWindow int // model's context window in tokens; 0 = unknown (no clearing)
+	id               string
+	client           *langdag.Client
+	tools            map[string]Tool
+	toolDefs         []types.ToolDefinition
+	systemPrompt     string
+	model            string
+	contextWindow    int    // model's context window in tokens; 0 = unknown (no clearing)
+	explorationModel string // cheap model for compaction summaries; empty = use main model
 
 	events   chan AgentEvent
 	approval chan ApprovalResponse
@@ -162,10 +164,23 @@ type Agent struct {
 	cancelFn context.CancelFunc
 }
 
+// AgentOption configures optional Agent parameters.
+type AgentOption func(*Agent)
+
+// WithContextWindow sets the model's context window size for clearing/compaction.
+func WithContextWindow(n int) AgentOption {
+	return func(a *Agent) { a.contextWindow = n }
+}
+
+// WithExplorationModel sets the model used for compaction summaries.
+func WithExplorationModel(model string) AgentOption {
+	return func(a *Agent) { a.explorationModel = model }
+}
+
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
 // serverTools are provider-side tools (e.g. web search) that are declared in the
 // tool list but executed by the LLM provider, not the client.
-func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, systemPrompt, model string, contextWindow int) *Agent {
+func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, systemPrompt, model string, contextWindow int, opts ...AgentOption) *Agent {
 	toolMap := make(map[string]Tool, len(tools))
 	toolDefs := make([]types.ToolDefinition, 0, len(tools)+len(serverTools))
 	for _, t := range tools {
@@ -175,7 +190,7 @@ func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefi
 	}
 	toolDefs = append(toolDefs, serverTools...)
 
-	return &Agent{
+	a := &Agent{
 		id:            generateAgentID(),
 		client:        client,
 		tools:         toolMap,
@@ -186,6 +201,10 @@ func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefi
 		events:        make(chan AgentEvent, 64),
 		approval:      make(chan ApprovalResponse, 1),
 	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	return a
 }
 
 // Events returns the channel that receives agent events.
@@ -363,6 +382,37 @@ func replaceToolResultContent(content string) string {
 		return content
 	}
 	return string(out)
+}
+
+// maybeCompact triggers auto-compaction if input tokens exceed the compaction
+// threshold. Returns the (possibly new) nodeID to continue from.
+func (a *Agent) maybeCompact(ctx context.Context, nodeID string, inputTokens int) string {
+	if a.contextWindow <= 0 || inputTokens <= 0 {
+		return nodeID
+	}
+	threshold := int(float64(a.contextWindow) * compactThresholdFraction)
+	if inputTokens < threshold {
+		return nodeID
+	}
+
+	// Use exploration model for cheap summarization, fall back to main model.
+	summaryModel := a.explorationModel
+	if summaryModel == "" {
+		summaryModel = a.model
+	}
+
+	result, err := compactConversation(ctx, a.client, nodeID, summaryModel, "")
+	if err != nil {
+		return nodeID // compaction failed — continue with the original node
+	}
+
+	a.emit(AgentEvent{
+		Type:   EventCompacted,
+		NodeID: result.NewNodeID,
+		Text:   fmt.Sprintf("Conversation compacted: %d nodes → summary + %d recent nodes", result.OriginalNodes, result.KeptNodes),
+	})
+
+	return result.NewNodeID
 }
 
 // runLoop is the core agent loop: call LLM, handle tool calls, repeat.
@@ -553,6 +603,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		}
 		inputTokens := a.emitUsage(ctx, nodeID)
 		a.clearOldToolResults(ctx, nodeID, inputTokens)
+		nodeID = a.maybeCompact(ctx, nodeID, inputTokens)
 	}
 
 	a.emit(AgentEvent{Type: EventDone, NodeID: nodeID})

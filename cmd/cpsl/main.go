@@ -3551,7 +3551,8 @@ func (a *App) startAgent(userMessage string) {
 	if m := findModelByID(a.models, modelID); m != nil {
 		ctxWindow = m.ContextWindow
 	}
-	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow)
+	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow,
+		WithExplorationModel(explorationModelID))
 	subAgentTool.parentEvents = agent.events
 	a.agent = agent
 	a.agentRunning = true
@@ -3633,6 +3634,14 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		a.awaitingApproval = true
 		a.approvalDesc = event.ApprovalDesc
 		a.renderInput()
+
+	case EventCompacted:
+		debugLog("compacted: nodeID=%s", event.NodeID)
+		if event.NodeID != "" {
+			a.agentNodeID = event.NodeID
+		}
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: event.Text})
+		a.render()
 
 	case EventDone:
 		debugLog("done: nodeID=%s streamingLen=%d", event.NodeID, len(a.streamingText))

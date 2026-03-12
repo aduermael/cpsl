@@ -72,7 +72,7 @@ Manage how much context tool results consume over a long conversation.
 - [x] 3a: **Research langdag's conversation retrieval** — understand how `GetAncestors()` builds the message chain. Can nodes be modified after creation? Can we mark content as "clearable"?
   - `GetAncestors()` walks ParentID chain, returns `[]*types.Node` root→leaf. `Storage.UpdateNode()` allows in-place modification. `PromptFrom()` re-reads nodes from storage, so cleared content takes effect on next LLM call.
 - [x] 3b: **Implement tool result clearing** — when context grows beyond a threshold, replace old tool result content with a short placeholder (e.g., `[cleared — re-read if needed]`). Clear largest/oldest results first. This mirrors Anthropic's `clear_tool_uses` API feature.
-- [ ] 3c: **Implement conversation compaction** — when approaching context limits, summarize conversation history using the exploration model (cheap). Replace history with: system prompt + summary + recent N turns.
+- [x] 3c: **Implement conversation compaction** — when approaching context limits, summarize conversation history using the exploration model (cheap). Replace history with: system prompt + summary + recent N turns.
 - [ ] 3d: **Add `/compact` command** — manual trigger for compaction with optional focus hint (e.g., `/compact focus on the auth changes`).
 - [ ] 3e: **Test compaction** — verify agent maintains coherent behavior after compaction (remembers goals, doesn't re-read files unnecessarily).
 
