@@ -69,7 +69,7 @@ Update the devenv skill doc to note that the base image includes exploration too
 - **`.cpsl/Dockerfile` gets committed to git**: This is fine and expected — it's the project's dev environment definition.
 
 ## Phase 1: Embed base Dockerfile and auto-build on startup
-- [ ] 1a: Create `dockerfiles/base.Dockerfile` (debian:bookworm-slim + git, tree, ca-certificates, ripgrep, WORKDIR /workspace)
+- [x] 1a: Create `dockerfiles/base.Dockerfile` (debian:bookworm-slim + git, tree, ca-certificates, ripgrep, WORKDIR /workspace)
 - [ ] 1b: Add `dockerfiles.go` with `//go:embed dockerfiles/base.Dockerfile` exposing `var BaseDockerfile string`
 - [ ] 1c: Change `defaultContainerImage` in config.go from `"alpine:latest"` to `"debian:bookworm-slim"`
 - [ ] 1d: In `bootContainerCmd()`, after docker-available check: if no `.cpsl/Dockerfile` exists, write the embedded template there. Then build the image from `.cpsl/Dockerfile` (status: "building image…"). Start the container with the built image. On build failure, fall back to starting with the raw default image
