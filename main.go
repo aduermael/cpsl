@@ -2995,6 +2995,13 @@ func (a *App) buildConfigRows() []string {
 	}
 	rows = append(rows, strings.Join(tabParts, " "))
 
+	// No-project message for Project tab
+	if a.cfgTab == 2 && a.repoRoot == "" {
+		rows = append(rows, "\033[2mNo project detected (not in a git repository)\033[0m")
+		rows = append(rows, "\033[2m←/→=tab  Esc=close  Ctrl+S=save & close\033[0m")
+		return rows
+	}
+
 	// Fields
 	fields := a.cfgCurrentFields()
 	for i, f := range fields {
@@ -3108,6 +3115,9 @@ func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte
 		}
 
 	case ch == '\r': // Enter - toggle or start editing current field
+		if a.cfgTab == 2 && a.repoRoot == "" {
+			break // Project tab non-editable without a repo
+		}
 		fields := a.cfgCurrentFields()
 		if len(fields) > 0 && a.cfgCursor < len(fields) {
 			f := fields[a.cfgCursor]
