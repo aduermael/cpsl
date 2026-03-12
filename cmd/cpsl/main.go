@@ -3418,6 +3418,7 @@ func (a *App) startAgent(userMessage string) {
 	if a.containerReady && a.container != nil {
 		tools = append(tools, NewBashTool(a.container, 120))
 		tools = append(tools, NewGlobTool(a.container))
+		tools = append(tools, NewGrepTool(a.container))
 		if a.worktreePath != "" {
 			cpslDir := filepath.Join(a.worktreePath, ".cpsl")
 			mounts := []MountSpec{
