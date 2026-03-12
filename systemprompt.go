@@ -200,5 +200,9 @@ Searches the web for current information. Handled by the LLM provider — no inp
 		containerImage,
 	))
 
+	if toolNames["bash"] {
+		b.WriteString("\n- Attachments mounted at: /attachments (files attached to the current message are available here)")
+	}
+
 	return b.String()
 }

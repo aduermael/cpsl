@@ -50,8 +50,8 @@ Copy attached files to `.cpsl/attachments/<sessionID>/` on the host, mount at `/
 - [x] 2c: In `startAgent()` mounts for `DevEnvTool`, add the attachment mount so container rebuilds preserve it
 
 ## Phase 3: Per-run cleanup and system prompt
-- [ ] 3a: At the top of `startAgent()`, move existing files in the session's attachment dir to `past/` subfolder (create `past/` if needed, skip if dir doesn't exist yet)
-- [ ] 3b: In `buildSystemPrompt()`, add a line in the Environment section: `- Attachments mounted at: /attachments (files attached to the current message are available here)` — only when bash tool is present
+- [x] 3a: At the top of `startAgent()`, move existing files in the session's attachment dir to `past/` subfolder (create `past/` if needed, skip if dir doesn't exist yet)
+- [x] 3b: In `buildSystemPrompt()`, add a line in the Environment section: `- Attachments mounted at: /attachments (files attached to the current message are available here)` — only when bash tool is present
 
 ## Success Criteria
 - Dragging a PNG into the input copies it to `.cpsl/attachments/<sessionID>/` on the host

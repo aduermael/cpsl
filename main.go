@@ -3140,6 +3140,26 @@ func (a *App) showModelChange(modelID string) {
 }
 
 func (a *App) startAgent(userMessage string) {
+	// Move previous attachment files to past/ so /attachments only has current-message files.
+	if dir := a.attachmentDir(); dir != "" {
+		if entries, err := os.ReadDir(dir); err == nil {
+			pastDir := filepath.Join(dir, "past")
+			created := false
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				if !created {
+					if err := os.MkdirAll(pastDir, 0o755); err != nil {
+						break
+					}
+					created = true
+				}
+				_ = os.Rename(filepath.Join(dir, e.Name()), filepath.Join(pastDir, e.Name()))
+			}
+		}
+	}
+
 	var tools []Tool
 	if a.containerReady && a.container != nil {
 		tools = append(tools, NewBashTool(a.container, 120))
