@@ -47,13 +47,13 @@ func TestProcessMarkdownLine(t *testing.T) {
 	}{
 		{"plain text", "hello", false, "hello", false, false},
 		{"opening fence", "```go", false, "", true, true},
-		{"code block line", "fmt.Println()", true, "\033[7mfmt.Println()\033[27m", true, false},
+		{"code block line", "fmt.Println()", true, "\033[48;5;236m\033[38;5;248mfmt.Println()\033[0m", true, false},
 		{"closing fence", "```", true, "", false, true},
 		{"h1", "# Title", false, "\033[1;4mTitle\033[0m", false, false},
 		{"h2", "## Subtitle", false, "\033[1mSubtitle\033[0m", false, false},
 		{"h3", "### Section", false, "\033[1mSection\033[0m", false, false},
 		{"inline md outside code", "use `foo` here", false, "use \033[7m foo \033[27m here", false, false},
-		{"no inline md in code block", "use `foo` here", true, "\033[7muse `foo` here\033[27m", true, false},
+		{"no inline md in code block", "use `foo` here", true, "\033[48;5;236m\033[38;5;248muse `foo` here\033[0m", true, false},
 	}
 
 	for _, tt := range tests {
@@ -102,10 +102,10 @@ func TestCodeBlockAcrossMessages(t *testing.T) {
 		t.Errorf("line 0: got %q", results[0])
 	}
 	// Code lines should be dim
-	if results[1] != "\033[7mdef hello():\033[27m" {
+	if results[1] != "\033[48;5;236m\033[38;5;248mdef hello():\033[0m" {
 		t.Errorf("line 1: got %q", results[1])
 	}
-	if results[2] != "\033[7m    print('hi')\033[27m" {
+	if results[2] != "\033[48;5;236m\033[38;5;248m    print('hi')\033[0m" {
 		t.Errorf("line 2: got %q", results[2])
 	}
 	// After closing fence, normal rendering resumes

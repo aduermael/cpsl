@@ -448,18 +448,14 @@ func styledAssistantText(content string) string {
 }
 
 func styledToolCall(summary string) string {
-	return "\033[3;38;5;242m" + summary + "\033[0m"
+	return "\033[2;3m" + summary + "\033[0m"
 }
 
 func styledToolResult(result string, isError bool) string {
 	if isError {
 		return styledError(result)
 	}
-	lines := strings.Split(result, "\n")
-	for i, line := range lines {
-		lines[i] = "\033[38;5;242m" + line + "\033[0m"
-	}
-	return strings.Join(lines, "\n")
+	return "\033[2m" + result + "\033[0m"
 }
 
 func styledError(msg string) string {

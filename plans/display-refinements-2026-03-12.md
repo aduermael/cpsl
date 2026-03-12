@@ -66,9 +66,9 @@ Option 1 is simpler and more predictable. The padding needs to account for visua
 
 **Approach:** Use `\033[2m` (dim attribute) instead of or in addition to the 256-color index. Dim adapts to the terminal theme and is guaranteed to be less prominent. For tool results specifically, use `\033[2m` (dim) alone — this will be theme-aware and even less contrasted than the command line itself (which uses italic+dim-gray). Alternatively, combine `\033[2;3m` (dim+italic) for both, with tool results getting just `\033[2m`.
 
-- [ ] 4a: Change `styledToolResult()` to use `\033[2m` (dim) instead of `\033[38;5;242m` per-line — this is less contrasted and theme-aware
-- [ ] 4b: Optionally adjust `styledToolCall()` to use `\033[2;3m` (dim+italic) instead of `\033[3;38;5;242m` for consistency
-- [ ] 4c: Verify both tool calls and results render with appropriate contrast levels
+- [x] 4a: Change `styledToolResult()` to use `\033[2m` (dim) instead of `\033[38;5;242m` per-line — this is less contrasted and theme-aware
+- [x] 4b: Optionally adjust `styledToolCall()` to use `\033[2;3m` (dim+italic) instead of `\033[3;38;5;242m` for consistency
+- [x] 4c: Verify both tool calls and results render with appropriate contrast levels
 
 ## Success Criteria
 
