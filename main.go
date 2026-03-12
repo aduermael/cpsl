@@ -733,6 +733,7 @@ type ctrlCExpiredMsg struct{}
 type containerReadyMsg struct {
 	client       *ContainerClient
 	worktreePath string
+	imageName    string
 }
 
 type containerErrMsg struct {
@@ -845,11 +846,10 @@ func resolveWorkspaceCmd(cfg Config) workspaceMsg {
 	return workspaceMsg{worktreePath: cwd}
 }
 
-func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- any) {
+func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 	ch <- containerStatusMsg{text: "checking docker…"}
 
-	ccfg := cfg.containerConfig()
-	client := NewContainerClient(ccfg)
+	client := NewContainerClient(ContainerConfig{Image: defaultContainerImage})
 
 	if !client.IsAvailable() {
 		ch <- containerStatusMsg{text: "docker not running"}
@@ -882,7 +882,7 @@ func bootContainerCmd(cfg Config, workspace string, sessionID string, ch chan<- 
 		return
 	}
 
-	ch <- containerReadyMsg{client: client, worktreePath: workspace}
+	ch <- containerReadyMsg{client: client, worktreePath: workspace, imageName: imageName}
 }
 
 // buildContainerImage builds a Docker image from .cpsl/Dockerfile in the workspace.
@@ -3281,8 +3281,7 @@ func (a *App) startAgent(userMessage string) {
 				projectID, _ = ensureProjectID(repoRoot)
 			}
 			onRebuild := func(imageName string) {
-				a.config.ContainerImage = imageName
-				_ = saveConfig(a.config)
+				a.containerImage = imageName
 			}
 			onStatus := func(text string) {
 				a.resultCh <- containerStatusMsg{text: text}
@@ -3575,16 +3574,18 @@ func (a *App) handleResult(result any) {
 		a.worktreePath = msg.worktreePath
 		a.history = newHistory(msg.worktreePath, a.config.effectiveMaxHistory())
 		a.history.Load()
-		cfg := a.config
 		wtPath := msg.worktreePath
 		go func() { a.resultCh <- fetchStatusCmd(wtPath) }()
-		go func() { bootContainerCmd(cfg, wtPath, a.sessionID, a.resultCh) }()
+		go func() { bootContainerCmd(wtPath, a.sessionID, a.resultCh) }()
 		go cleanupTmpDir(wtPath)
 
 	case containerReadyMsg:
 		a.container = msg.client
 		if msg.worktreePath != "" {
 			a.worktreePath = msg.worktreePath
+		}
+		if msg.imageName != "" {
+			a.containerImage = msg.imageName
 		}
 		a.containerReady = true
 		a.containerErr = nil
