@@ -3068,8 +3068,33 @@ func (a *App) buildConfigRows() []string {
 		return rows
 	}
 
-	// When a model picker menu is active, just show the tab bar (menu renders separately)
-	if a.menuActive {
+	// When a model picker menu is active, render it inline below the tab bar
+	if a.menuActive && len(a.menuLines) > 0 {
+		w := a.width
+		if a.menuHeader != "" {
+			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(a.menuHeader, w)))
+		}
+		maxVisible := getTerminalHeight() * 60 / 100
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		total := len(a.menuLines)
+		end := a.menuScrollOffset + maxVisible
+		if end > total {
+			end = total
+		}
+		for i := a.menuScrollOffset; i < end; i++ {
+			line := a.menuLines[i]
+			if i == a.menuCursor {
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(line, w-2)))
+			} else {
+				rows = append(rows, truncateWithEllipsis(line, w))
+			}
+		}
+		first := a.menuScrollOffset + 1
+		last := end
+		rows = append(rows, fmt.Sprintf("\033[2m(%d->%d / %d)\033[0m", first, last, total))
+		rows = append(rows, "\033[2m←/→ sort column  Tab flip order  Enter select  Esc close\033[0m")
 		return rows
 	}
 
@@ -3522,7 +3547,11 @@ func (a *App) startAgent(userMessage string) {
 
 	a.showModelChange(modelID)
 
-	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID)
+	ctxWindow := 0
+	if m := findModelByID(a.models, modelID); m != nil {
+		ctxWindow = m.ContextWindow
+	}
+	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow)
 	subAgentTool.parentEvents = agent.events
 	a.agent = agent
 	a.agentRunning = true

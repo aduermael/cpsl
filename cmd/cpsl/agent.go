@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"sync"
 
 	"langdag.com/langdag"
@@ -144,12 +146,13 @@ type ApprovalResponse struct {
 
 // Agent orchestrates LLM calls and tool execution.
 type Agent struct {
-	id           string
-	client       *langdag.Client
-	tools        map[string]Tool
-	toolDefs     []types.ToolDefinition
-	systemPrompt string
-	model        string
+	id            string
+	client        *langdag.Client
+	tools         map[string]Tool
+	toolDefs      []types.ToolDefinition
+	systemPrompt  string
+	model         string
+	contextWindow int // model's context window in tokens; 0 = unknown (no clearing)
 
 	events   chan AgentEvent
 	approval chan ApprovalResponse
@@ -162,7 +165,7 @@ type Agent struct {
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
 // serverTools are provider-side tools (e.g. web search) that are declared in the
 // tool list but executed by the LLM provider, not the client.
-func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, systemPrompt, model string) *Agent {
+func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, systemPrompt, model string, contextWindow int) *Agent {
 	toolMap := make(map[string]Tool, len(tools))
 	toolDefs := make([]types.ToolDefinition, 0, len(tools)+len(serverTools))
 	for _, t := range tools {
@@ -173,14 +176,15 @@ func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefi
 	toolDefs = append(toolDefs, serverTools...)
 
 	return &Agent{
-		id:           generateAgentID(),
-		client:       client,
-		tools:        toolMap,
-		toolDefs:     toolDefs,
-		systemPrompt: systemPrompt,
-		model:        model,
-		events:       make(chan AgentEvent, 64),
-		approval:     make(chan ApprovalResponse, 1),
+		id:            generateAgentID(),
+		client:        client,
+		tools:         toolMap,
+		toolDefs:      toolDefs,
+		systemPrompt:  systemPrompt,
+		model:         model,
+		contextWindow: contextWindow,
+		events:        make(chan AgentEvent, 64),
+		approval:      make(chan ApprovalResponse, 1),
 	}
 }
 
@@ -241,14 +245,15 @@ func (a *Agent) emit(e AgentEvent) {
 	a.events <- e
 }
 
-// emitUsage fetches the node by ID and emits an EventUsage with token counts.
-func (a *Agent) emitUsage(ctx context.Context, nodeID string) {
+// emitUsage fetches the node by ID, emits an EventUsage with token counts,
+// and returns the input token count (for context management decisions).
+func (a *Agent) emitUsage(ctx context.Context, nodeID string) int {
 	if nodeID == "" {
-		return
+		return 0
 	}
 	node, err := a.client.GetNode(ctx, nodeID)
 	if err != nil || node == nil {
-		return
+		return 0
 	}
 	a.emit(AgentEvent{
 		Type:  EventUsage,
@@ -261,6 +266,103 @@ func (a *Agent) emitUsage(ctx context.Context, nodeID string) {
 			ReasoningTokens:          node.TokensReasoning,
 		},
 	})
+	return node.TokensIn + node.TokensCacheRead
+}
+
+// clearThresholdFraction is the fraction of context window at which old tool
+// results start getting cleared. 0.8 = clear when input tokens > 80% of window.
+const clearThresholdFraction = 0.8
+
+// clearKeepRecent is the number of most-recent tool result nodes to keep intact.
+const clearKeepRecent = 4
+
+// clearOldToolResults replaces old tool result content with a short placeholder
+// when input tokens exceed a threshold of the context window. This reduces
+// context usage for long conversations while allowing the agent to re-read
+// files if needed. Only tool result nodes are cleared; the tool_use blocks in
+// assistant messages are left intact (providers accept tool_result with any
+// content string).
+func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTokens int) {
+	if a.contextWindow <= 0 || inputTokens <= 0 {
+		return
+	}
+	threshold := int(float64(a.contextWindow) * clearThresholdFraction)
+	if inputTokens < threshold {
+		return
+	}
+
+	ancestors, err := a.client.GetAncestors(ctx, nodeID)
+	if err != nil {
+		return
+	}
+
+	// Collect tool result nodes (User nodes with tool_result content).
+	type toolResultNode struct {
+		node    *types.Node
+		size    int
+		origIdx int // position in ancestors
+	}
+	var candidates []toolResultNode
+	for i, n := range ancestors {
+		if n.NodeType == types.NodeTypeUser && isToolResultContent(n.Content) {
+			candidates = append(candidates, toolResultNode{
+				node:    n,
+				size:    len(n.Content),
+				origIdx: i,
+			})
+		}
+	}
+
+	// Keep the most recent clearKeepRecent tool result nodes.
+	if len(candidates) <= clearKeepRecent {
+		return
+	}
+	clearable := candidates[:len(candidates)-clearKeepRecent]
+
+	// Sort by content size descending — clear the biggest first.
+	sort.Slice(clearable, func(i, j int) bool {
+		return clearable[i].size > clearable[j].size
+	})
+
+	storage := a.client.Storage()
+	for _, c := range clearable {
+		// Already cleared?
+		if strings.Contains(c.node.Content, `"[output cleared]"`) {
+			continue
+		}
+		// Replace each tool_result content with a placeholder, preserving structure.
+		replaced := replaceToolResultContent(c.node.Content)
+		if replaced == c.node.Content {
+			continue
+		}
+		c.node.Content = replaced
+		_ = storage.UpdateNode(ctx, c.node)
+	}
+}
+
+// replaceToolResultContent takes a JSON array of tool_result content blocks and
+// replaces each result's content with "[output cleared]".
+func replaceToolResultContent(content string) string {
+	var blocks []types.ContentBlock
+	if err := json.Unmarshal([]byte(strings.TrimSpace(content)), &blocks); err != nil {
+		return content
+	}
+	changed := false
+	for i := range blocks {
+		if blocks[i].Type == "tool_result" && blocks[i].Content != "[output cleared]" {
+			blocks[i].Content = "[output cleared]"
+			blocks[i].ContentJSON = nil
+			changed = true
+		}
+	}
+	if !changed {
+		return content
+	}
+	out, err := json.Marshal(blocks)
+	if err != nil {
+		return content
+	}
+	return string(out)
 }
 
 // runLoop is the core agent loop: call LLM, handle tool calls, repeat.
@@ -449,7 +551,8 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		if nodeID == "" {
 			break
 		}
-		a.emitUsage(ctx, nodeID)
+		inputTokens := a.emitUsage(ctx, nodeID)
+		a.clearOldToolResults(ctx, nodeID, inputTokens)
 	}
 
 	a.emit(AgentEvent{Type: EventDone, NodeID: nodeID})

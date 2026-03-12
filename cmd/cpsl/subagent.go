@@ -85,7 +85,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	basePrompt := buildSystemPrompt(t.tools, t.serverTools, nil, t.workDir, t.personality, t.containerImage)
 	systemPrompt := subAgentPreamble + "\n\n" + basePrompt
 
-	agent := NewAgent(t.client, t.tools, t.serverTools, systemPrompt, t.model)
+	agent := NewAgent(t.client, t.tools, t.serverTools, systemPrompt, t.model, 0)
 	agentID := agent.ID()
 
 	// Run the sub-agent in a goroutine and drain events.
