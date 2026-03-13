@@ -1,4 +1,4 @@
-module cpsl
+module herm
 
 go 1.25.6
 
