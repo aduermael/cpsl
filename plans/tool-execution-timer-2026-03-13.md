@@ -48,9 +48,9 @@ Add timing around `tool.Execute()` in the agent loop and carry the duration thro
 
 Modify `renderToolBox` to accept and render an optional duration string in the bottom-right corner, using the same ANSI isolation pattern as the top-left title.
 
-- [ ] 2a: Change `renderToolBox` signature to accept a duration string parameter (empty string = no duration shown). Render it right-aligned in the bottom border: `└──── 1.2s ┘` with `titleStyle` on the duration text
-- [ ] 2b: Update all call sites of `renderToolBox` in `buildBlockRows()` — pass the formatted duration for completed tool pairs, empty string for standalone results
-- [ ] 2c: Add/update tests for `renderToolBox` — verify bottom border rendering with and without duration, edge cases (duration wider than box, very narrow box)
+- [x] 2a: Change `renderToolBox` signature to accept a duration string parameter (empty string = no duration shown). Render it right-aligned in the bottom border: `└──── 1.2s ┘` with `titleStyle` on the duration text
+- [x] 2b: Update all call sites of `renderToolBox` in `buildBlockRows()` — pass the formatted duration for completed tool pairs, empty string for standalone results
+- [x] 2c: Add/update tests for `renderToolBox` — verify bottom border rendering with and without duration, edge cases (duration wider than box, very narrow box)
 
 ## Phase 3: Live timer during execution
 

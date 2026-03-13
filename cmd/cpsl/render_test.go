@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestWrapString(t *testing.T) {
@@ -324,7 +325,7 @@ func TestRenderToolBox(t *testing.T) {
 	}
 
 	t.Run("short title with content", func(t *testing.T) {
-		got := strip(renderToolBox("~ glob", "file1\nfile2", 80, false))
+		got := strip(renderToolBox("~ glob", "file1\nfile2", 80, false, ""))
 		lines := strings.Split(got, "\n")
 		if len(lines) != 4 {
 			t.Fatalf("expected 4 lines, got %d: %q", len(lines), got)
@@ -348,7 +349,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("empty content", func(t *testing.T) {
-		got := strip(renderToolBox("~ bash", "", 80, false))
+		got := strip(renderToolBox("~ bash", "", 80, false, ""))
 		lines := strings.Split(got, "\n")
 		if len(lines) != 2 {
 			t.Fatalf("expected 2 lines (top+bottom), got %d: %q", len(lines), got)
@@ -362,7 +363,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("long content widens box", func(t *testing.T) {
-		got := strip(renderToolBox("~ x", "short\nthis-is-a-much-longer-line-than-the-title", 80, false))
+		got := strip(renderToolBox("~ x", "short\nthis-is-a-much-longer-line-than-the-title", 80, false, ""))
 		lines := strings.Split(got, "\n")
 		// Box should be wide enough for the long content line.
 		if visibleWidth(lines[0]) < visibleWidth("this-is-a-much-longer-line-than-the-title")+2 {
@@ -371,7 +372,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("width capping", func(t *testing.T) {
-		got := strip(renderToolBox("~ glob", strings.Repeat("x", 200), 40, false))
+		got := strip(renderToolBox("~ glob", strings.Repeat("x", 200), 40, false, ""))
 		lines := strings.Split(got, "\n")
 		// Top border should not exceed maxWidth.
 		if visibleWidth(lines[0]) > 40 {
@@ -381,7 +382,7 @@ func TestRenderToolBox(t *testing.T) {
 
 	t.Run("narrow terminal truncates long title", func(t *testing.T) {
 		// Title "~ bash -c 'very long command here'" is 35 chars, terminal is 20.
-		got := strip(renderToolBox("~ bash -c 'very long command here'", "ok", 20, false))
+		got := strip(renderToolBox("~ bash -c 'very long command here'", "ok", 20, false, ""))
 		lines := strings.Split(got, "\n")
 		// All lines must fit within maxWidth.
 		for i, line := range lines {
@@ -401,18 +402,105 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("error variant uses red", func(t *testing.T) {
-		got := renderToolBox("~ bash", "error!", 80, true)
+		got := renderToolBox("~ bash", "error!", 80, true, "")
 		if !strings.Contains(got, "\033[31m") {
 			t.Errorf("expected red ANSI code in error box")
 		}
 	})
 
 	t.Run("non-error uses dim", func(t *testing.T) {
-		got := renderToolBox("~ bash", "ok", 80, false)
+		got := renderToolBox("~ bash", "ok", 80, false, "")
 		if !strings.Contains(got, "\033[2m") {
 			t.Errorf("expected dim ANSI code in normal box")
 		}
 	})
+
+	t.Run("duration in bottom border", func(t *testing.T) {
+		got := strip(renderToolBox("~ glob", "file1", 80, false, "1.2s"))
+		lines := strings.Split(got, "\n")
+		bottom := lines[len(lines)-1]
+		if !strings.HasSuffix(bottom, "1.2s ┘") {
+			t.Errorf("bottom border should end with duration: %q", bottom)
+		}
+		if !strings.HasPrefix(bottom, "└") {
+			t.Errorf("bottom border should start with └: %q", bottom)
+		}
+		// Top and bottom borders should be same visible width.
+		if visibleWidth(lines[0]) != visibleWidth(bottom) {
+			t.Errorf("border widths differ: top=%d, bottom=%d", visibleWidth(lines[0]), visibleWidth(bottom))
+		}
+	})
+
+	t.Run("no duration omits label", func(t *testing.T) {
+		got := strip(renderToolBox("~ bash", "ok", 80, false, ""))
+		lines := strings.Split(got, "\n")
+		bottom := lines[len(lines)-1]
+		if strings.Contains(bottom, "s ┘") {
+			t.Errorf("bottom should not have duration text: %q", bottom)
+		}
+	})
+
+	t.Run("duration wider than title widens box", func(t *testing.T) {
+		got := strip(renderToolBox("~ x", "y", 80, false, "2m03s"))
+		lines := strings.Split(got, "\n")
+		if visibleWidth(lines[0]) != visibleWidth(lines[len(lines)-1]) {
+			t.Errorf("border widths differ: top=%d, bottom=%d",
+				visibleWidth(lines[0]), visibleWidth(lines[len(lines)-1]))
+		}
+	})
+
+	t.Run("duration in narrow box", func(t *testing.T) {
+		got := strip(renderToolBox("~ x", "", 20, false, "1.5s"))
+		lines := strings.Split(got, "\n")
+		for i, line := range lines {
+			if w := visibleWidth(line); w > 20 {
+				t.Errorf("line %d exceeds maxWidth 20: width=%d %q", i, w, line)
+			}
+		}
+		if visibleWidth(lines[0]) != visibleWidth(lines[len(lines)-1]) {
+			t.Errorf("border widths differ: top=%d, bottom=%d",
+				visibleWidth(lines[0]), visibleWidth(lines[len(lines)-1]))
+		}
+	})
+
+	t.Run("error box with duration uses red", func(t *testing.T) {
+		got := renderToolBox("~ bash", "fail", 80, true, "3.0s")
+		if !strings.Contains(got, "\033[31m") {
+			t.Errorf("expected red ANSI in error box with duration")
+		}
+		stripped := strip(got)
+		lines := strings.Split(stripped, "\n")
+		bottom := lines[len(lines)-1]
+		if !strings.HasSuffix(bottom, "3.0s ┘") {
+			t.Errorf("error box bottom should show duration: %q", bottom)
+		}
+	})
+}
+
+func TestFormatDuration(t *testing.T) {
+	tests := []struct {
+		name string
+		d    time.Duration
+		want string
+	}{
+		{"under threshold", 200 * time.Millisecond, ""},
+		{"at threshold", 499 * time.Millisecond, ""},
+		{"just over 500ms", 500 * time.Millisecond, "500ms"},
+		{"620ms", 620 * time.Millisecond, "620ms"},
+		{"999ms", 999 * time.Millisecond, "999ms"},
+		{"1 second", time.Second, "1.0s"},
+		{"1.2 seconds", 1200 * time.Millisecond, "1.2s"},
+		{"59.9 seconds", 59900 * time.Millisecond, "59.9s"},
+		{"1 minute", time.Minute, "1m00s"},
+		{"2m03s", 2*time.Minute + 3*time.Second, "2m03s"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatDuration(tt.d); got != tt.want {
+				t.Errorf("formatDuration(%v) = %q, want %q", tt.d, got, tt.want)
+			}
+		})
+	}
 }
 
 func TestBuildBlockRows_ToolBox(t *testing.T) {

@@ -766,7 +766,7 @@ func compactLineNumbers(s string) string {
 //
 // The box has top/bottom borders but no side borders. The entire output is
 // styled dim (or red for errors). Title uses dim+italic.
-func renderToolBox(title, content string, maxWidth int, isError bool) string {
+func renderToolBox(title, content string, maxWidth int, isError bool, durationStr string) string {
 	// Compute inner width from title and content lines.
 	titleVW := visibleWidth(title)
 	innerWidth := titleVW + 2 // "┌ " + title + " " + pad + "┐" → need at least title + 2 spaces
@@ -775,6 +775,13 @@ func renderToolBox(title, content string, maxWidth int, isError bool) string {
 			if lw := visibleWidth(line); lw > innerWidth {
 				innerWidth = lw
 			}
+		}
+	}
+	// Ensure inner width is wide enough for the duration label if present.
+	// Bottom border: └─── duration ┘ → needs len(duration) + 2 (spaces around it).
+	if durationStr != "" {
+		if minW := len(durationStr) + 2; minW > innerWidth {
+			innerWidth = minW
 		}
 	}
 	// Cap at maxWidth minus 2 for corner characters (┌/┐ are each 1 wide).
@@ -831,12 +838,27 @@ func renderToolBox(title, content string, maxWidth int, isError bool) string {
 		}
 	}
 
-	// Bottom border: └─...─┘
+	// Bottom border: └─...─┘ or └─...─ 1.2s ┘
 	b.WriteByte('\n')
 	b.WriteString(borderStyle)
 	b.WriteString("└")
-	b.WriteString(strings.Repeat("─", innerWidth))
-	b.WriteString("┘")
+	if durationStr != "" {
+		durPad := innerWidth - len(durationStr) - 2 // " duration "
+		if durPad < 0 {
+			durPad = 0
+		}
+		b.WriteString(strings.Repeat("─", durPad))
+		b.WriteByte(' ')
+		b.WriteString(reset)
+		b.WriteString(titleStyle)
+		b.WriteString(durationStr)
+		b.WriteString(reset)
+		b.WriteString(borderStyle)
+		b.WriteString(" ┘")
+	} else {
+		b.WriteString(strings.Repeat("─", innerWidth))
+		b.WriteString("┘")
+	}
 	b.WriteString(reset)
 
 	return b.String()
@@ -1317,7 +1339,7 @@ func (a *App) buildBlockRows() []string {
 				// Paired: render full box.
 				result := a.messages[nextIdx]
 				content := strings.ReplaceAll(result.content, "\r", "")
-				box := renderToolBox(title, content, a.width, result.isError)
+				box := renderToolBox(title, content, a.width, result.isError, formatDuration(result.duration))
 				if msg.leadBlank {
 					rows = append(rows, "")
 				}
@@ -1331,7 +1353,7 @@ func (a *App) buildBlockRows() []string {
 			if msg.leadBlank {
 				rows = append(rows, "")
 			}
-			box := renderToolBox(title, "", a.width, false)
+			box := renderToolBox(title, "", a.width, false, "")
 			// Strip bottom border — only show top border for in-progress.
 			boxLines := strings.Split(box, "\n")
 			if len(boxLines) > 1 {
@@ -1346,7 +1368,7 @@ func (a *App) buildBlockRows() []string {
 		// Tool result without preceding tool call — render as a standalone box.
 		if msg.kind == msgToolResult {
 			content := strings.ReplaceAll(msg.content, "\r", "")
-			box := renderToolBox("~ result", content, a.width, msg.isError)
+			box := renderToolBox("~ result", content, a.width, msg.isError, formatDuration(msg.duration))
 			if msg.leadBlank {
 				rows = append(rows, "")
 			}
