@@ -967,7 +967,7 @@ type toolTimerTickMsg struct{}
 
 // ─── Debug logging ───
 
-var debugEnabled = os.Getenv("CPSL_DEBUG") != ""
+var debugEnabled = os.Getenv("HERM_DEBUG") != ""
 
 func debugLog(format string, args ...any) {
 	if !debugEnabled {
@@ -977,7 +977,7 @@ func debugLog(format string, args ...any) {
 	if err != nil {
 		return
 	}
-	f, err := os.OpenFile(filepath.Join(home, ".cpsl-debug.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(filepath.Join(home, ".herm-debug.log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return
 	}
@@ -1033,7 +1033,7 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 		return
 	}
 
-	// Build from .cpsl/Dockerfile (write base template if none exists).
+	// Build from .herm/Dockerfile (write base template if none exists).
 	imageName := buildContainerImage(workspace, ch)
 	if imageName != "" {
 		client.mu.Lock()
@@ -1043,7 +1043,7 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 
 	ch <- containerStatusMsg{text: "starting…"}
 
-	attachDir := filepath.Join(workspace, ".cpsl", "attachments", sessionID)
+	attachDir := filepath.Join(workspace, ".herm", "attachments", sessionID)
 	_ = os.MkdirAll(attachDir, 0o755)
 
 	mounts := []MountSpec{
@@ -1060,18 +1060,18 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 	ch <- containerReadyMsg{client: client, worktreePath: workspace, imageName: imageName}
 }
 
-// buildContainerImage builds a Docker image from .cpsl/Dockerfile in the workspace.
+// buildContainerImage builds a Docker image from .herm/Dockerfile in the workspace.
 // If no Dockerfile exists, it writes the embedded base template first.
 // Image tag is deterministic: cpsl-<projectID[:8]>:<sha256[:12]> based on Dockerfile content.
 // If the image already exists (docker image inspect), the build is skipped.
 // Returns the built image name, or empty string on failure (caller falls back to raw image).
 func buildContainerImage(workspace string, ch chan<- any) string {
-	cpslDir := filepath.Join(workspace, ".cpsl")
-	dockerfilePath := filepath.Join(cpslDir, "Dockerfile")
+	hermDir := filepath.Join(workspace, ".herm")
+	dockerfilePath := filepath.Join(hermDir, "Dockerfile")
 
 	// Write the embedded base template if no Dockerfile exists.
 	if _, err := os.Stat(dockerfilePath); os.IsNotExist(err) {
-		_ = os.MkdirAll(cpslDir, 0o755)
+		_ = os.MkdirAll(hermDir, 0o755)
 		if err := os.WriteFile(dockerfilePath, []byte(BaseDockerfile), 0o644); err != nil {
 			return ""
 		}
@@ -1219,8 +1219,8 @@ type App struct {
 	// Chat state
 	sessionID        string
 	messages         []chatMessage
-	globalConfig     Config        // loaded from ~/.cpsl/config.json
-	projectConfig    ProjectConfig // loaded from <repo>/.cpsl/config.json
+	globalConfig     Config        // loaded from ~/.herm/config.json
+	projectConfig    ProjectConfig // loaded from <repo>/.herm/config.json
 	config           Config        // merged effective config (globalConfig + projectConfig)
 	repoRoot         string        // git repo root, for project config path
 	pasteCount       int
@@ -2071,7 +2071,7 @@ func (a *App) Run() error {
 		fmt.Print("\033[?2004l")
 		fmt.Print("\033[?1049l")
 		end := time.Now()
-		fmt.Printf("[CPSL %s -> %s]\r\n",
+		fmt.Printf("[HERM %s -> %s]\r\n",
 			startTime.Format("Jan 02 15:04"),
 			end.Format("Jan 02 15:04"))
 		term.Restore(fd, oldState)
@@ -2798,7 +2798,7 @@ func (a *App) tryAttachFile(s string) (string, bool) {
 
 // attachmentDir returns the host path for this session's attachment files.
 func (a *App) attachmentDir() string {
-	return filepath.Join(a.worktreePath, ".cpsl", "attachments", a.sessionID)
+	return filepath.Join(a.worktreePath, ".herm", "attachments", a.sessionID)
 }
 
 // clipboardHasImage checks if the macOS clipboard contains image data.
@@ -2815,9 +2815,9 @@ func clipboardHasImage() bool {
 }
 
 // clipboardSaveImage writes macOS clipboard image data to a temp PNG file
-// under .cpsl/tmp/ and returns the file path.
+// under .herm/tmp/ and returns the file path.
 func (a *App) clipboardSaveImage() (string, error) {
-	tmpDir := filepath.Join(a.worktreePath, ".cpsl", "tmp")
+	tmpDir := filepath.Join(a.worktreePath, ".herm", "tmp")
 	if err := os.MkdirAll(tmpDir, 0755); err != nil {
 		return "", err
 	}
@@ -2845,9 +2845,9 @@ func (a *App) clipboardSaveImage() (string, error) {
 	return path, nil
 }
 
-// cleanupTmpDir removes files in .cpsl/tmp/ older than 24 hours.
+// cleanupTmpDir removes files in .herm/tmp/ older than 24 hours.
 func cleanupTmpDir(worktreePath string) {
-	tmpDir := filepath.Join(worktreePath, ".cpsl", "tmp")
+	tmpDir := filepath.Join(worktreePath, ".herm", "tmp")
 	entries, err := os.ReadDir(tmpDir)
 	if err != nil {
 		return
@@ -3263,7 +3263,7 @@ func (a *App) switchToWorktree(wtPath, name, branch string) {
 			a.resultCh <- containerStatusMsg{text: "stopping…"}
 			_ = a.container.Stop()
 			a.resultCh <- containerStatusMsg{text: "starting…"}
-			attachDir := filepath.Join(wtPath, ".cpsl", "attachments", a.sessionID)
+			attachDir := filepath.Join(wtPath, ".herm", "attachments", a.sessionID)
 			_ = os.MkdirAll(attachDir, 0o755)
 			mounts := []MountSpec{
 				{Source: wtPath, Destination: "/workspace"},
@@ -3285,7 +3285,7 @@ func (a *App) isInWorktree() bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(a.worktreePath, filepath.Join(home, ".cpsl", "worktrees"))
+	return strings.HasPrefix(a.worktreePath, filepath.Join(home, ".herm", "worktrees"))
 }
 
 func maskKey(key string) string {
@@ -3936,7 +3936,7 @@ func (a *App) startAgent(userMessage string) {
 		tools = append(tools, NewGrepTool(a.container))
 		tools = append(tools, NewReadFileTool(a.container))
 		if a.worktreePath != "" {
-			cpslDir := filepath.Join(a.worktreePath, ".cpsl")
+			hermDir := filepath.Join(a.worktreePath, ".herm")
 			mounts := []MountSpec{
 				{Source: a.worktreePath, Destination: "/workspace"},
 				{Source: a.attachmentDir(), Destination: "/attachments", ReadOnly: true},
@@ -3951,7 +3951,7 @@ func (a *App) startAgent(userMessage string) {
 			onStatus := func(text string) {
 				a.resultCh <- containerStatusMsg{text: text}
 			}
-			tools = append(tools, NewDevEnvTool(a.container, cpslDir, a.worktreePath, mounts, projectID, onRebuild, onStatus))
+			tools = append(tools, NewDevEnvTool(a.container, hermDir, a.worktreePath, mounts, projectID, onRebuild, onStatus))
 		}
 	}
 	if a.worktreePath != "" {
@@ -3986,10 +3986,10 @@ func (a *App) startAgent(userMessage string) {
 		a.langdagProvider = modelProvider
 	}
 
-	// Load project-local skills from .cpsl/skills/
+	// Load project-local skills from .herm/skills/
 	var skills []Skill
 	if a.worktreePath != "" {
-		skills, _ = loadSkills(filepath.Join(a.worktreePath, ".cpsl", "skills"))
+		skills, _ = loadSkills(filepath.Join(a.worktreePath, ".herm", "skills"))
 	}
 
 	workDir := "/workspace"
