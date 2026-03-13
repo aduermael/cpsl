@@ -2,7 +2,7 @@
 
 Terminal-native AI coding agent running in containers.
 
-<video src="img/demo.mp4" width="100%"></video>
+![demo](img/demo.gif)
 
 ## Features
 
