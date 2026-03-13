@@ -243,7 +243,7 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 					}
 				}
 				msgs = append(msgs, chatMessage{kind: msgToolCall, content: title, leadBlank: true})
-				msgs = append(msgs, chatMessage{kind: msgToolResult, content: collapseToolResult(r.Content), isError: r.IsError})
+				msgs = append(msgs, chatMessage{kind: msgToolResult, content: collapseToolResult(r.Content), isError: r.IsError, duration: time.Duration(r.DurationMs) * time.Millisecond})
 			}
 			pendingToolUses = nil
 
@@ -254,7 +254,12 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 
 		case n.NodeType == types.NodeTypeToolResult:
 			isErr := strings.Contains(n.Content, `"is_error":true`)
-			msgs = append(msgs, chatMessage{kind: msgToolResult, content: collapseToolResult(n.Content), isError: isErr})
+			var dur time.Duration
+			var block types.ContentBlock
+			if json.Unmarshal([]byte(strings.TrimSpace(n.Content)), &block) == nil && block.DurationMs > 0 {
+				dur = time.Duration(block.DurationMs) * time.Millisecond
+			}
+			msgs = append(msgs, chatMessage{kind: msgToolResult, content: collapseToolResult(n.Content), isError: isErr, duration: dur})
 
 		case n.NodeType == types.NodeTypeUser:
 			msgs = append(msgs, chatMessage{kind: msgUser, content: n.Content, leadBlank: true})

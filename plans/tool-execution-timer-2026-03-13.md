@@ -64,9 +64,9 @@ Show a live elapsed timer on in-progress tool boxes once 500ms has elapsed.
 
 Once langdag adds `DurationMs int` to `types.ContentBlock`, persist and restore durations.
 
-- [ ] 4a: In `agent.go` tool execution loop, set `DurationMs: int(elapsed.Milliseconds())` on the `types.ContentBlock` tool_result entries appended to `toolResults`
-- [ ] 4b: In `tree.go` `rebuildChatMessages()`, read `DurationMs` from tool_result ContentBlocks and populate `chatMessage.duration` for replayed sessions
-- [ ] 4c: Verify loading a past session shows durations on tool boxes that had them
+- [x] 4a: In `agent.go` tool execution loop, set `DurationMs: int(elapsed.Milliseconds())` on the `types.ContentBlock` tool_result entries appended to `toolResults`
+- [x] 4b: In `tree.go` `rebuildChatMessages()`, read `DurationMs` from tool_result ContentBlocks and populate `chatMessage.duration` for replayed sessions
+- [x] 4c: Verify loading a past session shows durations on tool boxes that had them
 
 ## Success Criteria
 

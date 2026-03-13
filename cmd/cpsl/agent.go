@@ -569,10 +569,11 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			})
 
 			toolResults = append(toolResults, types.ContentBlock{
-				Type:      "tool_result",
-				ToolUseID: tc.ID,
-				Content:   output,
-				IsError:   isErr,
+				Type:       "tool_result",
+				ToolUseID:  tc.ID,
+				Content:    output,
+				IsError:    isErr,
+				DurationMs: int(toolDur.Milliseconds()),
 			})
 		}
 
