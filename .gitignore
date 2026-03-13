@@ -1,16 +1,16 @@
 # Binaries
-cpsl
+herm
 main
 debug
 simple-chat
-cmd/cpsl/cpsl
+cmd/herm/herm
 cmd/debug/debug
 cmd/simple-chat/simple-chat
 *.exe
 
 # App data
-.cpsl/
-.cpsl-lock
+.herm/
+.herm-lock
 
 # OS
 .DS_Store

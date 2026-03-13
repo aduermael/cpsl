@@ -27,7 +27,7 @@ Rename the Go module, the `cmd/cpsl/` directory to `cmd/herm/`, and update build
 
 - [x] 3a: Update go.mod module name from `cpsl` to `herm`
 - [x] 3b: Rename directory `cmd/cpsl/` → `cmd/herm/` (including all contents: prompts/, dockerfiles/, skills/)
-- [ ] 3c: Update .gitignore — binary name `cpsl` → `herm`, path `cmd/cpsl/cpsl` → `cmd/herm/herm`, `.cpsl/` → `.herm/`, `.cpsl-lock` → `.herm-lock`
+- [x] 3c: Update .gitignore — binary name `cpsl` → `herm`, path `cmd/cpsl/cpsl` → `cmd/herm/herm`, `.cpsl/` → `.herm/`, `.cpsl-lock` → `.herm-lock`
 - [ ] 3d: Update README.md — project title, description, build commands (`go build -o herm ./cmd/herm`), run commands, directory tree; use new repo description
 
 ## Phase 4: Tests
