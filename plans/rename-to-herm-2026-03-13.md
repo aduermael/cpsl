@@ -10,7 +10,7 @@
 
 All config path logic flows from a single constant (`configDir` in config.go) and scattered hardcoded `.cpsl` strings. This phase updates the source of truth and all path references in non-test code.
 
-- [ ] 1a: Rename `const configDir = ".cpsl"` → `".herm"` in config.go; rename `const lockFileName = ".cpsl-lock"` → `".herm-lock"` in worktree.go; update all `.cpsl` path references and comments in config.go and worktree.go
+- [x] 1a: Rename `const configDir = ".cpsl"` → `".herm"` in config.go; rename `const lockFileName = ".cpsl-lock"` → `".herm-lock"` in worktree.go; update all `.cpsl` path references and comments in config.go and worktree.go
 - [ ] 1b: Update all `.cpsl` path references in main.go — config dirs, attachments, tmp, skills, worktree detection, debug log path (`~/.cpsl-debug.log` → `~/.herm-debug.log`), and the `CPSL_DEBUG` env var → `HERM_DEBUG`; update the `[CPSL %s -> %s]` debug format string → `[HERM %s -> %s]`
 - [ ] 1c: Update `.cpsl` path references in agent.go (`~/.cpsl` db dir), models.go (`~/.cpsl/model_catalog.json`), history.go (`.cpsl/history`), and tools.go (`.cpsl/` dir references, Dockerfile paths, comments, `cpslDir` variable → `hermDir`)
 

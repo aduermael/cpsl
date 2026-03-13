@@ -21,14 +21,14 @@ type WorktreeInfo struct {
 	Active bool // locked by a live PID
 }
 
-// projectJSON is the on-disk format for .cpsl/project.json.
+// projectJSON is the on-disk format for .herm/project.json.
 type projectJSON struct {
 	UUID string `json:"uuid"`
 }
 
-// ensureProjectID reads or creates a project UUID in <repoRoot>/.cpsl/project.json.
+// ensureProjectID reads or creates a project UUID in <repoRoot>/.herm/project.json.
 func ensureProjectID(repoRoot string) (string, error) {
-	dir := filepath.Join(repoRoot, ".cpsl")
+	dir := filepath.Join(repoRoot, ".herm")
 	path := filepath.Join(dir, "project.json")
 
 	data, err := os.ReadFile(path)
@@ -46,7 +46,7 @@ func ensureProjectID(repoRoot string) (string, error) {
 	}
 
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return "", fmt.Errorf("creating .cpsl dir: %w", err)
+		return "", fmt.Errorf("creating .herm dir: %w", err)
 	}
 
 	proj := projectJSON{UUID: id}
@@ -73,13 +73,13 @@ func newUUID() (string, error) {
 		buf[0:4], buf[4:6], buf[6:8], buf[8:10], buf[10:16]), nil
 }
 
-// worktreeBaseDir returns ~/.cpsl/worktrees/<projectUUID>/.
+// worktreeBaseDir returns ~/.herm/worktrees/<projectUUID>/.
 func worktreeBaseDir(projectUUID string) string {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = os.TempDir()
 	}
-	return filepath.Join(home, ".cpsl", "worktrees", projectUUID)
+	return filepath.Join(home, ".herm", "worktrees", projectUUID)
 }
 
 // createWorktree creates a new git worktree in baseDir from repoRoot.
@@ -161,7 +161,7 @@ func isWorktreeClean(wtPath string) bool {
 	return strings.TrimSpace(string(out)) == ""
 }
 
-const lockFileName = ".cpsl-lock"
+const lockFileName = ".herm-lock"
 
 // lockWorktree writes a lock file containing the given PID.
 func lockWorktree(wtPath string, pid int) error {
@@ -204,12 +204,12 @@ func isWorktreeLocked(wtPath string) (bool, int) {
 	return true, pid
 }
 
-// ensureGitignoreLock ensures .cpsl-lock is listed in the repo's .gitignore.
-// If .gitignore exists, it appends .cpsl-lock if missing.
-// If .gitignore doesn't exist, it creates one with .cpsl-lock.
+// ensureGitignoreLock ensures .herm-lock is listed in the repo's .gitignore.
+// If .gitignore exists, it appends .herm-lock if missing.
+// If .gitignore doesn't exist, it creates one with .herm-lock.
 func ensureGitignoreLock(repoRoot string) {
 	gitignorePath := filepath.Join(repoRoot, ".gitignore")
-	entry := ".cpsl-lock"
+	entry := ".herm-lock"
 
 	data, err := os.ReadFile(gitignorePath)
 	if err == nil {

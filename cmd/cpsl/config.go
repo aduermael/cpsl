@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 )
 
-const configDir = ".cpsl"
+const configDir = ".herm"
 const configFile = "config.json"
 
 type Config struct {
@@ -107,7 +107,7 @@ func (c Config) resolveExplorationModel(models []ModelDef) string {
 	return c.resolveActiveModel(models)
 }
 
-// ProjectConfig holds per-project overrides loaded from <repo>/.cpsl/config.json.
+// ProjectConfig holds per-project overrides loaded from <repo>/.herm/config.json.
 // Fields use omitempty so zero values mean "not overridden" (fall back to global).
 type ProjectConfig struct {
 	ActiveModel      string `json:"active_model,omitempty"`
@@ -150,7 +150,7 @@ func configPath() string {
 	return filepath.Join(home, configDir, configFile)
 }
 
-// ensureConfigDir creates the ~/.cpsl/ directory if it doesn't exist.
+// ensureConfigDir creates the ~/.herm/ directory if it doesn't exist.
 func ensureConfigDir() error {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -159,7 +159,7 @@ func ensureConfigDir() error {
 	return os.MkdirAll(filepath.Join(home, configDir), 0o755)
 }
 
-// loadConfig reads config from ~/.cpsl/config.json.
+// loadConfig reads config from ~/.herm/config.json.
 // If the file doesn't exist, it creates it with defaults.
 // If the file is malformed, it returns defaults.
 // Merging: starts from defaults and overlays whatever the file contains,
@@ -221,7 +221,7 @@ func loadConfigFrom(dir string) (Config, error) {
 	return cfg, nil
 }
 
-// saveConfig writes config to ~/.cpsl/config.json.
+// saveConfig writes config to ~/.herm/config.json.
 func saveConfig(cfg Config) error {
 	if err := ensureConfigDir(); err != nil {
 		return fmt.Errorf("creating config dir: %w", err)
@@ -250,7 +250,7 @@ func saveConfigTo(dir string, cfg Config) error {
 	return os.WriteFile(filepath.Join(cfgDir, configFile), data, 0o644)
 }
 
-// loadProjectConfig reads project-level overrides from <repoRoot>/.cpsl/config.json.
+// loadProjectConfig reads project-level overrides from <repoRoot>/.herm/config.json.
 // Returns an empty ProjectConfig if the file doesn't exist or is malformed.
 func loadProjectConfig(repoRoot string) ProjectConfig {
 	if repoRoot == "" {
@@ -267,7 +267,7 @@ func loadProjectConfig(repoRoot string) ProjectConfig {
 	return pc
 }
 
-// saveProjectConfig writes project-level overrides to <repoRoot>/.cpsl/config.json.
+// saveProjectConfig writes project-level overrides to <repoRoot>/.herm/config.json.
 func saveProjectConfig(repoRoot string, pc ProjectConfig) error {
 	cfgDir := filepath.Join(repoRoot, configDir)
 	if err := os.MkdirAll(cfgDir, 0o755); err != nil {
