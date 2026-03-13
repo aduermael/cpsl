@@ -62,8 +62,8 @@ Replace the static "thinking..." with animated colored text and elapsed time.
 
 When the agent finishes, show the final elapsed time in dim styling (matching tool blocks).
 
-- [ ] 3a: After `agentRunning` becomes false and `agentElapsed > 0`, show a dim line: `\033[2m{elapsed}s\033[0m` in the position where "thinking..." was. Clear `agentElapsed` when the user sends the next message (so it doesn't persist forever)
-- [ ] 3b: Verify the full lifecycle: agent starts → animated label with color cycling and time → agent stops → time remains in dim → user sends next message → label disappears
+- [x] 3a: After `agentRunning` becomes false and `agentElapsed > 0`, show a dim line: `\033[2m{elapsed}s\033[0m` in the position where "thinking..." was. Clear `agentElapsed` when the user sends the next message (so it doesn't persist forever)
+- [x] 3b: Verify the full lifecycle: agent starts → animated label with color cycling and time → agent stops → time remains in dim → user sends next message → label disappears
 
 ## Success Criteria
 
