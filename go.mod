@@ -3,9 +3,10 @@ module cpsl
 go 1.25.6
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.40.0
-	langdag.com/langdag v0.5.4
+	langdag.com/langdag v0.5.5
 )
 
 require (
@@ -34,7 +35,6 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/s2a-go v0.1.7 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect

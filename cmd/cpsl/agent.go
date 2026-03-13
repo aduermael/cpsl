@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"langdag.com/langdag"
 	"langdag.com/langdag/types"
@@ -135,6 +136,9 @@ type AgentEvent struct {
 	// EventUsage
 	Usage *types.Usage
 	Model string
+
+	// EventToolCallDone / EventToolResult
+	Duration time.Duration
 
 	// EventDone
 	NodeID string // final assistant node ID
@@ -540,7 +544,9 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			}
 
 			// Execute the tool
+			toolStart := time.Now()
 			output, execErr := tool.Execute(ctx, tc.Input)
+			toolDur := time.Since(toolStart)
 			isErr := execErr != nil
 			if execErr != nil {
 				output = execErr.Error()
@@ -551,6 +557,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 				ToolName:   tc.Name,
 				ToolID:     tc.ID,
 				ToolResult: output,
+				Duration:   toolDur,
 			})
 			a.emit(AgentEvent{
 				Type:       EventToolResult,
@@ -558,6 +565,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 				ToolID:     tc.ID,
 				ToolResult: output,
 				IsError:    isErr,
+				Duration:   toolDur,
 			})
 
 			toolResults = append(toolResults, types.ContentBlock{

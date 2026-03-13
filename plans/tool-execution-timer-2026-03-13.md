@@ -40,9 +40,9 @@ The existing `LatencyMs` field on `types.Node` tracks LLM call latency, not tool
 
 Add timing around `tool.Execute()` in the agent loop and carry the duration through events to chat messages.
 
-- [ ] 1a: Add `Duration time.Duration` field to `AgentEvent` struct (agent.go). Set it on `EventToolCallDone` and `EventToolResult` by wrapping `tool.Execute()` with `time.Now()`/`time.Since()`
-- [ ] 1b: Add `duration time.Duration` field to `chatMessage` struct (main.go). In `handleAgentEvent` for `EventToolResult`, populate `duration` from `event.Duration`
-- [ ] 1c: Add `formatDuration(d time.Duration) string` helper — returns `""` for <500ms, `"620ms"` for <1s, `"1.2s"` for <1m, `"2m03s"` for ≥1m
+- [x] 1a: Add `Duration time.Duration` field to `AgentEvent` struct (agent.go). Set it on `EventToolCallDone` and `EventToolResult` by wrapping `tool.Execute()` with `time.Now()`/`time.Since()`
+- [x] 1b: Add `duration time.Duration` field to `chatMessage` struct (main.go). In `handleAgentEvent` for `EventToolResult`, populate `duration` from `event.Duration`
+- [x] 1c: Add `formatDuration(d time.Duration) string` helper — returns `""` for <500ms, `"620ms"` for <1s, `"1.2s"` for <1m, `"2m03s"` for ≥1m
 
 ## Phase 2: Render duration in the bottom border
 

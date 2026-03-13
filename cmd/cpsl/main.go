@@ -57,8 +57,9 @@ const (
 type chatMessage struct {
 	kind      chatMsgKind
 	content   string
-	isError   bool // for tool results
-	leadBlank bool // blank line before this message
+	isError   bool          // for tool results
+	duration  time.Duration // tool execution duration
+	leadBlank bool          // blank line before this message
 }
 
 // ─── App modes ───
@@ -839,6 +840,22 @@ func renderToolBox(title, content string, maxWidth int, isError bool) string {
 	b.WriteString(reset)
 
 	return b.String()
+}
+
+// formatDuration returns a human-readable duration string, or "" if under 500ms.
+func formatDuration(d time.Duration) string {
+	if d < 500*time.Millisecond {
+		return ""
+	}
+	if d < time.Second {
+		return fmt.Sprintf("%dms", d.Milliseconds())
+	}
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	m := int(d.Minutes())
+	s := int(d.Seconds()) % 60
+	return fmt.Sprintf("%dm%02ds", m, s)
 }
 
 func truncateWithEllipsis(s string, maxLen int) string {
@@ -4044,7 +4061,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			s[1] += len(event.ToolResult)
 			a.sessionToolStats[event.ToolName] = s
 		}
-		a.messages = append(a.messages, chatMessage{kind: msgToolResult, content: result, isError: event.IsError})
+		a.messages = append(a.messages, chatMessage{kind: msgToolResult, content: result, isError: event.IsError, duration: event.Duration})
 		a.render()
 
 	case EventUsage:
