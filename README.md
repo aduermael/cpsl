@@ -1,6 +1,6 @@
-# cpsl
+# herm
 
-A terminal-based chat interface for LLM agents with Docker container support, git worktree management, and a custom raw-terminal TUI engine.
+Terminal-native AI coding agent running in containers.
 
 ## Features
 
@@ -16,7 +16,7 @@ A terminal-based chat interface for LLM agents with Docker container support, gi
 Requires Go 1.25+.
 
 ```sh
-go build -o cpsl ./cmd/cpsl
+go build -o herm ./cmd/herm
 ```
 
 Additional commands:
@@ -29,7 +29,7 @@ go build ./cmd/debug          # debug utilities
 ## Run
 
 ```sh
-./cpsl
+./herm
 ```
 
 ## Test
@@ -41,9 +41,9 @@ go test ./...
 ## Project Structure
 
 ```
-cmd/cpsl/         Main application source (package main)
-cmd/cpsl/prompts/ System prompt templates (embedded)
-cmd/cpsl/dockerfiles/ Dockerfiles for container support (embedded)
+cmd/herm/         Main application source (package main)
+cmd/herm/prompts/ System prompt templates (embedded)
+cmd/herm/dockerfiles/ Dockerfiles for container support (embedded)
 cmd/simple-chat/  Minimal chat client
 cmd/debug/        Debug utilities
 plans/            Project planning docs
