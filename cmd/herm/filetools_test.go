@@ -58,7 +58,7 @@ func TestGlobTool_Definition(t *testing.T) {
 
 func TestGlobTool_Execute_MatchesFound(t *testing.T) {
 	container := newFakeContainer(t, func(cmd string) (string, string, int) {
-		return "cmd/cpsl/agent.go\ncmd/cpsl/tools.go\n", "", 0
+		return "cmd/herm/agent.go\ncmd/herm/tools.go\n", "", 0
 	})
 
 	tool := NewGlobTool(container)
@@ -164,7 +164,7 @@ func TestGrepTool_Execute_FilesWithMatches(t *testing.T) {
 		if !strings.Contains(cmd, "-l") {
 			return "", "expected -l flag", 1
 		}
-		return "cmd/cpsl/agent.go\ncmd/cpsl/tools.go\n", "", 0
+		return "cmd/herm/agent.go\ncmd/herm/tools.go\n", "", 0
 	})
 
 	tool := NewGrepTool(container)

@@ -581,7 +581,7 @@ func TestBuildBlockRows_ToolBox(t *testing.T) {
 		app := &App{width: 60}
 		app.messages = []chatMessage{
 			{kind: msgToolCall, content: "~ $ find . -name '*.go' -exec grep -l 'func main' {} +", leadBlank: true},
-			{kind: msgToolResult, content: "./cmd/cpsl/main.go\n./cmd/debug/main.go\n./cmd/simple-chat/main.go"},
+			{kind: msgToolResult, content: "./cmd/herm/main.go\n./cmd/debug/main.go\n./cmd/simple-chat/main.go"},
 		}
 		rows := app.buildBlockRows()
 		for _, r := range rows {
@@ -644,7 +644,7 @@ func TestBuildBlockRows_ToolBox(t *testing.T) {
 		app := &App{width: 80}
 		app.messages = []chatMessage{
 			{kind: msgToolCall, content: "~ $ go build ./...", leadBlank: true},
-			{kind: msgToolResult, content: "# cpsl/cmd/cpsl\n./main.go:42:5: undefined: foo\n./main.go:43:5: undefined: bar", isError: true},
+			{kind: msgToolResult, content: "# herm/cmd/herm\n./main.go:42:5: undefined: foo\n./main.go:43:5: undefined: bar", isError: true},
 		}
 		rows := app.buildBlockRows()
 		var hasRed, hasTop, hasContent bool
