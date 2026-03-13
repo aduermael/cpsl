@@ -47,7 +47,7 @@ Rename local `.cpsl/` to `.herm/` and update plan docs that reference old naming
 
 ## Phase 6: Build Verification
 
-- [ ] 6a: Run `go build ./cmd/herm` and `go test ./cmd/herm/...` to verify everything compiles and passes
+- [x] 6a: Run `go build ./cmd/herm` and `go test ./cmd/herm/...` to verify everything compiles and passes
 
 ---
 
