@@ -2,7 +2,7 @@
 
 **Goal:** Rename the entire project from "cpsl" to "herm" — module, binary, config directories, Docker naming, env vars, docs, tests. User will rename the GitHub repo and manually port global `~/.cpsl/` settings afterward.
 
-**Repo description (for GitHub):** `Terminal-native AI agent with containers, worktrees, and a raw TUI engine`
+**Repo description (for GitHub):** `Terminal-native AI coding agent running in containers.`
 
 ---
 
