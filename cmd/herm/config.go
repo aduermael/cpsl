@@ -79,7 +79,7 @@ func (c Config) availableModels(models []ModelDef) []ModelDef {
 var defaultActiveModels = map[string]string{
 	ProviderAnthropic: "claude-sonnet-4-6",
 	ProviderOpenAI:    "gpt-4.1-2025-04-14",
-	ProviderGrok:      "grok-3",
+	ProviderGrok:      "grok-4-1-fast-reasoning",
 	ProviderGemini:    "gemini-2.5-pro",
 }
 
@@ -88,7 +88,7 @@ var defaultActiveModels = map[string]string{
 var defaultExplorationModels = map[string]string{
 	ProviderAnthropic: "claude-haiku-4-5",
 	ProviderOpenAI:    "gpt-4.1-mini-2025-04-14",
-	ProviderGrok:      "grok-3-mini",
+	ProviderGrok:      "grok-4-1-fast-non-reasoning",
 	ProviderGemini:    "gemini-2.5-flash",
 }
 

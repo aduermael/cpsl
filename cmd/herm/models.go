@@ -45,6 +45,10 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 	var models []ModelDef
 	for _, provider := range supportedProviders {
 		for _, p := range catalog.ForProvider(provider) {
+			// Skip grok-3 models: they don't support server-side tools.
+			if provider == ProviderGrok && strings.HasPrefix(p.ID, "grok-3") {
+				continue
+			}
 			models = append(models, ModelDef{
 				Provider:        provider,
 				ID:              p.ID,
