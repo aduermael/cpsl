@@ -3585,6 +3585,7 @@ func (a *App) settingsTabFields() []cfgField {
 		{label: "Show System Prompt", get: func(c Config) string { if c.DisplaySystemPrompts { return "on" }; return "off" }, toggle: func(c *Config) { c.DisplaySystemPrompts = !c.DisplaySystemPrompts }},
 		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
 		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
+		{label: "Git Co-Author", get: func(c Config) string { if c.effectiveGitCoAuthor() { return "on" }; return "off" }, toggle: func(c *Config) { if c.GitCoAuthor == nil { f := false; c.GitCoAuthor = &f } else { v := !*c.GitCoAuthor; c.GitCoAuthor = &v } }},
 	}
 }
 
@@ -4099,7 +4100,7 @@ func (a *App) startAgent(userMessage string) {
 		}
 	}
 	if a.worktreePath != "" {
-		tools = append(tools, NewGitTool(a.worktreePath))
+		tools = append(tools, NewGitTool(a.worktreePath, a.config.effectiveGitCoAuthor()))
 	}
 
 	// Server-side tools are handled by the LLM provider, not the client.

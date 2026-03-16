@@ -126,7 +126,8 @@ func truncateOutput(s string) string {
 
 // GitTool executes git commands on the host in the worktree directory.
 type GitTool struct {
-	workDir string
+	workDir  string
+	coAuthor bool
 }
 
 // allowedGitSubcommands is the set of git subcommands the agent may run.
@@ -150,8 +151,8 @@ var allowedGitSubcommands = map[string]bool{
 }
 
 // NewGitTool creates a GitTool that runs in the given worktree directory.
-func NewGitTool(workDir string) *GitTool {
-	return &GitTool{workDir: workDir}
+func NewGitTool(workDir string, coAuthor bool) *GitTool {
+	return &GitTool{workDir: workDir, coAuthor: coAuthor}
 }
 
 func (t *GitTool) Definition() types.ToolDefinition {
@@ -194,6 +195,15 @@ func (t *GitTool) Execute(ctx context.Context, input json.RawMessage) (string, e
 		return "", fmt.Errorf("git subcommand %q is not allowed", in.Subcommand)
 	}
 
+	// Append co-author trailer for message-based commits.
+	if in.Subcommand == "commit" && t.coAuthor {
+		for _, a := range in.Args {
+			if a == "-m" {
+				in.Args = append(in.Args, "--trailer", "Co-authored-by: herm <herm@hermagent.com>")
+				break
+			}
+		}
+	}
 	args := append([]string{in.Subcommand}, in.Args...)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = t.workDir

@@ -331,7 +331,7 @@ func TestBuildSystemPromptGitRoleMentionAbsent(t *testing.T) {
 }
 
 func TestGitToolForcePushApproval(t *testing.T) {
-	gt := NewGitTool("/tmp")
+	gt := NewGitTool("/tmp", false)
 
 	tests := []struct {
 		name     string

@@ -24,6 +24,14 @@ type Config struct {
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
 	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
 	HistoryMaxEntries     int             `json:"history_max_entries,omitempty"`
+	GitCoAuthor           *bool           `json:"git_co_author,omitempty"` // nil (default) or explicit true/false
+}
+
+func (c Config) effectiveGitCoAuthor() bool {
+	if c.GitCoAuthor == nil {
+		return true
+	}
+	return *c.GitCoAuthor
 }
 
 func (c Config) effectiveMaxHistory() int {

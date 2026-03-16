@@ -51,8 +51,14 @@ Runs git commands **on the host** in the project worktree — not inside the con
 3. Stage resolved files via the git tool (`git add <file>`).
 4. Complete the merge/rebase via the git tool (`git commit` or `git rebase --continue`).
 
+**Commit messages:**
+- Subject line: short imperative summary, ~50 chars (e.g. "fix pagination bug in user list")
+- No description body unless the change is non-obvious or the user asks for one
+- Never write long, multi-paragraph commit messages
+- Use lowercase, no trailing period
+- Review status/diff before committing
+
 **Rules:**
-- Review status/diff before committing. Write clear commit messages explaining why.
 - Never force-push unless the user explicitly asks.
 {{- end}}
 {{- if .HasDevenv}}
