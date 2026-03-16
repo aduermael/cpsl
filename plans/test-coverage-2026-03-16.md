@@ -66,7 +66,7 @@ This is the most critical untested file — the entire agent orchestration layer
 - [x] 4b: Test markdown edge cases — nested formatting (bold inside italic), unclosed markers, empty markers (`****`), multi-line code blocks with language tags, link formatting, ANSI sequence preservation across wrapping
 - [x] 4c: Test `buildSystemPrompt()` edge cases — empty tools list, nil skills, missing template files, personality with special characters
 
-- [ ] 4d: Test `History.Save()` — verify file persistence, round-trip with Load(), handle write errors
+- [x] 4d: Test `History.Save()` — verify file persistence, round-trip with Load(), handle write errors
 - [ ] 4e: Test worktree gaps — `listWorktrees()` with mixed clean/dirty/active states, `createWorktree()` error paths (git command failures, directory already exists), lock contention between processes
 
 ## Success Criteria

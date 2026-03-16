@@ -298,6 +298,166 @@ func itoa(n int) string {
 	return string(digits)
 }
 
+func TestHistoryAddWhitespace(t *testing.T) {
+	dir := t.TempDir()
+	h := newHistory(dir, 100)
+
+	h.Add("")
+	h.Add("   ")
+	h.Add("\t\n")
+	if h.Len() != 0 {
+		t.Fatalf("expected Len()==0 after whitespace-only adds, got %d", h.Len())
+	}
+}
+
+func TestHistoryLoadMalformedLines(t *testing.T) {
+	dir := t.TempDir()
+	hermDir := filepath.Join(dir, ".herm")
+	if err := os.MkdirAll(hermDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a file with some valid and some invalid JSON lines
+	content := `{"t":1,"p":"good1"}
+not json at all
+{"t":2,"p":"good2"}
+{broken json
+{"t":3,"p":"good3"}
+`
+	if err := os.WriteFile(filepath.Join(hermDir, "history"), []byte(content), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	h := newHistory(dir, 100)
+	if err := h.Load(); err != nil {
+		t.Fatalf("Load() should not error on malformed lines, got: %v", err)
+	}
+
+	// Only the 3 valid entries should be loaded
+	if h.Len() != 3 {
+		t.Fatalf("expected Len()==3, got %d", h.Len())
+	}
+
+	s, ok := h.Up("")
+	if !ok || s != "good3" {
+		t.Fatalf("expected (good3, true), got (%q, %v)", s, ok)
+	}
+}
+
+func TestHistorySaveRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	// Add entries, then verify the file has exactly those entries
+	h1 := newHistory(dir, 100)
+	h1.Add("alpha")
+	h1.Add("beta")
+	h1.Add("gamma")
+
+	// Verify file exists and has 3 lines
+	filePath := filepath.Join(dir, ".herm", "history")
+	lineCount := countLines(t, filePath)
+	if lineCount != 3 {
+		t.Fatalf("expected 3 lines in file, got %d", lineCount)
+	}
+
+	// Load into a new instance with smaller maxSize to test trim-on-load
+	h2 := newHistory(dir, 2)
+	if err := h2.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// Should only keep newest 2
+	if h2.Len() != 2 {
+		t.Fatalf("expected Len()==2 after Load() with maxSize=2, got %d", h2.Len())
+	}
+
+	s, ok := h2.Up("")
+	if !ok || s != "gamma" {
+		t.Fatalf("expected (gamma, true), got (%q, %v)", s, ok)
+	}
+	s, ok = h2.Up("")
+	if !ok || s != "beta" {
+		t.Fatalf("expected (beta, true), got (%q, %v)", s, ok)
+	}
+}
+
+func TestHistoryWriteErrorSilent(t *testing.T) {
+	// Use a path that doesn't exist and can't be created
+	h := newHistory("/nonexistent/deep/path/that/cannot/be/created", 100)
+
+	// Add should not panic or error — it silently fails to write
+	h.Add("test entry")
+
+	// In-memory state should still be correct
+	if h.Len() != 1 {
+		t.Fatalf("expected Len()==1, got %d", h.Len())
+	}
+	s, ok := h.Up("")
+	if !ok || s != "test entry" {
+		t.Fatalf("expected (test entry, true), got (%q, %v)", s, ok)
+	}
+}
+
+func TestHistoryRewritePreservesContent(t *testing.T) {
+	dir := t.TempDir()
+
+	// Add enough entries to trigger compaction on Load
+	h1 := newHistory(dir, 3)
+	for i := 1; i <= 10; i++ {
+		h1.Add("entry" + itoa(i))
+	}
+
+	// File has 10 lines, maxSize is 3 → Load triggers compaction (10 > 2*3)
+	h2 := newHistory(dir, 3)
+	if err := h2.Load(); err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+
+	// After compaction, file should have exactly 3 lines
+	filePath := filepath.Join(dir, ".herm", "history")
+	lineCount := countLines(t, filePath)
+	if lineCount != 3 {
+		t.Fatalf("expected 3 lines after compaction, got %d", lineCount)
+	}
+
+	// A third Load should still work correctly
+	h3 := newHistory(dir, 3)
+	if err := h3.Load(); err != nil {
+		t.Fatalf("Load() error after rewrite: %v", err)
+	}
+	if h3.Len() != 3 {
+		t.Fatalf("expected Len()==3 after second Load(), got %d", h3.Len())
+	}
+
+	// Verify entries are entry8, entry9, entry10
+	s, _ := h3.Up("")
+	if s != "entry10" {
+		t.Fatalf("expected entry10, got %q", s)
+	}
+	s, _ = h3.Up("")
+	if s != "entry9" {
+		t.Fatalf("expected entry9, got %q", s)
+	}
+	s, _ = h3.Up("")
+	if s != "entry8" {
+		t.Fatalf("expected entry8, got %q", s)
+	}
+}
+
+func TestHistoryDefaultMaxSize(t *testing.T) {
+	dir := t.TempDir()
+	h := newHistory(dir, 0)
+	// maxSize 0 should default to defaultMaxHistory (100)
+	if h.maxSize != defaultMaxHistory {
+		t.Fatalf("expected maxSize=%d for 0 input, got %d", defaultMaxHistory, h.maxSize)
+	}
+
+	h2 := newHistory(dir, -5)
+	if h2.maxSize != defaultMaxHistory {
+		t.Fatalf("expected maxSize=%d for negative input, got %d", defaultMaxHistory, h2.maxSize)
+	}
+}
+
 // countLines counts the number of non-empty lines in a file.
 func countLines(t *testing.T, path string) int {
 	t.Helper()
