@@ -55,8 +55,8 @@ This is the most critical untested file — the entire agent orchestration layer
 
 **Parallel Tasks: 3e, 3f**
 
-- [ ] 3e: Test `renderTree()` with complex structures — multiple tool call chains, deeply nested conversations, cost/token display accuracy, model name shortening edge cases
-- [ ] 3f: Test `rebuildChatMessages()` — verify correct reconstruction of langdag messages from node chain, handle old-format tool nodes (NodeTypeToolCall/NodeTypeToolResult)
+- [x] 3e: Test `renderTree()` with complex structures — multiple tool call chains, deeply nested conversations, cost/token display accuracy, model name shortening edge cases
+- [x] 3f: Test `rebuildChatMessages()` — verify correct reconstruction of langdag messages from node chain, handle old-format tool nodes (NodeTypeToolCall/NodeTypeToolResult)
 
 ## Phase 4: Container, Markdown & Remaining Gaps
 
