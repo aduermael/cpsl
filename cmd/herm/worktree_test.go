@@ -401,6 +401,201 @@ func TestEnsureGitignoreLock_Idempotent(t *testing.T) {
 	}
 }
 
+func TestListWorktrees_MixedCleanDirtyActive(t *testing.T) {
+	repo := initTestRepo(t)
+	baseDir := t.TempDir()
+
+	// Create three worktrees: clean, dirty, and active (locked).
+	wtClean, err := createWorktree(repo, baseDir, "clean")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wtDirty, err := createWorktree(repo, baseDir, "dirty")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wtActive, err := createWorktree(repo, baseDir, "active")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Make dirty worktree dirty.
+	if err := os.WriteFile(filepath.Join(wtDirty, "untracked.txt"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Lock the active worktree with current PID (alive).
+	if err := lockWorktree(wtActive, os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+
+	wts, err := listWorktrees(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 3 {
+		t.Fatalf("expected 3 worktrees, got %d", len(wts))
+	}
+
+	byPath := map[string]WorktreeInfo{}
+	for _, wt := range wts {
+		byPath[wt.Path] = wt
+	}
+
+	// Clean worktree: clean=true, active=false
+	if info, ok := byPath[wtClean]; !ok {
+		t.Error("missing clean worktree")
+	} else {
+		if !info.Clean {
+			t.Error("clean worktree should be Clean")
+		}
+		if info.Active {
+			t.Error("clean worktree should not be Active")
+		}
+		if info.Branch == "" {
+			t.Error("clean worktree should have a branch name")
+		}
+	}
+
+	// Dirty worktree: clean=false, active=false
+	if info, ok := byPath[wtDirty]; !ok {
+		t.Error("missing dirty worktree")
+	} else {
+		if info.Clean {
+			t.Error("dirty worktree should not be Clean")
+		}
+		if info.Active {
+			t.Error("dirty worktree should not be Active")
+		}
+	}
+
+	// Active worktree: active=true
+	if info, ok := byPath[wtActive]; !ok {
+		t.Error("missing active worktree")
+	} else {
+		if !info.Active {
+			t.Error("active worktree should be Active")
+		}
+	}
+}
+
+func TestListWorktrees_SkipsNonGitDirs(t *testing.T) {
+	baseDir := t.TempDir()
+
+	// Create a regular directory (not a git worktree).
+	if err := os.MkdirAll(filepath.Join(baseDir, "not-a-worktree"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a file (not a directory).
+	if err := os.WriteFile(filepath.Join(baseDir, "some-file"), []byte("data"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	wts, err := listWorktrees(baseDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 0 {
+		t.Errorf("expected 0 worktrees (non-git dirs skipped), got %d", len(wts))
+	}
+}
+
+func TestCreateWorktree_DuplicateName(t *testing.T) {
+	repo := initTestRepo(t)
+	baseDir := t.TempDir()
+
+	// Create the first worktree.
+	_, err := createWorktree(repo, baseDir, "dup")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Creating a second worktree with the same name should fail
+	// because git would try to create a branch that already exists.
+	_, err = createWorktree(repo, baseDir, "dup")
+	if err == nil {
+		t.Fatal("expected error when creating duplicate worktree")
+	}
+}
+
+func TestCreateWorktree_InvalidRepoRoot(t *testing.T) {
+	baseDir := t.TempDir()
+
+	// repoRoot is not a git repository.
+	_, err := createWorktree("/nonexistent/repo/path", baseDir, "test")
+	if err == nil {
+		t.Fatal("expected error for invalid repo root")
+	}
+}
+
+func TestCorruptLockFile(t *testing.T) {
+	dir := t.TempDir()
+
+	// Write non-numeric content to the lock file.
+	lockPath := filepath.Join(dir, lockFileName)
+	if err := os.WriteFile(lockPath, []byte("not-a-pid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	locked, pid := isWorktreeLocked(dir)
+	if locked {
+		t.Error("expected corrupt lock to be treated as unlocked")
+	}
+	if pid != 0 {
+		t.Errorf("expected pid=0 for corrupt lock, got %d", pid)
+	}
+
+	// Corrupt lock file should be removed.
+	if _, err := os.Stat(lockPath); !os.IsNotExist(err) {
+		t.Error("expected corrupt lock file to be removed")
+	}
+}
+
+func TestUnlockWorktree_AlreadyUnlocked(t *testing.T) {
+	dir := t.TempDir()
+
+	// Unlock on a directory with no lock file should not error.
+	if err := unlockWorktree(dir); err != nil {
+		t.Fatalf("unlockWorktree on unlocked dir: %v", err)
+	}
+}
+
+func TestSelectWorktree_SkipsLockedWorktree(t *testing.T) {
+	repo := initTestRepo(t)
+
+	origHome := os.Getenv("HOME")
+	tmpHome := t.TempDir()
+	os.Setenv("HOME", tmpHome)
+	defer os.Setenv("HOME", origHome)
+
+	// Create a worktree via selectWorktree.
+	selected, _, err := selectWorktree(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Lock it with the current PID.
+	if err := lockWorktree(selected, os.Getpid()); err != nil {
+		t.Fatal(err)
+	}
+
+	// Next selectWorktree call: the worktree is clean but locked (Active).
+	// selectWorktree only selects worktrees that are Clean && !Active,
+	// so it should return empty selected and no dirty (locked ones are excluded from dirty).
+	selected2, dirty, err := selectWorktree(repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected2 != "" {
+		t.Errorf("expected empty selected when only worktree is locked, got %q", selected2)
+	}
+	// Dirty list should be empty since the only worktree is Active (locked).
+	if len(dirty) != 0 {
+		t.Errorf("expected 0 dirty worktrees (locked ones excluded), got %d", len(dirty))
+	}
+}
+
 func TestNewUUID(t *testing.T) {
 	id, err := newUUID()
 	if err != nil {
