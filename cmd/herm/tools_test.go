@@ -1,6 +1,11 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -241,4 +246,447 @@ func TestGitCredentialHint_HintContent(t *testing.T) {
 	if !strings.Contains(hint, "credentials") && !strings.Contains(hint, "SSH") {
 		t.Errorf("hint should mention credentials/SSH, got: %q", hint)
 	}
+}
+
+// --- Task 2d: BashTool.Execute ---
+
+func TestBashToolExecute_BasicCommand(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "cid123\n", "", 0
+			case "exec":
+				return "hello world\n", "", 0
+			case "stop", "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_ = container.Start("/workspace", nil)
+	defer container.Stop()
+
+	tool := NewBashTool(container, 120)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo hello world"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(result, "hello world") {
+		t.Errorf("result = %q, want to contain 'hello world'", result)
+	}
+}
+
+func TestBashToolExecute_TruncatesOutput(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	// Return output larger than bashMaxBytes.
+	bigOutput := strings.Repeat("x", bashMaxBytes+500)
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "cid123\n", "", 0
+			case "exec":
+				return bigOutput, "", 0
+			case "stop", "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_ = container.Start("/workspace", nil)
+	defer container.Stop()
+
+	tool := NewBashTool(container, 120)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"cat bigfile"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.HasPrefix(result, "[output truncated") {
+		t.Error("large output should be truncated")
+	}
+}
+
+func TestBashToolExecute_NonZeroExitCode(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "cid123\n", "", 0
+			case "exec":
+				return "", "not found", 1
+			case "stop", "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_ = container.Start("/workspace", nil)
+	defer container.Stop()
+
+	tool := NewBashTool(container, 120)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"ls /nonexistent"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(result, "exit code: 1") {
+		t.Errorf("result = %q, want to contain 'exit code: 1'", result)
+	}
+}
+
+func TestBashToolExecute_EmptyCommand(t *testing.T) {
+	tool := NewBashTool(nil, 120)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":""}`))
+	if err == nil {
+		t.Fatal("expected error for empty command")
+	}
+	if !strings.Contains(err.Error(), "command is required") {
+		t.Errorf("error = %q, want 'command is required'", err.Error())
+	}
+}
+
+func TestBashToolExecute_InvalidJSON(t *testing.T) {
+	tool := NewBashTool(nil, 120)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestBashToolExecute_ContainerNotRunning(t *testing.T) {
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	tool := NewBashTool(container, 120)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo hi"}`))
+	if err == nil {
+		t.Fatal("expected error when container not running")
+	}
+}
+
+func TestBashToolExecute_CustomTimeout(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "cid123\n", "", 0
+			case "exec":
+				return "ok", "", 0
+			case "stop", "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_ = container.Start("/workspace", nil)
+	defer container.Stop()
+
+	tool := NewBashTool(container, 120)
+	// Custom timeout in input should override default.
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"sleep 1","timeout":300}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if result != "ok" {
+		t.Errorf("result = %q, want 'ok'", result)
+	}
+}
+
+func TestBashToolExecute_HTMLUnescape(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	var capturedCmd string
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "cid123\n", "", 0
+			case "exec":
+				// Capture the command that was passed to exec.
+				// args: docker exec cid123 sh -c <command>
+				if len(args) >= 6 {
+					capturedCmd = args[5]
+				}
+				return "ok", "", 0
+			case "stop", "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_ = container.Start("/workspace", nil)
+	defer container.Stop()
+
+	tool := NewBashTool(container, 120)
+	// HTML-encoded && should be unescaped before execution.
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo a &amp;&amp; echo b"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if capturedCmd != "echo a && echo b" {
+		t.Errorf("command not unescaped: got %q, want %q", capturedCmd, "echo a && echo b")
+	}
+}
+
+func TestBashToolNoApproval(t *testing.T) {
+	tool := NewBashTool(nil, 120)
+	if tool.RequiresApproval(json.RawMessage(`{"command":"rm -rf /"}`)) {
+		t.Error("bash tool should never require approval")
+	}
+}
+
+func TestBashToolDefaultTimeout(t *testing.T) {
+	tool := NewBashTool(nil, 0)
+	if tool.timeout != 120 {
+		t.Errorf("default timeout = %d, want 120", tool.timeout)
+	}
+	tool2 := NewBashTool(nil, -10)
+	if tool2.timeout != 120 {
+		t.Errorf("negative timeout should default to 120, got %d", tool2.timeout)
+	}
+}
+
+// --- Task 2e: GitTool.Execute and RequiresApproval ---
+
+func TestGitToolExecute_AllowedSubcommand(t *testing.T) {
+	// Use a real git repo dir for the test.
+	tmp := t.TempDir()
+
+	// Initialize a git repo.
+	initCmd := newGitCmd(tmp, "init")
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	tool := NewGitTool(tmp, false)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"status"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	// git status in a fresh repo should contain something about branch.
+	if result == "" {
+		t.Error("expected non-empty output from git status")
+	}
+}
+
+func TestGitToolExecute_DisallowedSubcommand(t *testing.T) {
+	tool := NewGitTool(t.TempDir(), false)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"bisect"}`))
+	if err == nil {
+		t.Fatal("expected error for disallowed subcommand")
+	}
+	if !strings.Contains(err.Error(), "not allowed") {
+		t.Errorf("error = %q, want to contain 'not allowed'", err.Error())
+	}
+}
+
+func TestGitToolExecute_EmptySubcommand(t *testing.T) {
+	tool := NewGitTool(t.TempDir(), false)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":""}`))
+	if err == nil {
+		t.Fatal("expected error for empty subcommand")
+	}
+	if !strings.Contains(err.Error(), "subcommand is required") {
+		t.Errorf("error = %q, want 'subcommand is required'", err.Error())
+	}
+}
+
+func TestGitToolExecute_InvalidJSON(t *testing.T) {
+	tool := NewGitTool(t.TempDir(), false)
+	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
+	if err == nil {
+		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestGitToolExecute_CoAuthorOnCommit(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Set up a minimal git repo with a file to commit.
+	for _, cmd := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		c := newGitCmd(tmp, cmd...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", cmd, err, out)
+		}
+	}
+	// Create and stage a file.
+	if err := os.WriteFile(filepath.Join(tmp, "test.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stageCmd := newGitCmd(tmp, "add", "test.txt")
+	if out, err := stageCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+
+	tool := NewGitTool(tmp, true) // coAuthor enabled
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"commit","args":["-m","test commit"]}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if result == "" {
+		t.Error("expected non-empty commit output")
+	}
+
+	// Verify the commit has the co-author trailer.
+	logCmd := newGitCmd(tmp, "log", "-1", "--format=%B")
+	logOut, err := logCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, logOut)
+	}
+	if !strings.Contains(string(logOut), "Co-authored-by: herm") {
+		t.Errorf("commit message should contain co-author trailer, got:\n%s", logOut)
+	}
+}
+
+func TestGitToolExecute_NoCoAuthorWithoutFlag(t *testing.T) {
+	tmp := t.TempDir()
+
+	for _, cmd := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		c := newGitCmd(tmp, cmd...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", cmd, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "test.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	stageCmd := newGitCmd(tmp, "add", "test.txt")
+	if out, err := stageCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git add: %v\n%s", err, out)
+	}
+
+	tool := NewGitTool(tmp, false) // coAuthor disabled
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"commit","args":["-m","test commit"]}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	logCmd := newGitCmd(tmp, "log", "-1", "--format=%B")
+	logOut, err := logCmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git log: %v\n%s", err, logOut)
+	}
+	if strings.Contains(string(logOut), "Co-authored-by") {
+		t.Errorf("commit should NOT contain co-author trailer when disabled, got:\n%s", logOut)
+	}
+}
+
+func TestGitToolExecute_GitError(t *testing.T) {
+	tmp := t.TempDir()
+	// Not a git repo → git status should fail.
+	tool := NewGitTool(tmp, false)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"status"}`))
+	if err != nil {
+		// The implementation returns (result, nil) for ExitError, only err for other errors.
+		// In this case it might be an ExitError.
+		t.Logf("got error: %v", err)
+		return
+	}
+	if !strings.Contains(result, "exit code") {
+		t.Errorf("expected exit code in result for failed git command, got: %q", result)
+	}
+}
+
+func TestGitToolRequiresApproval_Push(t *testing.T) {
+	tool := NewGitTool("", false)
+	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push"}`)) {
+		t.Error("push should require approval")
+	}
+}
+
+func TestGitToolRequiresApproval_PushWithArgs(t *testing.T) {
+	tool := NewGitTool("", false)
+	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push","args":["origin","main"]}`)) {
+		t.Error("push with args should require approval")
+	}
+}
+
+func TestGitToolRequiresApproval_ForcePush(t *testing.T) {
+	tool := NewGitTool("", false)
+	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push","args":["--force"]}`)) {
+		t.Error("force push should require approval")
+	}
+}
+
+func TestGitToolRequiresApproval_ResetHard(t *testing.T) {
+	tool := NewGitTool("", false)
+	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"reset","args":["--hard","HEAD~1"]}`)) {
+		t.Error("reset --hard should require approval")
+	}
+}
+
+func TestGitToolRequiresApproval_ResetSoft(t *testing.T) {
+	tool := NewGitTool("", false)
+	if tool.RequiresApproval(json.RawMessage(`{"subcommand":"reset","args":["--soft","HEAD~1"]}`)) {
+		t.Error("reset --soft should not require approval")
+	}
+}
+
+func TestGitToolRequiresApproval_SafeCommands(t *testing.T) {
+	tool := NewGitTool("", false)
+	safe := []string{
+		`{"subcommand":"status"}`,
+		`{"subcommand":"diff"}`,
+		`{"subcommand":"log"}`,
+		`{"subcommand":"add","args":["."]}`,
+		`{"subcommand":"commit","args":["-m","fix"]}`,
+		`{"subcommand":"branch","args":["feature"]}`,
+		`{"subcommand":"checkout","args":["main"]}`,
+	}
+	for _, input := range safe {
+		if tool.RequiresApproval(json.RawMessage(input)) {
+			t.Errorf("should not require approval for: %s", input)
+		}
+	}
+}
+
+func TestGitToolRequiresApproval_InvalidJSON(t *testing.T) {
+	tool := NewGitTool("", false)
+	// Invalid JSON should return false (fail open on parse error).
+	if tool.RequiresApproval(json.RawMessage(`not json`)) {
+		t.Error("invalid JSON should return false")
+	}
+}
+
+func TestGitToolRequiresApproval_ForceFlag(t *testing.T) {
+	tool := NewGitTool("", false)
+	// Any subcommand with --force should require approval.
+	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"rebase","args":["--force"]}`)) {
+		t.Error("rebase --force should require approval")
+	}
+}
+
+// newGitCmd creates a git exec.Cmd in the given directory.
+func newGitCmd(dir string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	return cmd
 }
