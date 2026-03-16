@@ -36,6 +36,9 @@ The system prompts don't clearly communicate this split to the agent:
 - The git tool running on the host is the correct design for credential-requiring operations
 - Merge conflicts must be resolvable inside the container (editing files) with the git tool for finalizing
 - The user wants control over push operations (approval gate)
+- **Local git in the container is fine** — `git commit`, `git log`, `git diff`, etc. via bash are perfectly valid. The container may manage local repos or do local-only git work. We should NOT forbid this.
+- However, the dev env may not have git installed, so the git tool is the **reliable default** for the main project
+- The git tool should be well-documented enough to be the natural first choice, especially for anything credential-related (push, pull, fetch), without being the mandated-only way
 
 ---
 
@@ -43,7 +46,7 @@ The system prompts don't clearly communicate this split to the agent:
 
 Rewrite the git section in `prompts/tools.md` to clearly communicate the container/host boundary, when to use bash-git vs the git tool, and how to handle common workflows including merge conflicts.
 
-- [ ] 1a: Rewrite `prompts/tools.md` git section (lines 32-39) with clear guidance on: (1) the git tool runs on host with credentials — use it for ALL git operations; (2) do NOT run git commands via bash — always use the git tool so operations are visible and properly tracked; (3) merge conflict resolution workflow (git merge/rebase via git tool -> edit conflicts via bash -> git add + git commit via git tool); (4) what to do if push/pull/fetch fails (likely credentials issue — inform the user); (5) force-push restriction
+- [ ] 1a: Rewrite `prompts/tools.md` git section (lines 32-39) with clear guidance on: (1) the git tool runs on host with full credentials — prefer it for the main project since the container may not have git installed; (2) remote operations (push, pull, fetch) MUST use the git tool — these require credentials that only exist on the host; (3) local git operations via bash are fine (commit, diff, log, etc.) when git is available in the container, e.g. for managing local repos or scratch work; (4) merge conflict resolution workflow (git merge/rebase via git tool -> edit conflicts via bash -> git add + git commit via git tool); (5) what to do if push/pull/fetch fails (likely credentials issue — inform the user); (6) force-push restriction
 - [ ] 1b: Add git context to `prompts/environment.md` — add a line indicating the project is in a git worktree managed by herm, so the agent understands the workspace context
 - [ ] 1c: Update `systemprompt.go` `PromptData` if any new template variables are needed (e.g., worktree branch name)
 
@@ -51,13 +54,13 @@ Rewrite the git section in `prompts/tools.md` to clearly communicate the contain
 
 Small improvements to the GitTool to make the agent's experience cleaner.
 
-- [ ] 2a: Improve the git tool `Description` in `tools.go:160` to reinforce that this is the ONLY way to run git — bash git commands won't have credentials for remote operations
+- [ ] 2a: Improve the git tool `Description` in `tools.go:160` to clarify that this is the recommended way to run git for the main project, and the only way to run remote operations (push/pull/fetch) since credentials are only available on the host
 - [ ] 2b: Consider adding approval for `pull` and `fetch` too (or at minimum for `reset` and `push --force`) — review current `RequiresApproval` logic and decide if any other subcommands should gate on approval. At minimum, detect `--force` flag in push args
 - [ ] 2c: Add better error handling for credential failures — detect common SSH/HTTPS auth error patterns in git output and append a helpful hint (e.g., "This may be a credentials issue. Ensure SSH keys are configured on the host.")
 
 ## Phase 3: Update role prompt for clarity
 
-- [ ] 3a: Adjust `prompts/role.md` to clarify that while the agent runs in a container, the `git` tool bridges to the host for version control operations — the agent should think of git as "host-side" not "container-side"
+- [ ] 3a: Adjust `prompts/role.md` to mention that the `git` tool bridges to the host for version control — it has access to credentials the container doesn't. Don't overstate it; the agent already knows it's in a container. Just make clear that remote git operations (push/pull/fetch) go through the host tool.
 
 ## Phase 4: Tests
 
@@ -69,7 +72,7 @@ Small improvements to the GitTool to make the agent's experience cleaner.
 
 ## Success Criteria
 
-1. An agent reading the system prompt should unambiguously understand: use the `git` tool for all git operations, never `bash`
+1. An agent reading the system prompt should understand: prefer the `git` tool for the main project (reliable, has credentials), and know that remote operations (push/pull/fetch) MUST use it
 2. The prompt should contain a clear merge conflict resolution workflow
 3. The prompt should explain what to do when remote operations fail
 4. Force-push should be detectable and gateable
