@@ -157,7 +157,7 @@ func NewGitTool(workDir string) *GitTool {
 func (t *GitTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "git",
-		Description: "Run git commands on the host (not in the container). Use for: status, diff, log, add, commit, push, branch, checkout, etc. Push requires user approval. Allowed subcommands: status, diff, log, show, branch, checkout, add, commit, pull, push, fetch, stash, rebase, merge, reset, tag.",
+		Description: "Run git commands on the host in the project worktree. Recommended for all main-project git operations — the container may not have git installed. Required for remote operations (push/pull/fetch) since only the host has SSH keys and credentials. Push and force operations require user approval. Allowed subcommands: status, diff, log, show, branch, checkout, add, commit, pull, push, fetch, stash, rebase, merge, reset, tag.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -199,14 +199,19 @@ func (t *GitTool) Execute(ctx context.Context, input json.RawMessage) (string, e
 	cmd.Dir = t.workDir
 
 	out, err := cmd.CombinedOutput()
+	output := string(out)
 	if err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			return fmt.Sprintf("exit code: %d\n%s", exitErr.ExitCode(), string(out)), nil
+			msg := fmt.Sprintf("exit code: %d\n%s", exitErr.ExitCode(), output)
+			if hint := gitCredentialHint(output); hint != "" {
+				msg += "\n" + hint
+			}
+			return msg, nil
 		}
 		return "", fmt.Errorf("git exec: %w", err)
 	}
 
-	return string(out), nil
+	return output, nil
 }
 
 func (t *GitTool) RequiresApproval(input json.RawMessage) bool {
@@ -214,7 +219,54 @@ func (t *GitTool) RequiresApproval(input json.RawMessage) bool {
 	if err := json.Unmarshal(input, &in); err != nil {
 		return false
 	}
-	return in.Subcommand == "push"
+	if in.Subcommand == "push" {
+		return true
+	}
+	// Gate on destructive force operations.
+	if gitArgsContainForce(in.Args) {
+		return true
+	}
+	// reset --hard is destructive.
+	if in.Subcommand == "reset" {
+		for _, arg := range in.Args {
+			if arg == "--hard" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// gitArgsContainForce returns true if args contain --force or -f.
+func gitArgsContainForce(args []string) bool {
+	for _, arg := range args {
+		if arg == "--force" || arg == "-f" || arg == "--force-with-lease" {
+			return true
+		}
+	}
+	return false
+}
+
+// gitCredentialHint checks git output for common auth/credential error patterns
+// and returns a helpful hint, or empty string if no pattern matches.
+func gitCredentialHint(output string) string {
+	lower := strings.ToLower(output)
+	patterns := []string{
+		"permission denied (publickey)",
+		"could not read from remote repository",
+		"authentication failed",
+		"fatal: could not read username",
+		"support for password authentication was removed",
+		"host key verification failed",
+		"connection refused",
+		"connection timed out",
+	}
+	for _, p := range patterns {
+		if strings.Contains(lower, p) {
+			return "Hint: This may be a credentials/SSH issue on the host. Inform the user so they can check their SSH keys or git credentials."
+		}
+	}
+	return ""
 }
 
 // DevEnvTool allows the agent to read, write, and build a custom Dockerfile

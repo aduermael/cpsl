@@ -54,9 +54,9 @@ Rewrite the git section in `prompts/tools.md` to clearly communicate the contain
 
 Small improvements to the GitTool to make the agent's experience cleaner.
 
-- [ ] 2a: Improve the git tool `Description` in `tools.go:160` to clarify that this is the recommended way to run git for the main project, and the only way to run remote operations (push/pull/fetch) since credentials are only available on the host
-- [ ] 2b: Consider adding approval for `pull` and `fetch` too (or at minimum for `reset` and `push --force`) — review current `RequiresApproval` logic and decide if any other subcommands should gate on approval. At minimum, detect `--force` flag in push args
-- [ ] 2c: Add better error handling for credential failures — detect common SSH/HTTPS auth error patterns in git output and append a helpful hint (e.g., "This may be a credentials issue. Ensure SSH keys are configured on the host.")
+- [x] 2a: Improve the git tool `Description` in `tools.go:160` to clarify that this is the recommended way to run git for the main project, and the only way to run remote operations (push/pull/fetch) since credentials are only available on the host
+- [x] 2b: Consider adding approval for `pull` and `fetch` too (or at minimum for `reset` and `push --force`) — review current `RequiresApproval` logic and decide if any other subcommands should gate on approval. At minimum, detect `--force` flag in push args
+- [x] 2c: Add better error handling for credential failures — detect common SSH/HTTPS auth error patterns in git output and append a helpful hint (e.g., "This may be a credentials issue. Ensure SSH keys are configured on the host.")
 
 ## Phase 3: Update role prompt for clarity
 
