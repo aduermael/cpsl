@@ -255,6 +255,133 @@ func TestPromptTemplateParsing(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPromptGitSectionContent(t *testing.T) {
+	tools := []Tool{stubTool{"bash"}, stubTool{"git"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "")
+
+	// Key guidance from the rewritten git section.
+	expectations := []string{
+		"on the host",
+		"SSH keys and credentials",
+		"push, pull, fetch",
+		"Merge conflict resolution",
+		"git add",
+		"Never force-push",
+	}
+	for _, s := range expectations {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("git section missing expected content: %q", s)
+		}
+	}
+}
+
+func TestBuildSystemPromptGitAbsent(t *testing.T) {
+	tools := []Tool{stubTool{"bash"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "")
+
+	if strings.Contains(prompt, "### git") {
+		t.Error("prompt should not contain git section when git tool absent")
+	}
+	if strings.Contains(prompt, "worktree managed by herm") {
+		t.Error("prompt should not contain git worktree info when git tool absent")
+	}
+}
+
+func TestBuildSystemPromptWorktreeBranch(t *testing.T) {
+	tools := []Tool{stubTool{"git"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "herm-feature-x")
+
+	if !strings.Contains(prompt, "branch: herm-feature-x") {
+		t.Error("prompt missing worktree branch name")
+	}
+	if !strings.Contains(prompt, "worktree managed by herm") {
+		t.Error("prompt missing worktree context in environment section")
+	}
+}
+
+func TestBuildSystemPromptWorktreeBranchEmpty(t *testing.T) {
+	tools := []Tool{stubTool{"git"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "")
+
+	if strings.Contains(prompt, "branch:") {
+		t.Error("prompt should not contain branch info when worktree branch is empty")
+	}
+	// Should still have the base worktree info.
+	if !strings.Contains(prompt, "worktree managed by herm") {
+		t.Error("prompt missing worktree context in environment section")
+	}
+}
+
+func TestBuildSystemPromptGitRoleMention(t *testing.T) {
+	tools := []Tool{stubTool{"git"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "")
+
+	if !strings.Contains(prompt, "git` tool is the exception") {
+		t.Error("role section missing git host-bridge mention when git tool is present")
+	}
+}
+
+func TestBuildSystemPromptGitRoleMentionAbsent(t *testing.T) {
+	tools := []Tool{stubTool{"bash"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "")
+
+	if strings.Contains(prompt, "git` tool is the exception") {
+		t.Error("role section should not mention git host-bridge when git tool is absent")
+	}
+}
+
+func TestGitToolForcePushApproval(t *testing.T) {
+	gt := NewGitTool("/tmp")
+
+	tests := []struct {
+		name     string
+		input    gitInput
+		wantAppr bool
+	}{
+		{"push", gitInput{Subcommand: "push"}, true},
+		{"push --force", gitInput{Subcommand: "push", Args: []string{"--force"}}, true},
+		{"push -f", gitInput{Subcommand: "push", Args: []string{"-f"}}, true},
+		{"push --force-with-lease", gitInput{Subcommand: "push", Args: []string{"--force-with-lease"}}, true},
+		{"reset --hard", gitInput{Subcommand: "reset", Args: []string{"--hard"}}, true},
+		{"reset --soft", gitInput{Subcommand: "reset", Args: []string{"--soft"}}, false},
+		{"status", gitInput{Subcommand: "status"}, false},
+		{"commit", gitInput{Subcommand: "commit", Args: []string{"-m", "test"}}, false},
+		{"checkout --force", gitInput{Subcommand: "checkout", Args: []string{"--force", "main"}}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			raw, _ := json.Marshal(tt.input)
+			got := gt.RequiresApproval(raw)
+			if got != tt.wantAppr {
+				t.Errorf("RequiresApproval(%s) = %v, want %v", tt.name, got, tt.wantAppr)
+			}
+		})
+	}
+}
+
+func TestGitCredentialHint(t *testing.T) {
+	tests := []struct {
+		output  string
+		wantHit bool
+	}{
+		{"Permission denied (publickey).\nfatal: Could not read from remote repository.", true},
+		{"fatal: Authentication failed for 'https://github.com/foo/bar.git/'", true},
+		{"fatal: could not read Username for 'https://github.com': terminal prompts disabled", true},
+		{"Host key verification failed.\nfatal: Could not read from remote repository.", true},
+		{"Everything up-to-date", false},
+		{"Already up to date.", false},
+	}
+	for _, tt := range tests {
+		hint := gitCredentialHint(tt.output)
+		if tt.wantHit && hint == "" {
+			t.Errorf("expected credential hint for output: %q", tt.output)
+		}
+		if !tt.wantHit && hint != "" {
+			t.Errorf("unexpected credential hint for output: %q", tt.output)
+		}
+	}
+}
+
 func TestWebSearchToolDef(t *testing.T) {
 	def := WebSearchToolDef()
 	if def.Name != types.ServerToolWebSearch {

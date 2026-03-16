@@ -64,9 +64,9 @@ Small improvements to the GitTool to make the agent's experience cleaner.
 
 ## Phase 4: Tests
 
-- [ ] 4a: Add or update tests in `systemprompt_test.go` to verify the git section renders correctly with the new content when `HasGit` is true/false
-- [ ] 4b: Add a test for GitTool force-push detection if 2b adds that logic
-- [ ] 4c: Add a test for credential error hint detection if 2c adds that logic
+- [x] 4a: Add or update tests in `systemprompt_test.go` to verify the git section renders correctly with the new content when `HasGit` is true/false
+- [x] 4b: Add a test for GitTool force-push detection if 2b adds that logic
+- [x] 4c: Add a test for credential error hint detection if 2c adds that logic
 
 ---
 
