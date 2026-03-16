@@ -811,3 +811,101 @@ secondRun:
 		}
 	}
 }
+
+// --- Task 1g: emit() and emitUsage() ---
+
+func TestEmitSetsAgentID(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	agent.emit(AgentEvent{Type: EventTextDelta, Text: "hello"})
+
+	select {
+	case ev := <-agent.Events():
+		if ev.AgentID != agent.id {
+			t.Errorf("AgentID = %q, want %q", ev.AgentID, agent.id)
+		}
+		if ev.Text != "hello" {
+			t.Errorf("Text = %q, want %q", ev.Text, "hello")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for event")
+	}
+}
+
+func TestEmitUsageReturnsInputTokens(t *testing.T) {
+	store := newMockStorage()
+	prov := &mockProvider{model: "test-model"}
+	client := langdag.NewWithDeps(store, prov)
+
+	// Store a node with known token counts.
+	_ = store.CreateNode(context.Background(), &types.Node{
+		ID:                  "node-1",
+		NodeType:            types.NodeTypeAssistant,
+		Model:               "test-model",
+		TokensIn:            5000,
+		TokensOut:           200,
+		TokensCacheRead:     1000,
+		TokensCacheCreation: 500,
+		TokensReasoning:     100,
+	})
+
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	inputTokens := agent.emitUsage(context.Background(), "node-1")
+
+	// Input tokens = TokensIn + TokensCacheRead = 5000 + 1000 = 6000.
+	if inputTokens != 6000 {
+		t.Errorf("inputTokens = %d, want 6000", inputTokens)
+	}
+
+	// Should have emitted a usage event.
+	select {
+	case ev := <-agent.Events():
+		if ev.Type != EventUsage {
+			t.Errorf("event type = %d, want EventUsage", ev.Type)
+		}
+		if ev.Model != "test-model" {
+			t.Errorf("model = %q, want test-model", ev.Model)
+		}
+		if ev.Usage == nil {
+			t.Fatal("usage is nil")
+		}
+		if ev.Usage.InputTokens != 5000 {
+			t.Errorf("InputTokens = %d, want 5000", ev.Usage.InputTokens)
+		}
+		if ev.Usage.OutputTokens != 200 {
+			t.Errorf("OutputTokens = %d, want 200", ev.Usage.OutputTokens)
+		}
+		if ev.Usage.CacheReadInputTokens != 1000 {
+			t.Errorf("CacheReadInputTokens = %d, want 1000", ev.Usage.CacheReadInputTokens)
+		}
+		if ev.Usage.ReasoningTokens != 100 {
+			t.Errorf("ReasoningTokens = %d, want 100", ev.Usage.ReasoningTokens)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for usage event")
+	}
+}
+
+func TestEmitUsageEmptyNodeID(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	inputTokens := agent.emitUsage(context.Background(), "")
+	if inputTokens != 0 {
+		t.Errorf("inputTokens = %d, want 0 for empty nodeID", inputTokens)
+	}
+}
+
+func TestEmitUsageMissingNode(t *testing.T) {
+	store := newMockStorage()
+	prov := &mockProvider{model: "test-model"}
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	// Node doesn't exist in storage.
+	inputTokens := agent.emitUsage(context.Background(), "nonexistent")
+	if inputTokens != 0 {
+		t.Errorf("inputTokens = %d, want 0 for missing node", inputTokens)
+	}
+}
