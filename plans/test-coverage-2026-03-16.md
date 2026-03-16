@@ -25,7 +25,7 @@ Files NOT in scope: main.go (TUI — hard to unit test, would need separate inte
 
 This is the most critical untested file — the entire agent orchestration layer.
 
-- [ ] 1a: Test `NewAgent()` with various option funcs (`WithContextWindow`, `WithExplorationModel`, `WithMaxToolIterations`) — verify agent fields are set correctly
+- [x] 1a: Test `NewAgent()` with various option funcs (`WithContextWindow`, `WithExplorationModel`, `WithMaxToolIterations`) — verify agent fields are set correctly
 - [ ] 1b: Test `newLangdagClient()` — verify it selects the correct provider client based on model ID, test fallback when provider keys are missing, test error paths
 - [ ] 1c: Test `newLangdagClientForProvider()` — verify each provider branch (Anthropic, OpenAI, Grok, Gemini) and invalid provider error
 - [ ] 1d: Test `generateAgentID()` — verify format, uniqueness across calls
