@@ -20,7 +20,6 @@ type PromptData struct {
 	HasBash        bool
 	HasGit         bool
 	HasDevenv      bool
-	HasScratchpad  bool
 	HasAgent       bool
 	HasWebSearch   bool
 	HasGlob        bool
@@ -51,7 +50,6 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 		HasBash:        toolNames["bash"],
 		HasGit:         toolNames["git"],
 		HasDevenv:      toolNames["devenv"],
-		HasScratchpad:  toolNames["scratchpad"],
 		HasAgent:       toolNames["agent"],
 		HasWebSearch:   toolNames[types.ServerToolWebSearch],
 		HasGlob:        toolNames["glob"],

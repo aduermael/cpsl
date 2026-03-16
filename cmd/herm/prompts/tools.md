@@ -80,24 +80,17 @@ Your primary tool for environment setup. Manages a single Dockerfile at .cpsl/Do
   - Pin specific versions for reproducibility. Set WORKDIR /workspace.
 - If a build fails: read the error carefully, identify the specific failing RUN step, fix only that, then build again.
 {{- end}}
-{{- if .HasScratchpad}}
-
-### scratchpad
-Shared memory between you and sub-agents, persists for the session.
-- Write key findings, decisions, or context that other agents need. Keep entries short.
-- Read before starting work that might overlap with what another agent already discovered.
-- Use 'clear' with a summary to compact the scratchpad when it grows too large.
-- Don't write routine status updates — only information that's genuinely useful to other agents.
-{{- end}}
 {{- if .HasAgent}}
 
 ### agent
 Spawns a sub-agent to handle complex subtasks with its own context window.
 - Use for multi-step work: research, implementation, debugging, or exploration.
-- Each sub-agent runs independently — it won't consume your context.
+- Each sub-agent runs independently — it won't consume your context. Communication is output-only: the sub-agent returns a result, and that's the only information you receive.
 - Provide a clear, self-contained task description. The sub-agent has the same tools you do.
 - Prefer sub-agents for tasks that require multiple tool calls or produce verbose output.
 - For simple one-shot operations (single command, quick file read), act directly.
+- You can resume a previous sub-agent by passing its agent_id with a new task. This continues the sub-agent's conversation from where it left off, preserving its full context.
+- After a sub-agent returns, you can: continue your own work, spawn a new sub-agent, or resume the same sub-agent with follow-up instructions.
 {{- end}}
 {{- if .HasWebSearch}}
 

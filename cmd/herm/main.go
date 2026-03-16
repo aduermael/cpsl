@@ -1379,7 +1379,6 @@ type App struct {
 	sessionToolResults  int            // count of tool results this session
 	sessionToolBytes    int            // cumulative tool result bytes this session
 	sessionToolStats    map[string][2]int // tool name → [count, bytes]
-	scratchpad       Scratchpad
 	lastModelID      string   // last model used, for detecting changes
 	subAgentBuf      string   // accumulates sub-agent streaming text
 	subAgentLines    []string // completed lines from sub-agent output
@@ -3111,7 +3110,6 @@ func (a *App) handleCommand(input string) {
 		a.streamingText = ""
 		a.pendingToolCall = ""
 		a.messages = nil
-		a.scratchpad.Clear()
 		a.render()
 
 	case "/compact":
@@ -4139,22 +4137,23 @@ func (a *App) startAgent(userMessage string) {
 
 	workDir := "/workspace"
 
-	// Shared scratchpad for inter-agent communication.
-	tools = append(tools, NewScratchpadTool(&a.scratchpad))
-
 	containerImage := a.containerImage
 	if containerImage == "" {
 		containerImage = defaultContainerImage
 	}
 
-	// Sub-agent tool: shares the langdag client, available tools (including scratchpad).
+	// Sub-agent tool: output-only communication, no shared memory.
 	// Uses exploration model if configured, otherwise falls back to active model.
 	maxTurns := a.config.SubAgentMaxTurns
 	if maxTurns <= 0 {
-		maxTurns = 15
+		maxTurns = defaultSubAgentMaxTurns
+	}
+	maxDepth := a.config.MaxAgentDepth
+	if maxDepth <= 0 {
+		maxDepth = defaultMaxAgentDepth
 	}
 	explorationModelID := a.config.resolveExplorationModel(a.models)
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, explorationModelID, maxTurns, workDir, a.config.Personality, containerImage)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string
@@ -4173,8 +4172,13 @@ func (a *App) startAgent(userMessage string) {
 	if m := findModelByID(a.models, modelID); m != nil {
 		ctxWindow = m.ContextWindow
 	}
+	mainMaxIter := a.config.MaxToolIterations
+	if mainMaxIter <= 0 {
+		mainMaxIter = defaultMaxToolIterations
+	}
 	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow,
-		WithExplorationModel(explorationModelID))
+		WithExplorationModel(explorationModelID),
+		WithMaxToolIterations(mainMaxIter))
 	subAgentTool.parentEvents = agent.events
 	a.agent = agent
 	a.agentRunning = true

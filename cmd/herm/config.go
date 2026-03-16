@@ -22,6 +22,8 @@ type Config struct {
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	DisplaySystemPrompts  bool            `json:"display_system_prompts,omitempty"`
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
+	MaxToolIterations     int             `json:"max_tool_iterations,omitempty"`     // main agent tool-call loop cap; 0 = default (25)
+	MaxAgentDepth         int             `json:"max_agent_depth,omitempty"`         // max sub-agent nesting depth; 0 = default (1)
 	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
 	HistoryMaxEntries     int             `json:"history_max_entries,omitempty"`
 	GitCoAuthor           *bool           `json:"git_co_author,omitempty"` // nil (default) or explicit true/false
@@ -160,10 +162,12 @@ func (c Config) resolveExplorationModel(models []ModelDef) string {
 // ProjectConfig holds per-project overrides loaded from <repo>/.herm/config.json.
 // Fields use omitempty so zero values mean "not overridden" (fall back to global).
 type ProjectConfig struct {
-	ActiveModel      string `json:"active_model,omitempty"`
-	ExplorationModel string `json:"exploration_model,omitempty"`
-	Personality      string `json:"personality,omitempty"`
-	SubAgentMaxTurns int    `json:"sub_agent_max_turns,omitempty"`
+	ActiveModel       string `json:"active_model,omitempty"`
+	ExplorationModel  string `json:"exploration_model,omitempty"`
+	Personality       string `json:"personality,omitempty"`
+	SubAgentMaxTurns  int    `json:"sub_agent_max_turns,omitempty"`
+	MaxToolIterations int    `json:"max_tool_iterations,omitempty"`
+	MaxAgentDepth     int    `json:"max_agent_depth,omitempty"`
 }
 
 // mergeConfigs overlays non-zero ProjectConfig fields onto a global Config.
@@ -180,6 +184,12 @@ func mergeConfigs(global Config, project ProjectConfig) Config {
 	}
 	if project.SubAgentMaxTurns != 0 {
 		merged.SubAgentMaxTurns = project.SubAgentMaxTurns
+	}
+	if project.MaxToolIterations != 0 {
+		merged.MaxToolIterations = project.MaxToolIterations
+	}
+	if project.MaxAgentDepth != 0 {
+		merged.MaxAgentDepth = project.MaxAgentDepth
 	}
 	return merged
 }

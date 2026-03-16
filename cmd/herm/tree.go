@@ -198,8 +198,6 @@ func (a *App) loadConversation(id string) {
 	a.streamingText = ""
 	a.pendingToolCall = ""
 	a.messages = nil
-	a.scratchpad.Clear()
-
 	// Rebuild chat messages from ancestors so the user sees the conversation.
 	ancestors, err := a.langdagClient.GetAncestors(ctx, leaf.ID)
 	if err != nil {

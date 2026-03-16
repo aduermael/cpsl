@@ -80,8 +80,8 @@ func newLangdagClientForProvider(cfg Config, provider string) (*langdag.Client, 
 	return langdag.New(langdagCfg)
 }
 
-// maxToolIterations caps the agent loop to prevent runaway tool calls.
-const maxToolIterations = 25
+// defaultMaxToolIterations caps the agent loop to prevent runaway tool calls.
+const defaultMaxToolIterations = 25
 
 // Tool is the interface that all agent tools must implement.
 type Tool interface {
@@ -157,8 +157,9 @@ type Agent struct {
 	toolDefs         []types.ToolDefinition
 	systemPrompt     string
 	model            string
-	contextWindow    int    // model's context window in tokens; 0 = unknown (no clearing)
-	explorationModel string // cheap model for compaction summaries; empty = use main model
+	contextWindow     int    // model's context window in tokens; 0 = unknown (no clearing)
+	explorationModel  string // cheap model for compaction summaries; empty = use main model
+	maxToolIterations int    // tool-call loop cap; 0 = use defaultMaxToolIterations
 
 	events   chan AgentEvent
 	approval chan ApprovalResponse
@@ -179,6 +180,11 @@ func WithContextWindow(n int) AgentOption {
 // WithExplorationModel sets the model used for compaction summaries.
 func WithExplorationModel(model string) AgentOption {
 	return func(a *Agent) { a.explorationModel = model }
+}
+
+// WithMaxToolIterations sets the tool-call loop cap for the agent.
+func WithMaxToolIterations(n int) AgentOption {
+	return func(a *Agent) { a.maxToolIterations = n }
 }
 
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
@@ -471,7 +477,11 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	a.emitUsage(ctx, nodeID)
 
 	// Tool loop
-	for iteration := 0; iteration < maxToolIterations && len(toolCalls) > 0; iteration++ {
+	maxIter := a.maxToolIterations
+	if maxIter <= 0 {
+		maxIter = defaultMaxToolIterations
+	}
+	for iteration := 0; iteration < maxIter && len(toolCalls) > 0; iteration++ {
 		if err := ctx.Err(); err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: err})
 			break
