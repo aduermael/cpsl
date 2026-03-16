@@ -1,12 +1,12 @@
 module herm
 
-go 1.25.6
+go 1.24.0
 
 require (
 	github.com/google/uuid v1.6.0
 	github.com/rivo/uniseg v0.4.7
 	golang.org/x/term v0.40.0
-	langdag.com/langdag v0.5.5
+	langdag.com/langdag v0.5.6
 )
 
 require (
