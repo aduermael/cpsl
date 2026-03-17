@@ -1,7 +1,9 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
@@ -12,11 +14,13 @@ import (
 	"io"
 	"log"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +34,8 @@ import (
 	"langdag.com/langdag/types"
 	"github.com/rivo/uniseg"
 )
+
+var Version = "dev"
 
 // ─── Constants ───
 
@@ -528,7 +534,7 @@ func renderMessage(msg chatMessage) string {
 
 // ─── Commands and autocomplete ───
 
-var commands = []string{"/branches", "/clear", "/compact", "/config", "/model", "/session", "/shell", "/usage", "/worktrees"}
+var commands = []string{"/branches", "/clear", "/compact", "/config", "/model", "/session", "/shell", "/update", "/usage", "/worktrees"}
 var sessionSubcommands = []string{"/session list", "/session load", "/session show"}
 
 func filterCommands(prefix string) []string {
@@ -1303,6 +1309,15 @@ type projectSnapshotMsg struct {
 	snapshot projectSnapshot
 }
 
+type updateAvailableMsg struct {
+	version string
+	err     error
+}
+
+type updateCompleteMsg struct {
+	err error
+}
+
 // fetchProjectSnapshot gathers a lightweight project snapshot for the system prompt.
 // Each sub-command has a 2s timeout and fails gracefully to empty string.
 func fetchProjectSnapshot(worktreePath string) projectSnapshotMsg {
@@ -1476,6 +1491,7 @@ type App struct {
 	subAgentBuf      string   // accumulates sub-agent streaming text
 	subAgentLines    []string // completed lines from sub-agent output
 	containerImage   string   // runtime container image name (not persisted)
+	updateAvailable string   // version tag if update is available
 
 	// Tool timer (live elapsed display)
 	toolStartTime time.Time
@@ -3385,6 +3401,9 @@ func (a *App) handleCommand(input string) {
 	case "/usage":
 		a.handleUsageCommand()
 
+	case "/update":
+		a.handleUpdateCommand()
+
 	default:
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Unknown command: %s", cmd)})
 		a.render()
@@ -4550,6 +4569,7 @@ func (a *App) startInit() {
 			a.resultCh <- catalogMsg{catalog: updated}
 		}
 	}()
+	go func() { a.resultCh <- checkForUpdate(Version) }()
 }
 
 func (a *App) drainResults() {
@@ -4689,6 +4709,28 @@ func (a *App) handleResult(result any) {
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to branch '%s'", msg.branch)})
 		}
 
+	case updateAvailableMsg:
+		if msg.err == nil && msg.version != "" {
+			a.updateAvailable = msg.version
+			current := Version
+			if current == "dev" {
+				current = "dev"
+			}
+			a.messages = append(a.messages, chatMessage{
+				kind:    msgInfo,
+				content: fmt.Sprintf("Update available: v%s (current: %s). Run /update to upgrade.", msg.version, current),
+			})
+		}
+
+	case updateCompleteMsg:
+		if msg.err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Update failed: %v", msg.err)})
+		} else {
+			ver := a.updateAvailable
+			a.updateAvailable = ""
+			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Updated to v%s. Restart herm to use the new version.", ver)})
+		}
+
 	case resizeMsg:
 		a.width = getWidth() // re-read in case of further changes
 		a.renderFull()
@@ -4781,8 +4823,166 @@ func utf8ByteLen(first byte) int {
 
 // ─── main ───
 
+// checkForUpdate queries the GitHub API for the latest release and compares
+// it against the current binary version.
+func checkForUpdate(currentVersion string) updateAvailableMsg {
+	if currentVersion == "dev" {
+		return updateAvailableMsg{}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://api.github.com/repos/aduermael/herm/releases/latest", nil)
+	if err != nil {
+		return updateAvailableMsg{err: err}
+	}
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return updateAvailableMsg{err: err}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return updateAvailableMsg{err: fmt.Errorf("GitHub API returned %d", resp.StatusCode)}
+	}
+
+	var release struct {
+		TagName string `json:"tag_name"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+		return updateAvailableMsg{err: err}
+	}
+
+	latest := strings.TrimPrefix(release.TagName, "v")
+	current := strings.TrimPrefix(currentVersion, "v")
+	if latest != "" && latest != current {
+		return updateAvailableMsg{version: latest}
+	}
+	return updateAvailableMsg{}
+}
+
+// performUpdate downloads and installs the specified version of herm,
+// replacing the current binary in-place.
+func performUpdate(version string) updateCompleteMsg {
+	exePath, err := os.Executable()
+	if err != nil {
+		return updateCompleteMsg{err: fmt.Errorf("cannot determine executable path: %w", err)}
+	}
+	exePath, err = filepath.EvalSymlinks(exePath)
+	if err != nil {
+		return updateCompleteMsg{err: fmt.Errorf("cannot resolve executable path: %w", err)}
+	}
+
+	osName := runtime.GOOS
+	archName := runtime.GOARCH
+
+	url := fmt.Sprintf("https://github.com/aduermael/herm/releases/download/v%s/herm_%s_%s_%s.tar.gz",
+		version, version, osName, archName)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return updateCompleteMsg{err: err}
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return updateCompleteMsg{err: fmt.Errorf("download failed: %w", err)}
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return updateCompleteMsg{err: fmt.Errorf("download returned HTTP %d", resp.StatusCode)}
+	}
+
+	gz, err := gzip.NewReader(resp.Body)
+	if err != nil {
+		return updateCompleteMsg{err: fmt.Errorf("gzip error: %w", err)}
+	}
+	defer gz.Close()
+
+	tr := tar.NewReader(gz)
+	var binData []byte
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return updateCompleteMsg{err: fmt.Errorf("tar error: %w", err)}
+		}
+		if filepath.Base(hdr.Name) == "herm" && !hdr.FileInfo().IsDir() {
+			binData, err = io.ReadAll(tr)
+			if err != nil {
+				return updateCompleteMsg{err: fmt.Errorf("reading binary from archive: %w", err)}
+			}
+			break
+		}
+	}
+	if binData == nil {
+		return updateCompleteMsg{err: fmt.Errorf("binary not found in archive")}
+	}
+
+	// Write to a temp file in the same directory, then atomic rename
+	dir := filepath.Dir(exePath)
+	tmp, err := os.CreateTemp(dir, "herm-update-*")
+	if err != nil {
+		return updateCompleteMsg{err: fmt.Errorf("creating temp file: %w", err)}
+	}
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(binData); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return updateCompleteMsg{err: fmt.Errorf("writing temp file: %w", err)}
+	}
+	if err := tmp.Chmod(0o755); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return updateCompleteMsg{err: fmt.Errorf("chmod: %w", err)}
+	}
+	tmp.Close()
+
+	if err := os.Rename(tmpPath, exePath); err != nil {
+		os.Remove(tmpPath)
+		return updateCompleteMsg{err: fmt.Errorf("replacing binary: %w", err)}
+	}
+
+	return updateCompleteMsg{}
+}
+
+// handleUpdateCommand handles the /update slash command.
+func (a *App) handleUpdateCommand() {
+	if Version == "dev" {
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Update check is not available for development builds."})
+		a.render()
+		return
+	}
+	if a.updateAvailable == "" {
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: fmt.Sprintf("Already up to date (v%s).", strings.TrimPrefix(Version, "v"))})
+		a.render()
+		return
+	}
+	ver := a.updateAvailable
+	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: fmt.Sprintf("Downloading v%s...", ver)})
+	a.render()
+	go func() { a.resultCh <- performUpdate(ver) }()
+}
+
 func main() {
 	log.SetOutput(io.Discard)
+
+	for _, arg := range os.Args[1:] {
+		if arg == "--version" || arg == "-v" {
+			fmt.Println("herm " + Version)
+			os.Exit(0)
+		}
+	}
 
 	app := newApp()
 

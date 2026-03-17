@@ -23,6 +23,12 @@ A coding agent CLI that's containerized by default. Every command runs inside a 
 
 ## Install
 
+### Quick install
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/aduermael/herm/main/install.sh | bash
+```
+
 ### Homebrew
 
 ```sh
