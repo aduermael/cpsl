@@ -3246,6 +3246,16 @@ func (a *App) handleCommand(input string) {
 		a.streamingText = ""
 		a.pendingToolCall = ""
 		a.messages = nil
+		a.sessionInputTokens = 0
+		a.sessionOutputTokens = 0
+		a.sessionCacheRead = 0
+		a.sessionCostUSD = 0
+		a.sessionLLMCalls = 0
+		a.sessionToolResults = 0
+		a.sessionToolBytes = 0
+		a.sessionToolStats = nil
+		a.lastInputTokens = 0
+		a.agentElapsed = 0
 		a.render()
 
 	case "/compact":
