@@ -44,6 +44,7 @@ brews:
       owner: aduermael
       name: homebrew-herm
       branch: main
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/aduermael/herm"
     description: "A containerized coding agent CLI"
