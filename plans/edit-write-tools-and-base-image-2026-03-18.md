@@ -61,13 +61,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /workspace
 ```
 
-**Naming**: Needs a Docker Hub org. Placeholder: `hermcli/herm:latest` with versioned tags (`hermcli/herm:0.1`). This is an open question for the user.
+**Naming**: `aduermael/herm:<tag>` on Docker Hub. Each herm binary version has a compile-time constant `hermImageTag` (e.g., `"0.1"`) that resolves to `aduermael/herm:0.1`. This ensures a given herm CLI always pulls a compatible image — new images can't break old CLI versions.
+
+**Image publishing**: Manual `docker build` + `docker push` for now. CI automation deferred to a later plan.
 
 **Integration changes**:
-- `config.go`: Change `defaultContainerImage` to `"hermcli/herm:latest"` (or chosen name)
-- `dockerfiles/base.Dockerfile`: Change to `FROM hermcli/herm:latest\nWORKDIR /workspace` — a single-line passthrough since the base image already has everything
-- `bootContainerCmd()` (main.go:1254): When no `.herm/Dockerfile` exists, skip the build entirely — just pull and run the default image directly. Only build when a custom Dockerfile is present.
-- DevEnv guidance (prompts/tools.md, .herm/skills/devenv.md): Recommend `FROM hermcli/herm:latest` as the base for all custom Dockerfiles.
+- `config.go`: Add `const hermImageTag = "0.1"` and change `defaultContainerImage` to `"aduermael/herm:" + hermImageTag`
+- `dockerfiles/base.Dockerfile`: Change to `FROM aduermael/herm:0.1` + `WORKDIR /workspace` — a single-line passthrough since the base image already has everything. The tag here must match `hermImageTag`.
+- `bootContainerCmd()` (main.go:1254): When no `.herm/Dockerfile` exists, skip the build entirely — pull and run the default image directly. Only build when a custom Dockerfile is present.
+- DevEnv guidance (prompts/tools.md, .herm/skills/devenv.md): Recommend `FROM aduermael/herm:<tag>` as the base for all custom Dockerfiles.
 
 ### EditFileTool and WriteFileTool (Go agent side)
 
@@ -120,19 +122,27 @@ Dedicated file modification tools — prefer these over bash for all file change
 
 Update bash section to reinforce: "Use bash for: running builds, tests, installs, and commands. Do NOT use bash for file editing — use edit_file/write_file instead."
 
+### DevEnv: enforce herm base image
+
+All container images must be based on `aduermael/herm:<tag>`. No degraded mode — the edit_file/write_file tools are always expected to be available.
+
+**Enforcement in DevEnv tool**:
+- When the agent writes a custom `.herm/Dockerfile`, the devenv tool validates that the `FROM` line references `aduermael/herm:<tag>` (where `<tag>` matches the current `hermImageTag`).
+- If the FROM line uses a different base (e.g., `debian:bookworm-slim`, `node:20`, `alpine:3`), the devenv `build` action rejects it with a clear error: "Dockerfile must use FROM aduermael/herm:0.1 as the base image. Add your custom tools on top of it."
+- The system prompt and devenv skill doc reinforce this — all custom Dockerfiles extend the herm base, never replace it.
+
+**Enforcement at startup**:
+- `buildContainerImage()` validates that `.herm/Dockerfile` (if present) starts with `FROM aduermael/herm:`. If not, it rewrites the file with the embedded template and logs a warning.
+
+This guarantees that edit-file, write-file, ripgrep, git, and python3 are always present in every herm container. No probing or graceful degradation needed.
+
 ## Failure Modes
 
 - **`edit-file` old_string not unique**: Return error with match count so the agent can provide more context. The agent retries with a longer old_string.
 - **`edit-file` old_string not found**: Return error. Agent may have stale context — should re-read the file.
-- **Docker Hub pull fails** (network/registry down): Fall back to building from embedded Dockerfile (which still uses `debian:bookworm-slim` directly). The CLI tools won't be available, but bash still works. The system prompt should handle this gracefully — only include edit_file/write_file sections if the tools are detected in the container.
-- **CLI tool not in image** (user has old/custom image): Before registering EditFileTool/WriteFileTool, probe the container with `which edit-file` at startup. If not found, skip these tools — agent falls back to bash.
+- **Docker Hub pull fails** (network/registry down): `docker pull` fails, container cannot start. User gets a clear error message to check their network/Docker setup. No fallback to a different image.
+- **Custom Dockerfile with wrong base**: Rejected at build time with actionable error message pointing to the correct FROM line.
 - **Large file diffs**: The diff output from the CLI tools should be truncated server-side (e.g., max 200 lines) to avoid blowing up context.
-
-## Open Questions
-
-- **Docker Hub org name**: `hermcli/herm`? `hermhq/herm`? Needs to be decided before publishing.
-- **CI pipeline**: How/where to build and push the Docker image? GitHub Actions seems natural. Not in scope for this plan but needed before the image can be pulled by default.
-- **Versioning**: Should `defaultContainerImage` pin a version tag (`hermcli/herm:0.1`) or use `latest`? Pinning is safer for reproducibility but requires updating the herm binary for each image release.
 
 ---
 
@@ -143,14 +153,15 @@ Update bash section to reinforce: "Use bash for: running builds, tests, installs
 
 ## Phase 2: Herm base Docker image
 - [ ] 2a: Create top-level `Dockerfile` for the herm base image: multi-stage build compiling edit-file and write-file from `tools/`, then debian:bookworm-slim with git, tree, ca-certificates, ripgrep, python3, and the compiled binaries
-- [ ] 2b: Update `dockerfiles/base.Dockerfile` to `FROM hermcli/herm:latest` + `WORKDIR /workspace` (single passthrough layer). Update `defaultContainerImage` in config.go to `"hermcli/herm:latest"`
-- [ ] 2c: Update `buildContainerImage()` in main.go: when the Dockerfile is unchanged from the embedded template (i.e., just `FROM hermcli/herm:latest`), skip the build step — pull and run directly. Only build when a custom Dockerfile is present
-- [ ] 2d: Update devenv skill doc and prompts/tools.md devenv section to recommend `FROM hermcli/herm:latest` as the base for all custom Dockerfiles, removing alpine references
+- [ ] 2b: Add `const hermImageTag = "0.1"` to config.go. Update `defaultContainerImage` to `"aduermael/herm:" + hermImageTag`. Update `dockerfiles/base.Dockerfile` to `FROM aduermael/herm:0.1` + `WORKDIR /workspace`
+- [ ] 2c: Update `buildContainerImage()` in main.go: when no `.herm/Dockerfile` exists or when it matches the embedded template, skip the build — pull and run the default image directly. Only build when a custom Dockerfile is present
+- [ ] 2d: Add base image enforcement in devenv tool: validate that any `.herm/Dockerfile` uses `FROM aduermael/herm:<tag>` as its base. Reject builds with wrong base and return actionable error. Also validate at startup in `buildContainerImage()`
+- [ ] 2e: Update devenv skill doc and prompts/tools.md devenv section to require `FROM aduermael/herm:<tag>` as the base for all custom Dockerfiles, removing alpine references and `debian:bookworm-slim` recommendations
 
 ## Phase 3: EditFileTool and WriteFileTool
 - [ ] 3a: Add `EditFileTool` struct in filetools.go following existing pattern — pipes JSON input to `edit-file` CLI in container via `container.Exec()`, parses JSON output, returns diff string. Schema: file_path (required), old_string (required), new_string (required), replace_all (optional bool)
 - [ ] 3b: Add `WriteFileTool` struct in filetools.go — pipes JSON input to `write-file` CLI in container, returns creation summary or diff. Schema: file_path (required), content (required)
-- [ ] 3c: Probe container for `edit-file`/`write-file` availability at startup (before tool registration). Register EditFileTool and WriteFileTool in `handleStartAgent()` only if the CLIs are detected
+- [ ] 3c: Register EditFileTool and WriteFileTool in `handleStartAgent()` alongside the other container tools (no probing needed — the herm base image always has them)
 
 ## Phase 4: TUI rendering for diffs
 - [ ] 4a: Add diff colorization in tool result rendering — detect unified diff format in edit_file/write_file results and apply ANSI colors (green for +, red for -, cyan for @@, bold for ---/+++ headers)
@@ -170,6 +181,7 @@ Update bash section to reinforce: "Use bash for: running builds, tests, installs
 ## Success Criteria
 - Agent uses `edit_file` for targeted code changes instead of bash sed/echo — tool result shows a clean unified diff in the TUI with color
 - Agent uses `write_file` for new files — result shows creation summary
-- Fresh project startup pulls `hermcli/herm:latest` without a build step — container has git, python3, ripgrep, edit-file, write-file available immediately
-- Custom `.herm/Dockerfile` with `FROM hermcli/herm:latest` + additional tools builds and works as before via devenv
-- If herm base image is unavailable (offline, old image), agent degrades gracefully to bash-only file editing
+- Fresh project startup pulls `aduermael/herm:0.1` without a build step — container has git, python3, ripgrep, edit-file, write-file available immediately
+- Custom `.herm/Dockerfile` with `FROM aduermael/herm:0.1` + additional tools builds and works as before via devenv
+- Attempting to use a non-herm base image in `.herm/Dockerfile` is rejected with a clear error
+- Each herm CLI version pins a specific image tag — no `latest` drift
