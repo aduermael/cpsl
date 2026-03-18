@@ -1911,7 +1911,6 @@ func (a *App) buildInputRows() []string {
 	sep := strings.Repeat("─", a.width)
 
 	// Approval mode: yellow borders + centered message, hide normal input
-	// Approval mode: yellow borders + centered message, hide normal input
 	if a.awaitingApproval {
 		yellowSep := fmt.Sprintf("[33;1m%s[0m", sep)
 		shortMsg := fmt.Sprintf("Allow %s? [y/n]", a.approvalSummary)
@@ -2100,6 +2099,11 @@ func (a *App) positionCursor(buf *strings.Builder) {
 		buf.WriteString(fmt.Sprintf("\033[%d;1H", a.sepRow+1-s))
 		return
 	}
+	if a.awaitingApproval {
+		buf.WriteString("\033[?25l")
+		buf.WriteString(fmt.Sprintf("\033[%d;1H", a.sepRow+1-s))
+		return
+	}
 	buf.WriteString("\033[?25h")
 	curLine, curCol := cursorVisualPos(a.input, a.cursor, a.width)
 	buf.WriteString(fmt.Sprintf("\033[%d;%dH", a.inputStartRow+curLine-s, curCol+1))
@@ -2142,7 +2146,7 @@ func (a *App) render() {
 		writeRows(&buf, allRows, 1)
 	}
 
-	buf.WriteString("\033[0m\033[J") // clear from cursor to end of screen
+	buf.WriteString("\r\n\033[0m\033[J") // next line, then clear to end of screen
 
 	a.prevRowCount = totalRows
 	a.scrollShift = newScrollShift
@@ -2183,7 +2187,7 @@ func (a *App) renderInput() {
 
 	var buf strings.Builder
 	writeRows(&buf, inputRows, screenSepRow)
-	buf.WriteString("\033[0m\033[J") // clear remaining lines
+	buf.WriteString("\r\n\033[0m\033[J") // next line, then clear remaining
 
 	a.scrollShift = newScrollShift
 	a.prevRowCount = totalRows
