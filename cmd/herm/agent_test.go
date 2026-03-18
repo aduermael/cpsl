@@ -1291,3 +1291,115 @@ func TestBuildPromptOptsNoModel(t *testing.T) {
 		t.Errorf("buildPromptOpts returned %d options, want 3", len(opts))
 	}
 }
+
+// --- Phase: Fix agent silent stops ---
+
+// panicTool is a tool that panics during Execute to test panic recovery.
+type panicTool struct {
+	name string
+	msg  string
+}
+
+func (t *panicTool) Definition() types.ToolDefinition {
+	return types.ToolDefinition{Name: t.name, Description: "panicking tool"}
+}
+
+func (t *panicTool) Execute(_ context.Context, _ json.RawMessage) (string, error) {
+	panic(t.msg)
+}
+
+func (t *panicTool) RequiresApproval(_ json.RawMessage) bool { return false }
+
+func TestEmitNonBlockingWhenChannelFull(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "", "", 0)
+
+	// Fill the event channel to capacity.
+	for i := 0; i < cap(agent.events); i++ {
+		agent.events <- AgentEvent{Type: EventTextDelta, Text: "fill"}
+	}
+
+	// emit() should not block — the event should be dropped.
+	done := make(chan struct{})
+	go func() {
+		agent.emit(AgentEvent{Type: EventTextDelta, Text: "overflow"})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success — emit returned without blocking.
+	case <-time.After(time.Second):
+		t.Fatal("emit() blocked on full channel — should be non-blocking")
+	}
+}
+
+func TestRunPanicRecovery(t *testing.T) {
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "call_1", Name: "panic_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	pt := &panicTool{name: "panic_tool", msg: "intentional test panic"}
+	agent := NewAgent(client, []Tool{pt}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "trigger panic", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasPanicError, hasDone bool
+	for _, ev := range events {
+		if ev.Type == EventError && ev.Error != nil && strings.Contains(ev.Error.Error(), "intentional test panic") {
+			hasPanicError = true
+		}
+		if ev.Type == EventDone {
+			hasDone = true
+		}
+	}
+	if !hasPanicError {
+		t.Error("expected EventError containing panic information")
+	}
+	if !hasDone {
+		t.Error("expected EventDone after panic recovery")
+	}
+}
+
+func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
+	client := newTestClient("sub-agent output with events")
+	tmpDir := t.TempDir()
+
+	// Deliberately small parent buffer — forward() must not block.
+	parentEvents := make(chan AgentEvent, 1)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, 1, 0, tmpDir, "", "", nil)
+	tool.parentEvents = parentEvents
+
+	done := make(chan struct{})
+	var result string
+	var execErr error
+	go func() {
+		defer close(done)
+		result, execErr = tool.Execute(context.Background(), json.RawMessage(`{"task":"generate events"}`))
+	}()
+
+	// Do NOT drain parent events — test that forward() drops rather than blocks.
+	select {
+	case <-done:
+		if execErr != nil {
+			t.Fatalf("Execute error: %v", execErr)
+		}
+		if result == "" {
+			t.Error("expected non-empty result")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("sub-agent deadlocked: forward() is blocking on full parent channel")
+	}
+}

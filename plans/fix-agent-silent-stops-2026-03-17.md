@@ -36,31 +36,31 @@ The agent sometimes stops working with no error message. Three parallel investig
 
 ### Phase 1: Make `emit()` non-blocking (fixes the deadlock)
 
-- [ ] 1a: Replace the blocking channel send in `emit()` (`agent.go:277-280`) with a `select` that uses a generous buffer and drops/logs if full, OR switch to an unbounded queue (e.g., slice+mutex or ring buffer). The key contract: **`emit()` must never block the caller**. Consider increasing the channel buffer as a complementary measure.
+- [x] 1a: Replace the blocking channel send in `emit()` (`agent.go:277-280`) with a `select` that uses a generous buffer and drops/logs if full, OR switch to an unbounded queue (e.g., slice+mutex or ring buffer). The key contract: **`emit()` must never block the caller**. Consider increasing the channel buffer as a complementary measure.
 
-- [ ] 1b: Apply the same non-blocking treatment to `SubAgentTool.forward()` (`subagent.go:100-104`) — it sends to the parent's event channel and has the same deadlock risk.
+- [x] 1b: Apply the same non-blocking treatment to `SubAgentTool.forward()` (`subagent.go:100-104`) — it sends to the parent's event channel and has the same deadlock risk.
 
-- [ ] 1c: Add panic recovery wrapper around `agent.Run()` in `main.go:4412`. On panic, emit an `EventError` with the panic message and stack trace, then emit `EventDone`. This ensures panics surface to the user instead of silently killing the goroutine.
+- [x] 1c: Add panic recovery wrapper around `agent.Run()` in `main.go:4412`. On panic, emit an `EventError` with the panic message and stack trace, then emit `EventDone`. This ensures panics surface to the user instead of silently killing the goroutine.
 
 ### Phase 2: Proper event channel lifecycle
 
-- [ ] 2a: Close the event channel when the agent finishes. Add `defer close(a.events)` at the right point in `Agent.Run()` (after the deferred running=false block). This unblocks any `range agent.Events()` readers and makes `drainAgentEvents()` detect completion via `!ok`.
+- [x] 2a: Close the event channel when the agent finishes. Add `defer close(a.events)` at the right point in `Agent.Run()` (after the deferred running=false block). This unblocks any `range agent.Events()` readers and makes `drainAgentEvents()` detect completion via `!ok`.
 
-- [ ] 2b: In `subagent.go`, handle the case where `Events()` channel closes before `EventDone` is received. The code at line 221 already has a comment acknowledging this — ensure it works correctly with the new close behavior.
+- [x] 2b: In `subagent.go`, handle the case where `Events()` channel closes before `EventDone` is received. The code at line 221 already has a comment acknowledging this — ensure it works correctly with the new close behavior.
 
 ### Phase 3: Stream resilience
 
-- [ ] 3a: After both streaming loops (`agent.go:482-497` and `712-727`), detect when the loop exits without receiving `chunk.Done`. Emit an `EventError` indicating the stream was interrupted, rather than silently continuing.
+- [x] 3a: After both streaming loops (`agent.go:482-497` and `712-727`), detect when the loop exits without receiving `chunk.Done`. Emit an `EventError` indicating the stream was interrupted, rather than silently continuing.
 
-- [ ] 3b: Handle the `json.Marshal` error at `agent.go:703` — log/emit an error instead of ignoring it with `_`.
+- [x] 3b: Handle the `json.Marshal` error at `agent.go:703` — log/emit an error instead of ignoring it with `_`.
 
 ### Phase 4: Tests
 
-- [ ] 4a: Write a test that creates an agent with a small event buffer and triggers enough emissions to fill it — verify the agent doesn't deadlock (completes within a timeout).
+- [x] 4a: Write a test that creates an agent with a small event buffer and triggers enough emissions to fill it — verify the agent doesn't deadlock (completes within a timeout).
 
-- [ ] 4b: Write a test that panics inside a tool execution — verify the panic is caught, an error event is emitted, and the agent completes gracefully.
+- [x] 4b: Write a test that panics inside a tool execution — verify the panic is caught, an error event is emitted, and the agent completes gracefully.
 
-- [ ] 4c: Write a test simulating a sub-agent that emits many events — verify the parent doesn't deadlock.
+- [x] 4c: Write a test simulating a sub-agent that emits many events — verify the parent doesn't deadlock.
 
 ## Success Criteria
 

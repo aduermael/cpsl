@@ -98,8 +98,13 @@ type subAgentInput struct {
 
 // forward sends a sub-agent event to the parent's event channel if set.
 func (t *SubAgentTool) forward(e AgentEvent) {
-	if t.parentEvents != nil {
-		t.parentEvents <- e
+	if t.parentEvents == nil {
+		return
+	}
+	select {
+	case t.parentEvents <- e:
+	default:
+		debugLog("sub-agent event dropped: parent channel full (type=%d)", e.Type)
 	}
 }
 
@@ -218,7 +223,9 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		}
 	}
 
-	// Channel closed without EventDone — shouldn't happen, but handle gracefully.
+	// Channel closed without EventDone (e.g., EventDone was dropped, or agent
+	// exited without emitting it). Handle gracefully.
+	t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: agentID, Text: "done"})
 	<-done
 	result := strings.TrimSpace(strings.Join(textParts, ""))
 	if result == "" {

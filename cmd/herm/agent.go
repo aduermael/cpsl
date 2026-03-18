@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -213,7 +214,7 @@ func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefi
 		systemPrompt:  systemPrompt,
 		model:         model,
 		contextWindow: contextWindow,
-		events:        make(chan AgentEvent, 64),
+		events:        make(chan AgentEvent, 4096),
 		approval:      make(chan ApprovalResponse, 1),
 	}
 	for _, opt := range opts {
@@ -259,11 +260,27 @@ func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string
 	ctx, a.cancelFn = context.WithCancel(ctx)
 	a.mu.Unlock()
 
+	// Close the event channel last (first defer = last to execute in LIFO order).
+	// This unblocks any `range agent.Events()` readers after all events are emitted.
+	defer close(a.events)
+
 	defer func() {
 		a.mu.Lock()
 		a.running = false
 		a.cancelFn = nil
 		a.mu.Unlock()
+	}()
+
+	defer func() {
+		if r := recover(); r != nil {
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			a.emit(AgentEvent{
+				Type:  EventError,
+				Error: fmt.Errorf("agent panic: %v\n%s", r, buf[:n]),
+			})
+			a.emit(AgentEvent{Type: EventDone})
+		}
 	}()
 
 	a.runLoop(ctx, userMessage, parentNodeID)
@@ -276,7 +293,12 @@ func (a *Agent) ID() string {
 
 func (a *Agent) emit(e AgentEvent) {
 	e.AgentID = a.id
-	a.events <- e
+	select {
+	case a.events <- e:
+	default:
+		// Channel full — drop the event to prevent deadlock.
+		debugLog("event dropped: channel full (type=%d)", e.Type)
+	}
 }
 
 // emitUsage fetches the node by ID, emits an EventUsage with token counts,
@@ -479,6 +501,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 
 	// Process streaming response, collecting tool calls from content blocks.
 	var toolCalls []types.ContentBlock
+	streamDone := false
 	for chunk := range result.Stream {
 		if chunk.Error != nil {
 			a.emit(AgentEvent{Type: EventError, Error: chunk.Error})
@@ -486,6 +509,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			return
 		}
 		if chunk.Done {
+			streamDone = true
 			break
 		}
 		if chunk.Content != "" {
@@ -494,6 +518,11 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
 			toolCalls = append(toolCalls, *chunk.ContentBlock)
 		}
+	}
+	if !streamDone {
+		a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("stream interrupted: closed without completion")})
+		a.emit(AgentEvent{Type: EventDone})
+		return
 	}
 
 	nodeID := result.NodeID
@@ -700,7 +729,11 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		// Build tool results message and re-call LLM.
 		// Rebuild opts so the system prompt includes updated session stats.
 		opts = a.buildPromptOpts()
-		toolResultJSON, _ := json.Marshal(toolResults)
+		toolResultJSON, marshalErr := json.Marshal(toolResults)
+		if marshalErr != nil {
+			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("marshal tool results: %w", marshalErr)})
+			break
+		}
 		result, err = a.client.PromptFrom(ctx, nodeID, string(toolResultJSON), opts...)
 		if err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("prompt (tool results): %w", err)})
@@ -709,6 +742,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 
 		// Stream the follow-up response, collecting tool calls.
 		toolCalls = nil
+		streamDone = false
 		for chunk := range result.Stream {
 			if chunk.Error != nil {
 				a.emit(AgentEvent{Type: EventError, Error: chunk.Error})
@@ -716,6 +750,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 				return
 			}
 			if chunk.Done {
+				streamDone = true
 				break
 			}
 			if chunk.Content != "" {
@@ -724,6 +759,10 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			if chunk.ContentBlock != nil && chunk.ContentBlock.Type == "tool_use" {
 				toolCalls = append(toolCalls, *chunk.ContentBlock)
 			}
+		}
+		if !streamDone {
+			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("stream interrupted: closed without completion")})
+			break
 		}
 
 		nodeID = result.NodeID
