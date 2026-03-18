@@ -1644,7 +1644,9 @@ func (a *App) agentElapsedTime() time.Duration {
 
 func (a *App) buildBlockRows() []string {
 	var rows []string
-	rows = append(rows, buildLogo()...)
+	for _, line := range buildLogo() {
+		rows = append(rows, wrapString(line, 0, a.width)...)
+	}
 	inCodeBlock := false
 	skipNext := false
 	for i, msg := range a.messages {
@@ -1776,13 +1778,14 @@ func (a *App) buildBlockRows() []string {
 			color, text, elapsed.Seconds(),
 			formatTokenCount(int(math.Round(a.agentDisplayInTok))),
 			formatTokenCount(int(math.Round(a.agentDisplayOutTok))))
-		rows = append(rows, label)
+		rows = append(rows, wrapString(label, 0, a.width)...)
 		rows = append(rows, "")
 	} else if a.agentElapsed > 0 {
-		rows = append(rows, fmt.Sprintf("\033[2m%.2fs ↑%s ↓%s\033[0m",
+		elapsed := fmt.Sprintf("\033[2m%.2fs ↑%s ↓%s\033[0m",
 			a.agentElapsed.Seconds(),
 			formatTokenCount(a.sessionInputTokens),
-			formatTokenCount(a.sessionOutputTokens)))
+			formatTokenCount(a.sessionOutputTokens))
+		rows = append(rows, wrapString(elapsed, 0, a.width)...)
 		rows = append(rows, "")
 	}
 	// Show live sub-agent activity (capped to 3 lines, dim/italic)
@@ -2114,6 +2117,9 @@ func (a *App) render() {
 
 	a.sepRow = len(blockRows) + 1
 	a.inputStartRow = a.sepRow + 1
+	if a.promptLabel != "" {
+		a.inputStartRow++
+	}
 
 	inputRows := a.buildInputRows()
 	allRows := append(blockRows, inputRows...)
@@ -2146,7 +2152,7 @@ func (a *App) render() {
 		writeRows(&buf, allRows, 1)
 	}
 
-	buf.WriteString("\r\n\033[0m\033[J") // next line, then clear to end of screen
+	buf.WriteString("\033[0m\033[J") // clear from cursor to end of screen
 
 	a.prevRowCount = totalRows
 	a.scrollShift = newScrollShift
@@ -2187,7 +2193,7 @@ func (a *App) renderInput() {
 
 	var buf strings.Builder
 	writeRows(&buf, inputRows, screenSepRow)
-	buf.WriteString("\r\n\033[0m\033[J") // next line, then clear remaining
+	buf.WriteString("\033[0m\033[J") // clear remaining lines
 
 	a.scrollShift = newScrollShift
 	a.prevRowCount = totalRows
