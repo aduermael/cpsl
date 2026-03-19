@@ -4627,9 +4627,6 @@ func (a *App) startAgent(userMessage string) {
 		tools = append(tools, NewGitTool(a.worktreePath, a.config.effectiveGitCoAuthor()))
 	}
 
-	// Server-side tools are handled by the LLM provider, not the client.
-	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-
 	modelID := a.config.resolveActiveModel(a.models)
 	if modelID == "" {
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: "model not found, `/model` to pick a valid one"})
@@ -4640,6 +4637,13 @@ func (a *App) startAgent(userMessage string) {
 	var modelProvider string
 	if modelDef := findModelByID(a.models, modelID); modelDef != nil {
 		modelProvider = modelDef.Provider
+	}
+
+	// Server-side tools (e.g. web search) are handled by the LLM provider.
+	// Some models don't support them, so we check before including them.
+	var serverTools []types.ToolDefinition
+	if supportsServerTools(modelProvider, modelID) {
+		serverTools = []types.ToolDefinition{WebSearchToolDef()}
 	}
 
 	if modelProvider != "" && modelProvider != a.langdagProvider {
@@ -4679,7 +4683,11 @@ func (a *App) startAgent(userMessage string) {
 		maxDepth = defaultMaxAgentDepth
 	}
 	explorationModelID := a.config.resolveExplorationModel(a.models)
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, serverTools, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage, a.projectSnap)
+	subAgentServerTools := serverTools
+	if !supportsServerTools(modelProvider, explorationModelID) {
+		subAgentServerTools = nil
+	}
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage, a.projectSnap)
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string

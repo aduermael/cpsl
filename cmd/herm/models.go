@@ -45,10 +45,6 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 	var models []ModelDef
 	for _, provider := range supportedProviders {
 		for _, p := range catalog.ForProvider(provider) {
-			// Skip grok-3 models: they don't support server-side tools.
-			if provider == ProviderGrok && strings.HasPrefix(p.ID, "grok-3") {
-				continue
-			}
 			models = append(models, ModelDef{
 				Provider:        provider,
 				ID:              p.ID,
@@ -59,6 +55,15 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 		}
 	}
 	return models
+}
+
+// supportsServerTools reports whether a model supports server-side tools
+// (e.g. web search). For Grok, only the grok-4 family supports them.
+func supportsServerTools(provider, modelID string) bool {
+	if provider == ProviderGrok && !strings.HasPrefix(modelID, "grok-4") {
+		return false
+	}
+	return true
 }
 
 // filterModelsByProviders returns models whose provider is in the given set.

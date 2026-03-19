@@ -698,3 +698,35 @@ func TestFormatCostTiny(t *testing.T) {
 	}
 }
 
+// --- supportsServerTools tests ---
+
+func TestSupportsServerToolsGrok4(t *testing.T) {
+	if !supportsServerTools(ProviderGrok, "grok-4-1-fast-reasoning") {
+		t.Error("grok-4 models should support server tools")
+	}
+}
+
+func TestSupportsServerToolsGrok3(t *testing.T) {
+	if supportsServerTools(ProviderGrok, "grok-3") {
+		t.Error("grok-3 should not support server tools")
+	}
+}
+
+func TestSupportsServerToolsGrokCodeFast(t *testing.T) {
+	if supportsServerTools(ProviderGrok, "grok-code-fast-1") {
+		t.Error("grok-code-fast-1 should not support server tools")
+	}
+}
+
+func TestSupportsServerToolsAnthropic(t *testing.T) {
+	if !supportsServerTools(ProviderAnthropic, "claude-sonnet-4-6") {
+		t.Error("anthropic models should support server tools")
+	}
+}
+
+func TestSupportsServerToolsOpenAI(t *testing.T) {
+	if !supportsServerTools(ProviderOpenAI, "gpt-4o") {
+		t.Error("openai models should support server tools")
+	}
+}
+
