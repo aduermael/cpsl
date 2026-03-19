@@ -1757,9 +1757,8 @@ type App struct {
 	updateAvailable string   // version tag if update is available
 
 	// Tool timer (live elapsed display)
-	toolStartTime   time.Time
-	toolTimer       *time.Ticker
-	toolPausedTotal time.Duration // approval pause time within current tool call
+	toolStartTime time.Time
+	toolTimer     *time.Ticker
 
 	// Agent status timer (animated label while agent is running)
 	agentStartTime     time.Time
@@ -1886,14 +1885,7 @@ func (a *App) buildBlockRows() []string {
 			}
 			var liveDur string
 			if !a.toolStartTime.IsZero() {
-				toolElapsed := time.Since(a.toolStartTime) - a.toolPausedTotal
-				if a.awaitingApproval && !a.approvalPauseStart.IsZero() {
-					toolElapsed -= time.Since(a.approvalPauseStart)
-				}
-				if toolElapsed < 0 {
-					toolElapsed = 0
-				}
-				liveDur = formatDuration(toolElapsed)
+				liveDur = formatDuration(time.Since(a.toolStartTime))
 			}
 			box := renderToolBox(title, "", a.width, false, liveDur)
 			if liveDur == "" {
@@ -3511,10 +3503,17 @@ func (a *App) handleApprovalByte(ch byte) {
 	case 'y', 'Y':
 		a.awaitingApproval = false
 		if !a.approvalPauseStart.IsZero() {
-			paused := time.Since(a.approvalPauseStart)
-			a.approvalPausedTotal += paused
-			a.toolPausedTotal += paused
+			a.approvalPausedTotal += time.Since(a.approvalPauseStart)
 			a.approvalPauseStart = time.Time{}
+		}
+		// Restart tool timer ticker (frozen during approval).
+		if !a.toolStartTime.IsZero() && a.toolTimer == nil {
+			a.toolTimer = time.NewTicker(100 * time.Millisecond)
+			go func(ticker *time.Ticker, ch chan any) {
+				for range ticker.C {
+					ch <- toolTimerTickMsg{}
+				}
+			}(a.toolTimer, a.resultCh)
 		}
 		if a.agent != nil {
 			a.agent.Approve(ApprovalResponse{Approved: true})
@@ -3524,9 +3523,7 @@ func (a *App) handleApprovalByte(ch byte) {
 	case 'n', 'N':
 		a.awaitingApproval = false
 		if !a.approvalPauseStart.IsZero() {
-			paused := time.Since(a.approvalPauseStart)
-			a.approvalPausedTotal += paused
-			a.toolPausedTotal += paused
+			a.approvalPausedTotal += time.Since(a.approvalPauseStart)
 			a.approvalPauseStart = time.Time{}
 		}
 		if a.agent != nil {
@@ -4781,7 +4778,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		}
 		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true})
 		a.toolStartTime = time.Now()
-		a.toolPausedTotal = 0
 		if a.toolTimer != nil {
 			a.toolTimer.Stop()
 		}
@@ -4836,6 +4832,11 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		a.approvalPauseStart = time.Now()
 		a.approvalSummary = approvalShortDesc(event.ToolName, event.ToolInput)
 		a.approvalDesc = event.ApprovalDesc
+		// Stop tool timer ticker so the tool box timer freezes during approval.
+		if a.toolTimer != nil {
+			a.toolTimer.Stop()
+			a.toolTimer = nil
+		}
 		a.renderInput()
 
 	case EventCompacted:
