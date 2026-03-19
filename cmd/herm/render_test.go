@@ -729,55 +729,80 @@ func TestDiffLineStyle(t *testing.T) {
 }
 
 func TestCollapseDiff(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{
-			name:  "short diff unchanged",
-			input: "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old",
-			want:  "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old",
-		},
-		{
-			name:  "long diff collapsed",
-			input: "--- a/f\n+++ b/f\n@@ -1,5 +1,5 @@\n context\n-old1\n+new1\n-old2\n+new2\n more context",
-			want:  "--- a/f\n+++ b/f\n@@ -1,5 +1,5 @@\n context\n... (5 more lines)",
-		},
-		{
-			name:  "exactly 4 lines",
-			input: "--- a/f\n+++ b/f\n@@ -1 +1 @@\n+added",
-			want:  "--- a/f\n+++ b/f\n@@ -1 +1 @@\n+added",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			lines := strings.Split(tt.input, "\n")
-			got := collapseDiff(lines)
-			if got != tt.want {
-				t.Errorf("collapseDiff() =\n%q\nwant:\n%q", got, tt.want)
-			}
-		})
-	}
+	t.Run("short diff unchanged", func(t *testing.T) {
+		input := "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old"
+		lines := strings.Split(input, "\n")
+		got := collapseDiff(lines)
+		if got != input {
+			t.Errorf("short diff should pass through unchanged, got:\n%q", got)
+		}
+	})
+
+	t.Run("20 lines fits without truncation", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 20; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i))
+		}
+		got := collapseDiff(lines)
+		if strings.Contains(got, "... (") {
+			t.Error("20 lines should not be truncated")
+		}
+	})
+
+	t.Run("21+ lines truncated", func(t *testing.T) {
+		var lines []string
+		for i := 0; i < 25; i++ {
+			lines = append(lines, fmt.Sprintf("line %d", i))
+		}
+		got := collapseDiff(lines)
+		if !strings.Contains(got, "... (5 more lines)") {
+			t.Errorf("expected truncation marker, got:\n%q", got)
+		}
+		// First 20 lines should be present.
+		if !strings.Contains(got, "line 19") {
+			t.Error("should include up to line 19")
+		}
+		if strings.Contains(got, "line 20") {
+			t.Error("should not include line 20")
+		}
+	})
 }
 
 func TestCollapseToolResultDiff(t *testing.T) {
-	// A unified diff with >5 lines should use collapseDiff (not the generic 2+...+2).
-	diff := "--- a/main.go\n+++ b/main.go\n@@ -1,5 +1,5 @@\n context\n-old1\n+new1\n-old2\n+new2\n more"
-	result := collapseToolResult(diff)
+	t.Run("short diff passes through fully", func(t *testing.T) {
+		diff := "--- a/main.go\n+++ b/main.go\n@@ -1,5 +1,5 @@\n context\n-old1\n+new1\n-old2\n+new2\n more"
+		result := collapseToolResult(diff)
 
-	// Should use diff-style collapse: header + "... (N more lines)".
-	if !strings.Contains(result, "--- a/main.go") {
-		t.Error("collapsed diff should preserve file header")
-	}
-	if !strings.Contains(result, "... (") {
-		t.Error("collapsed diff should have diff-style continuation marker")
-	}
-	// Should NOT use the generic "..." marker (no leading/trailing lines format).
-	lines := strings.Split(result, "\n")
-	if len(lines) > 6 {
-		t.Errorf("collapsed diff too long: %d lines", len(lines))
-	}
+		// 9 lines — under the 20-line limit, should pass through without truncation.
+		if !strings.Contains(result, "--- a/main.go") {
+			t.Error("collapsed diff should preserve file header")
+		}
+		if !strings.Contains(result, "+new2") {
+			t.Error("collapsed diff should preserve change lines")
+		}
+		// Should NOT use the generic "..." truncation.
+		if result == "--- a/main.go\n+++ b/main.go\n...\n+new2\n more" {
+			t.Error("diff should use diff-aware collapse, not generic 2+...+2")
+		}
+	})
+
+	t.Run("long diff is truncated at 20 lines", func(t *testing.T) {
+		var lines []string
+		lines = append(lines, "--- a/big.go", "+++ b/big.go", "@@ -1,30 +1,30 @@")
+		for i := 0; i < 25; i++ {
+			lines = append(lines, fmt.Sprintf("+line %d", i))
+		}
+		diff := strings.Join(lines, "\n")
+		result := collapseToolResult(diff)
+
+		if !strings.Contains(result, "... (") {
+			t.Error("long diff should have continuation marker")
+		}
+		resultLines := strings.Split(result, "\n")
+		if len(resultLines) > 22 { // 20 content + 1 marker line
+			t.Errorf("collapsed long diff too many lines: %d", len(resultLines))
+		}
+	})
 }
 
 func TestToolBoxDiffColorization(t *testing.T) {

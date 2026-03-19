@@ -115,11 +115,20 @@ RUN apt-get update
 RUN apt-get install -y git  # may use stale package lists
 ```
 
+## Common mistakes that cause build failures
+
+1. **Missing `apt-get update`**: Every `apt-get install` MUST be in the same RUN as `apt-get update`. The base image has no cached package lists.
+2. **Wrong package names**: Debian package names are often different from what you expect. Use `apt-cache search` in the running container to find the right name before writing the Dockerfile. Common ones: `build-essential` (not `gcc`+`make`), `python3-dev` (not `python-dev`), `libssl-dev` (not `openssl-dev`).
+3. **Downloading from URLs that 404**: Always verify download URLs. Pin exact versions — don't use "latest" download links.
+4. **Forgetting `-y` flag**: `apt-get install` without `-y` waits for interactive confirmation and fails in builds.
+5. **Running `apt-get update` in a separate layer**: Package lists won't be available in subsequent layers.
+
 ## When a build fails
 
 Read the full error output. Docker reports the exact failing step and the error message. Fix only that step — don't rewrite the whole Dockerfile. Common fixes:
 
-- "Unable to locate package X" → wrong package name, or forgot `apt-get update` in same layer
+- "Unable to locate package X" → wrong package name, or forgot `apt-get update` in same layer. Run `apt-cache search <keyword>` in the container to find the right name.
 - "unknown instruction" or syntax error → typo in Dockerfile syntax
 - "executable not found" → the binary isn't on PATH, add an ENV PATH line
 - Script exits non-zero → the script requires interactive input; use flags like `-y`, `--yes`, `-q`
+- "404 Not Found" during download → URL is wrong or version doesn't exist. Check the official download page.
