@@ -175,7 +175,7 @@ This guarantees that edit-file, write-file, ripgrep, git, and python3 are always
 
 ## Phase 6: Tests
 - [x] 6a: Unit tests for EditFileTool and WriteFileTool Go structs (mock container exec, verify command construction and JSON parsing)
-- [ ] 6b: Test that system prompt includes edit_file/write_file guidance when tools are present, and excludes it when not
+- [x] 6b: Test that system prompt includes edit_file/write_file guidance when tools are present, and excludes it when not
 - [ ] 6c: Test diff colorization and collapse logic with sample unified diff inputs
 
 ## Success Criteria

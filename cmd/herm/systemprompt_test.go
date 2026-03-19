@@ -38,6 +38,8 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 		stubTool{"glob"},
 		stubTool{"grep"},
 		stubTool{"read_file"},
+		stubTool{"edit_file"},
+		stubTool{"write_file"},
 	}
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
 	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace", "", "alpine:latest", "", nil)
@@ -46,6 +48,7 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 		"expert coding agent",
 		"## Tools",
 		"### glob, grep, read_file",
+		"### edit_file, write_file",
 		"### bash",
 		"### git",
 		"### devenv",
@@ -127,6 +130,69 @@ func TestBuildSystemPromptFileToolsGuidance(t *testing.T) {
 		if !strings.Contains(prompt, s) {
 			t.Errorf("file tools guidance missing %q", s)
 		}
+	}
+}
+
+func TestBuildSystemPromptEditWriteToolsGuidance(t *testing.T) {
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+		stubTool{"edit_file"},
+		stubTool{"write_file"},
+	}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
+
+	expectations := []string{
+		"### edit_file, write_file",
+		"edit_file",
+		"write_file",
+		"read_file before editing",
+		"Do NOT use bash for file modifications",
+		"Do NOT use bash for file editing",
+	}
+	for _, s := range expectations {
+		if !strings.Contains(prompt, s) {
+			t.Errorf("edit/write tools guidance missing %q", s)
+		}
+	}
+}
+
+func TestBuildSystemPromptEditWriteToolsAbsent(t *testing.T) {
+	// Only read tools, no edit/write — the edit_file/write_file section should be absent.
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+	}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
+
+	if strings.Contains(prompt, "### edit_file, write_file") {
+		t.Error("prompt should not contain edit_file/write_file section when tools are absent")
+	}
+	if strings.Contains(prompt, "Do NOT use bash for file editing") {
+		t.Error("bash section should not contain edit/write redirect when those tools are absent")
+	}
+}
+
+func TestBuildSubAgentSystemPromptEditWriteTools(t *testing.T) {
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+		stubTool{"edit_file"},
+		stubTool{"write_file"},
+	}
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+
+	if !strings.Contains(prompt, "### edit_file, write_file") {
+		t.Error("sub-agent prompt should include edit_file/write_file section when tools are present")
+	}
+	if !strings.Contains(prompt, "Do NOT use bash for file modifications") {
+		t.Error("sub-agent prompt should include file modification guidance")
 	}
 }
 
@@ -407,7 +473,7 @@ func TestBuildSystemPromptEmptyToolsList(t *testing.T) {
 	}
 
 	// No tool-specific subsections should appear.
-	for _, sub := range []string{"### bash", "### git", "### devenv", "### web_search", "### glob, grep, read_file", "### agent"} {
+	for _, sub := range []string{"### bash", "### git", "### devenv", "### web_search", "### glob, grep, read_file", "### edit_file, write_file", "### agent"} {
 		if strings.Contains(prompt, sub) {
 			t.Errorf("prompt should not contain tool subsection %q when no tools are registered", sub)
 		}
