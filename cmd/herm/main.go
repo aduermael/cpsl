@@ -1132,6 +1132,12 @@ type statusInfoMsg struct {
 	info statusInfo
 }
 
+type commitInfoMsg struct {
+	behind      int
+	ahead       int
+	hasUpstream bool
+}
+
 type worktreeListMsg struct {
 	items []WorktreeInfo
 	err   error
@@ -1512,6 +1518,25 @@ func fetchStatusCmd(worktreePath string) statusInfoMsg {
 	return statusInfoMsg{info: info}
 }
 
+func fetchCommitInfo(worktreePath string) commitInfoMsg {
+	var msg commitInfoMsg
+	cmd := exec.Command("git", "rev-list", "--count", "--left-right", "@{upstream}...HEAD")
+	cmd.Dir = worktreePath
+	if out, err := cmd.Output(); err == nil {
+		parts := strings.Split(strings.TrimSpace(string(out)), "\t")
+		if len(parts) == 2 {
+			msg.hasUpstream = true
+			if n, err := strconv.Atoi(parts[0]); err == nil {
+				msg.behind = n
+			}
+			if n, err := strconv.Atoi(parts[1]); err == nil {
+				msg.ahead = n
+			}
+		}
+	}
+	return msg
+}
+
 // projectSnapshot holds a lightweight project context gathered at startup.
 type projectSnapshot struct {
 	TopLevel      string // ls -1 of worktree root
@@ -1723,6 +1748,9 @@ type App struct {
 	// Approval timer pause
 	approvalPauseStart  time.Time     // when approval wait started
 	approvalPausedTotal time.Duration // total time spent waiting for approvals
+
+	// Periodic commit info refresh
+	commitInfoTicker *time.Ticker
 
 	// Menu state (for inline menus below input - Phase 3)
 	menuLines        []string
@@ -4938,6 +4966,11 @@ func (a *App) handleResult(result any) {
 	case statusInfoMsg:
 		a.status = msg.info
 
+	case commitInfoMsg:
+		a.status.HasUpstream = msg.hasUpstream
+		a.status.Behind = msg.behind
+		a.status.Ahead = msg.ahead
+
 	case projectSnapshotMsg:
 		a.projectSnap = &msg.snapshot
 
@@ -4956,6 +4989,15 @@ func (a *App) handleResult(result any) {
 		go func() { bootContainerCmd(wtPath, a.sessionID, a.resultCh) }()
 		go cleanupTmpDir(wtPath)
 		go cleanupAgentOutputDir(wtPath)
+		// Start periodic commit info refresh (only if git is available)
+		if _, err := exec.LookPath("git"); err == nil {
+			a.commitInfoTicker = time.NewTicker(15 * time.Second)
+			go func(ticker *time.Ticker, ch chan any, path string) {
+				for range ticker.C {
+					ch <- fetchCommitInfo(path)
+				}
+			}(a.commitInfoTicker, a.resultCh, wtPath)
+		}
 
 	case containerReadyMsg:
 		a.container = msg.client
@@ -5034,6 +5076,10 @@ func (a *App) handleResult(result any) {
 // ─── Cleanup ───
 
 func (a *App) cleanup() {
+	if a.commitInfoTicker != nil {
+		a.commitInfoTicker.Stop()
+		a.commitInfoTicker = nil
+	}
 	if a.toolTimer != nil {
 		a.toolTimer.Stop()
 		a.toolTimer = nil
