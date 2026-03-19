@@ -453,6 +453,333 @@ func TestShellQuote(t *testing.T) {
 	}
 }
 
+// --- EditFileTool tests ---
+
+func TestEditFileTool_Definition(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewEditFileTool(c)
+	def := tool.Definition()
+
+	if def.Name != "edit_file" {
+		t.Errorf("Name = %q, want %q", def.Name, "edit_file")
+	}
+	if def.InputSchema == nil {
+		t.Error("InputSchema should not be nil")
+	}
+}
+
+func TestEditFileTool_Execute_Success(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		if !strings.Contains(cmd, "edit-file") {
+			return "", "unexpected command", 1
+		}
+		return `{"ok":true,"diff":"--- a/main.go\n+++ b/main.go\n@@ -1 +1 @@\n-old\n+new"}`, "", 0
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:  "main.go",
+		OldString: "old",
+		NewString: "new",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "--- a/main.go") {
+		t.Errorf("expected diff output, got: %q", result)
+	}
+}
+
+func TestEditFileTool_Execute_NotFound(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return `{"ok":false,"error":"old_string not found in file"}`, "", 0
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:  "main.go",
+		OldString: "missing",
+		NewString: "new",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "error") || !strings.Contains(result, "not found") {
+		t.Errorf("expected error about not found, got: %q", result)
+	}
+}
+
+func TestEditFileTool_Execute_NotUnique(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return `{"ok":false,"error":"old_string found 3 times (must be unique, or use replace_all)"}`, "", 0
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:  "main.go",
+		OldString: "duplicate",
+		NewString: "new",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "3 times") {
+		t.Errorf("expected count in error, got: %q", result)
+	}
+}
+
+func TestEditFileTool_Execute_ReplaceAll(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		// Verify replace_all is passed in the JSON input.
+		if !strings.Contains(cmd, "replace_all") {
+			return `{"ok":false,"error":"replace_all not set"}`, "", 0
+		}
+		return `{"ok":true,"diff":"@@ multi-replace @@"}`, "", 0
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:   "main.go",
+		OldString:  "old",
+		NewString:  "new",
+		ReplaceAll: true,
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "multi-replace") {
+		t.Errorf("expected diff output, got: %q", result)
+	}
+}
+
+func TestEditFileTool_Execute_InvalidJSON(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return "not valid json at all", "", 1
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:  "main.go",
+		OldString: "old",
+		NewString: "new",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "edit-file error") {
+		t.Errorf("expected error fallback, got: %q", result)
+	}
+}
+
+func TestEditFileTool_Execute_EmptyPath(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewEditFileTool(c)
+	input, _ := json.Marshal(editFileInput{FilePath: "", OldString: "a", NewString: "b"})
+	_, err := tool.Execute(context.Background(), input)
+	if err == nil {
+		t.Error("expected error for empty file_path")
+	}
+}
+
+func TestEditFileTool_Execute_EmptyOldString(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewEditFileTool(c)
+	input, _ := json.Marshal(editFileInput{FilePath: "main.go", OldString: "", NewString: "b"})
+	_, err := tool.Execute(context.Background(), input)
+	if err == nil {
+		t.Error("expected error for empty old_string")
+	}
+}
+
+func TestEditFileTool_Execute_RelativePath(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		// Verify the path was resolved to /workspace/src/main.go.
+		if !strings.Contains(cmd, "/workspace/src/main.go") {
+			return `{"ok":false,"error":"wrong path"}`, "", 0
+		}
+		return `{"ok":true,"diff":"ok"}`, "", 0
+	})
+
+	tool := NewEditFileTool(container)
+	input, _ := json.Marshal(editFileInput{
+		FilePath:  "src/main.go",
+		OldString: "old",
+		NewString: "new",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if result != "ok" {
+		t.Errorf("expected 'ok', got: %q", result)
+	}
+}
+
+// --- WriteFileTool tests ---
+
+func TestWriteFileTool_Definition(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewWriteFileTool(c)
+	def := tool.Definition()
+
+	if def.Name != "write_file" {
+		t.Errorf("Name = %q, want %q", def.Name, "write_file")
+	}
+	if def.InputSchema == nil {
+		t.Error("InputSchema should not be nil")
+	}
+}
+
+func TestWriteFileTool_Execute_CreateNew(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		if !strings.Contains(cmd, "write-file") {
+			return "", "unexpected command", 1
+		}
+		return `{"ok":true,"created":true,"summary":"Created main.go (10 lines, 245 bytes)"}`, "", 0
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "main.go",
+		Content:  "package main\n",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "Created") {
+		t.Errorf("expected creation summary, got: %q", result)
+	}
+}
+
+func TestWriteFileTool_Execute_Overwrite(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return `{"ok":true,"created":false,"summary":"Wrote main.go (5 lines, 100 bytes)","diff":"--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,2 @@\n-old\n+new"}`, "", 0
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "main.go",
+		Content:  "new content\n",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "Wrote") {
+		t.Errorf("expected write summary, got: %q", result)
+	}
+	if !strings.Contains(result, "--- a/main.go") {
+		t.Errorf("expected diff in overwrite result, got: %q", result)
+	}
+}
+
+func TestWriteFileTool_Execute_Error(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return `{"ok":false,"error":"permission denied"}`, "", 0
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "/etc/readonly",
+		Content:  "test",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "error") || !strings.Contains(result, "permission denied") {
+		t.Errorf("expected error message, got: %q", result)
+	}
+}
+
+func TestWriteFileTool_Execute_InvalidJSON(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return "broken output", "", 1
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "test.txt",
+		Content:  "hello",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "write-file error") {
+		t.Errorf("expected error fallback, got: %q", result)
+	}
+}
+
+func TestWriteFileTool_Execute_EmptyPath(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewWriteFileTool(c)
+	input, _ := json.Marshal(writeFileInput{FilePath: "", Content: "test"})
+	_, err := tool.Execute(context.Background(), input)
+	if err == nil {
+		t.Error("expected error for empty file_path")
+	}
+}
+
+func TestWriteFileTool_Execute_EmptyResponse(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return `{"ok":true}`, "", 0
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "test.txt",
+		Content:  "hello",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if result != "File written." {
+		t.Errorf("expected 'File written.', got: %q", result)
+	}
+}
+
+func TestWriteFileTool_Execute_RelativePath(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		if !strings.Contains(cmd, "/workspace/src/new.go") {
+			return `{"ok":false,"error":"wrong path"}`, "", 0
+		}
+		return `{"ok":true,"summary":"Created src/new.go"}`, "", 0
+	})
+
+	tool := NewWriteFileTool(container)
+	input, _ := json.Marshal(writeFileInput{
+		FilePath: "src/new.go",
+		Content:  "package src\n",
+	})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "Created") {
+		t.Errorf("expected success, got: %q", result)
+	}
+}
+
 // --- RequiresApproval tests ---
 
 func TestFileTools_NoApproval(t *testing.T) {
@@ -461,6 +788,8 @@ func TestFileTools_NoApproval(t *testing.T) {
 		NewGlobTool(c),
 		NewGrepTool(c),
 		NewReadFileTool(c),
+		NewEditFileTool(c),
+		NewWriteFileTool(c),
 	}
 	for _, tool := range tools {
 		if tool.RequiresApproval(nil) {
