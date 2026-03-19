@@ -4956,7 +4956,7 @@ func (a *App) handleResult(result any) {
 	case agentTickMsg:
 		if a.agentRunning {
 			elapsed := a.agentElapsedTime()
-			a.agentTextIndex = int(elapsed.Seconds()/3) % len(funnyTexts)
+			a.agentTextIndex = int(elapsed.Seconds()/4) % len(funnyTexts)
 			// Lerp displayed tokens toward actual totals
 			a.agentDisplayInTok += (float64(a.sessionInputTokens) - a.agentDisplayInTok) * 0.15
 			a.agentDisplayOutTok += (float64(a.sessionOutputTokens) - a.agentDisplayOutTok) * 0.15
