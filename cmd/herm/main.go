@@ -1123,6 +1123,9 @@ type statusInfo struct {
 	TotalCount   int
 	DiffAdd      int
 	DiffDel      int
+	Behind       int // commits on remote tracking branch missing locally
+	Ahead        int // local commits missing on remote tracking branch
+	HasUpstream  bool
 }
 
 type statusInfoMsg struct {
@@ -1448,6 +1451,22 @@ func fetchStatusCmd(worktreePath string) statusInfoMsg {
 	var info statusInfo
 
 	info.Branch = worktreeBranch(worktreePath)
+
+	// ahead/behind relative to upstream tracking branch
+	revListCmd := exec.Command("git", "rev-list", "--count", "--left-right", "@{upstream}...HEAD")
+	revListCmd.Dir = worktreePath
+	if out, err := revListCmd.Output(); err == nil {
+		parts := strings.Split(strings.TrimSpace(string(out)), "\t")
+		if len(parts) == 2 {
+			info.HasUpstream = true
+			if n, err := strconv.Atoi(parts[0]); err == nil {
+				info.Behind = n
+			}
+			if n, err := strconv.Atoi(parts[1]); err == nil {
+				info.Ahead = n
+			}
+		}
+	}
 
 	ghCmd := exec.Command("gh", "pr", "view", "--json", "number", "-q", ".number")
 	ghCmd.Dir = worktreePath
@@ -2173,6 +2192,13 @@ func (a *App) buildInputRows() []string {
 			branchLabel = "\033[2mbranch: " + a.status.Branch + "\033[0m"
 			branchTextWidth = 8 + len(a.status.Branch) // "branch: " + name
 		}
+		commitLabel := ""
+		commitTextWidth := 0
+		if a.status.HasUpstream {
+			commitStr := fmt.Sprintf("↓%d ↑%d", a.status.Behind, a.status.Ahead)
+			commitLabel = "  \033[2m" + commitStr + "\033[0m"
+			commitTextWidth = 2 + uniseg.StringWidth(commitStr)
+		}
 		costLabel := ""
 		costTextWidth := 0
 		if a.sessionCostUSD > 0 {
@@ -2187,11 +2213,11 @@ func (a *App) buildInputRows() []string {
 		}
 		bar := progressBar(contextTokens, contextWindow)
 		barWidth := 3
-		padding := a.width - branchTextWidth - costTextWidth - barWidth - 1
+		padding := a.width - branchTextWidth - commitTextWidth - costTextWidth - barWidth - 1
 		if padding < 0 {
 			padding = 0
 		}
-		rows = append(rows, branchLabel+costLabel+strings.Repeat(" ", padding)+bar+" ")
+		rows = append(rows, branchLabel+commitLabel+costLabel+strings.Repeat(" ", padding)+bar+" ")
 
 		// Line 2: container status (always shown when we have status text)
 		if a.containerStatusText != "" {
