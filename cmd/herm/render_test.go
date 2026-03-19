@@ -683,6 +683,123 @@ func TestBuildBlockRows_ToolBox(t *testing.T) {
 	})
 }
 
+func TestIsDiffContent(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  bool
+	}{
+		{"unified diff with hunk header", "--- a/file\n+++ b/file\n@@ -1,3 +1,3 @@\n context\n-old\n+new", true},
+		{"hunk header at start", "@@ -1,3 +1,3 @@\n-old\n+new", true},
+		{"no diff markers", "just some text\nwith multiple lines", false},
+		{"empty string", "", false},
+		{"partial markers only", "--- a/file\n+++ b/file\nno hunk header", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := isDiffContent(tt.input); got != tt.want {
+				t.Errorf("isDiffContent(%q) = %v, want %v", tt.input, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDiffLineStyle(t *testing.T) {
+	tests := []struct {
+		name string
+		line string
+		want string
+	}{
+		{"hunk header", "@@ -1,3 +1,3 @@", "\033[2;36m"},
+		{"old file header", "--- a/main.go", "\033[2;1m"},
+		{"new file header", "+++ b/main.go", "\033[2;1m"},
+		{"added line", "+new line", "\033[2;32m"},
+		{"removed line", "-old line", "\033[2;31m"},
+		{"context line", " unchanged", ""},
+		{"empty line", "", ""},
+		{"plain text", "not a diff line", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := diffLineStyle(tt.line); got != tt.want {
+				t.Errorf("diffLineStyle(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollapseDiff(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "short diff unchanged",
+			input: "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old",
+			want:  "--- a/f\n+++ b/f\n@@ -1 +1 @@\n-old",
+		},
+		{
+			name:  "long diff collapsed",
+			input: "--- a/f\n+++ b/f\n@@ -1,5 +1,5 @@\n context\n-old1\n+new1\n-old2\n+new2\n more context",
+			want:  "--- a/f\n+++ b/f\n@@ -1,5 +1,5 @@\n context\n... (5 more lines)",
+		},
+		{
+			name:  "exactly 4 lines",
+			input: "--- a/f\n+++ b/f\n@@ -1 +1 @@\n+added",
+			want:  "--- a/f\n+++ b/f\n@@ -1 +1 @@\n+added",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lines := strings.Split(tt.input, "\n")
+			got := collapseDiff(lines)
+			if got != tt.want {
+				t.Errorf("collapseDiff() =\n%q\nwant:\n%q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestCollapseToolResultDiff(t *testing.T) {
+	// A unified diff with >5 lines should use collapseDiff (not the generic 2+...+2).
+	diff := "--- a/main.go\n+++ b/main.go\n@@ -1,5 +1,5 @@\n context\n-old1\n+new1\n-old2\n+new2\n more"
+	result := collapseToolResult(diff)
+
+	// Should use diff-style collapse: header + "... (N more lines)".
+	if !strings.Contains(result, "--- a/main.go") {
+		t.Error("collapsed diff should preserve file header")
+	}
+	if !strings.Contains(result, "... (") {
+		t.Error("collapsed diff should have diff-style continuation marker")
+	}
+	// Should NOT use the generic "..." marker (no leading/trailing lines format).
+	lines := strings.Split(result, "\n")
+	if len(lines) > 6 {
+		t.Errorf("collapsed diff too long: %d lines", len(lines))
+	}
+}
+
+func TestToolBoxDiffColorization(t *testing.T) {
+	// A diff result rendered via renderToolBox should contain ANSI color codes.
+	diff := "--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,2 @@\n-old\n+new"
+	box := renderToolBox("~ edit main.go", diff, 80, false, "")
+
+	// Check for diff-specific ANSI codes.
+	if !strings.Contains(box, "\033[2;32m") {
+		t.Error("diff box should contain green for added lines")
+	}
+	if !strings.Contains(box, "\033[2;31m") {
+		t.Error("diff box should contain red for removed lines")
+	}
+	if !strings.Contains(box, "\033[2;36m") {
+		t.Error("diff box should contain cyan for hunk headers")
+	}
+	if !strings.Contains(box, "\033[2;1m") {
+		t.Error("diff box should contain dim bold for file headers")
+	}
+}
+
 func TestCompactLineNumbers(t *testing.T) {
 	t.Run("strips cat-n padding", func(t *testing.T) {
 		input := "     1\tmodule helloworld\n     2\t\n     3\tgo 1.18"
