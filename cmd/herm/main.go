@@ -1298,6 +1298,14 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 		client.mu.Unlock()
 	}
 
+	// Ensure the image is available locally (pull if needed).
+	finalImage := client.config.Image
+	if err := ensureImageLocal(finalImage, ch); err != nil {
+		ch <- containerStatusMsg{text: "image pull failed"}
+		ch <- containerErrMsg{err: fmt.Errorf("pulling %s: %w", finalImage, err)}
+		return
+	}
+
 	ch <- containerStatusMsg{text: "starting…"}
 
 	attachDir := filepath.Join(workspace, ".herm", "attachments", sessionID)
@@ -1315,6 +1323,31 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 	}
 
 	ch <- containerReadyMsg{client: client, worktreePath: workspace, imageName: imageName}
+}
+
+// ensureImageLocal checks whether a Docker image exists locally. If not, it
+// pulls it from the registry. Status updates are sent via ch. Returns nil on
+// success, or the pull error if the image cannot be obtained.
+func ensureImageLocal(image string, ch chan<- any) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if dockerCommand(ctx, "docker", "image", "inspect", image).Run() == nil {
+		return nil // already available
+	}
+
+	ch <- containerStatusMsg{text: "pulling image…"}
+
+	pullCtx, pullCancel := context.WithTimeout(context.Background(), 300*time.Second)
+	defer pullCancel()
+
+	pullCmd := dockerCommand(pullCtx, "docker", "pull", image)
+	var stderr bytes.Buffer
+	pullCmd.Stderr = &stderr
+
+	if err := pullCmd.Run(); err != nil {
+		return fmt.Errorf("%s", strings.TrimSpace(stderr.String()))
+	}
+	return nil
 }
 
 // buildContainerImage builds a Docker image from .herm/Dockerfile in the workspace.
@@ -1344,12 +1377,13 @@ func buildContainerImage(workspace string, ch chan<- any) string {
 		return ""
 	}
 
-	// Validate that custom Dockerfiles use the herm base image.
+	// If the Dockerfile uses an outdated or wrong base image, back it up
+	// so devenv can later help the user migrate their customizations.
+	// This is expected when the herm base image is updated.
 	if !dockerfileUsesHermBase(string(content)) {
-		ch <- containerStatusMsg{text: "invalid Dockerfile base"}
-		ch <- containerErrMsg{err: fmt.Errorf(
-			".herm/Dockerfile must use FROM aduermael/herm:%s as the base image. "+
-				"Add your custom tools on top of it.", hermImageTag)}
+		backupPath := filepath.Join(hermDir, "Dockerfile.old")
+		_ = os.Rename(dockerfilePath, backupPath)
+		ch <- containerStatusMsg{text: "migrating to new base image…"}
 		return ""
 	}
 

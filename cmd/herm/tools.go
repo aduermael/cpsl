@@ -367,6 +367,13 @@ func (t *DevEnvTool) readDockerfile() (string, error) {
 		if os.IsNotExist(err) {
 			msg := "No .herm/Dockerfile exists yet. Use the 'write' action to create one."
 
+			// Surface backed-up Dockerfile from base image migration.
+			backupPath := filepath.Join(t.hermDir, "Dockerfile.old")
+			if oldData, readErr := os.ReadFile(backupPath); readErr == nil {
+				msg += fmt.Sprintf("\n\nA previous Dockerfile was backed up during base image migration. "+
+					"Replicate its customizations on top of the herm base image (FROM aduermael/herm:%s):\n\n```\n%s```", hermImageTag, string(oldData))
+			}
+
 			// Surface any named .herm/*.Dockerfile files so they can be consolidated.
 			if entries, globErr := filepath.Glob(filepath.Join(t.hermDir, "*.Dockerfile")); globErr == nil && len(entries) > 0 {
 				msg += "\n\nNote: named Dockerfiles exist that should be consolidated into .herm/Dockerfile:"
