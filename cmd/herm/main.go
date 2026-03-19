@@ -824,6 +824,29 @@ func compactLineNumbers(s string) string {
 	return catNPadRe.ReplaceAllString(s, "$1 ")
 }
 
+// isDiffContent returns true if the content appears to be a unified diff.
+func isDiffContent(content string) bool {
+	return strings.Contains(content, "\n@@ ") || strings.HasPrefix(content, "@@ ")
+}
+
+// diffLineStyle returns the ANSI style for a unified diff line.
+// Returns empty string if the line should use the default content style.
+func diffLineStyle(line string) string {
+	if strings.HasPrefix(line, "@@") {
+		return "\033[2;36m" // dim cyan
+	}
+	if strings.HasPrefix(line, "+++") || strings.HasPrefix(line, "---") {
+		return "\033[2;1m" // dim bold
+	}
+	if strings.HasPrefix(line, "+") {
+		return "\033[2;32m" // dim green
+	}
+	if strings.HasPrefix(line, "-") {
+		return "\033[2;31m" // dim red
+	}
+	return ""
+}
+
 // renderToolBox renders a tool call and its result as a bordered box:
 //
 //	┌ ~ glob ───────┐
@@ -899,9 +922,16 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 
 	// Content lines (no side borders).
 	if content != "" {
+		isDiff := isDiffContent(content)
 		for _, line := range strings.Split(content, "\n") {
 			b.WriteByte('\n')
-			b.WriteString(contentStyle)
+			lineStyle := contentStyle
+			if isDiff {
+				if ds := diffLineStyle(line); ds != "" {
+					lineStyle = ds
+				}
+			}
+			b.WriteString(lineStyle)
 			if visibleWidth(line) > innerWidth {
 				line = truncateVisual(line, innerWidth)
 			}

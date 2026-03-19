@@ -164,7 +164,7 @@ This guarantees that edit-file, write-file, ripgrep, git, and python3 are always
 - [x] 3c: Register EditFileTool and WriteFileTool in `handleStartAgent()` alongside the other container tools (no probing needed — the herm base image always has them)
 
 ## Phase 4: TUI rendering for diffs
-- [ ] 4a: Add diff colorization in tool result rendering — detect unified diff format in edit_file/write_file results and apply ANSI colors (green for +, red for -, cyan for @@, bold for ---/+++ headers)
+- [x] 4a: Add diff colorization in tool result rendering — detect unified diff format in edit_file/write_file results and apply ANSI colors (green for +, red for -, cyan for @@, bold for ---/+++ headers)
 - [ ] 4b: Add `toolCallSummary()` cases for edit_file (`"~ edit <path>"`) and write_file (`"~ write <path>"`)
 - [ ] 4c: Improve `collapseToolResult()` for diff output — show hunk headers and a balanced sample of changes rather than arbitrary first/last lines
 
