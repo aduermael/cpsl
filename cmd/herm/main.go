@@ -1228,6 +1228,29 @@ func pastelColor(elapsed time.Duration) string {
 	return fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
 }
 
+// approvalGradientColor returns a bold ANSI true-color escape cycling through
+// saturated yellow/amber/gold tones so the approval prompt is impossible to miss.
+func approvalGradientColor(t time.Duration) string {
+	phase := math.Sin(t.Seconds() * 2 * math.Pi / 1.5)
+	hue := 42.5 + 12.5*phase // oscillate 30..55 (gold to yellow)
+	r, g, b := hslToRGB(hue, 0.95, 0.52)
+	return fmt.Sprintf("\033[1;38;2;%d;%d;%dm", r, g, b)
+}
+
+// approvalGradientSep returns a separator line where each dash character is
+// individually colored with a shifting yellow gradient wave effect.
+func approvalGradientSep(width int, t time.Duration) string {
+	var buf strings.Builder
+	for i := 0; i < width; i++ {
+		charPhase := math.Sin((t.Seconds()*2*math.Pi/1.5) + float64(i)*0.15)
+		hue := 42.5 + 12.5*charPhase
+		r, g, b := hslToRGB(hue, 0.95, 0.52)
+		fmt.Fprintf(&buf, "\033[1;38;2;%d;%d;%dm─", r, g, b)
+	}
+	buf.WriteString("\033[0m")
+	return buf.String()
+}
+
 // ─── Debug logging ───
 
 var debugEnabled = os.Getenv("HERM_DEBUG") != ""
@@ -1952,7 +1975,16 @@ func (a *App) buildBlockRows() []string {
 		rows = append(rows, "")
 	}
 	// Show animated status line while agent is running, or dim elapsed when done
-	if a.agentRunning {
+	if a.agentRunning && a.awaitingApproval {
+		// Paused: show dim elapsed while waiting for user approval
+		elapsed := a.agentElapsedTime()
+		label := fmt.Sprintf("\033[2;3m⏸ %.2fs ↑%s ↓%s\033[0m",
+			elapsed.Seconds(),
+			formatTokenCount(int(math.Round(a.agentDisplayInTok))),
+			formatTokenCount(int(math.Round(a.agentDisplayOutTok))))
+		rows = append(rows, wrapString(label, 0, a.width)...)
+		rows = append(rows, "")
+	} else if a.agentRunning {
 		elapsed := a.agentElapsedTime()
 		text := funnyTexts[a.agentTextIndex]
 		color := pastelColor(elapsed)
@@ -2095,9 +2127,11 @@ func (a *App) refreshModelMenu() {
 func (a *App) buildInputRows() []string {
 	sep := strings.Repeat("─", a.width)
 
-	// Approval mode: yellow borders + centered message, hide normal input
+	// Approval mode: animated yellow gradient borders + centered message
 	if a.awaitingApproval {
-		yellowSep := fmt.Sprintf("[33;1m%s[0m", sep)
+		t := time.Since(a.approvalPauseStart)
+		gradSep := approvalGradientSep(a.width, t)
+		color := approvalGradientColor(t)
 		shortMsg := fmt.Sprintf("Allow %s? [y/n]", a.approvalSummary)
 		if len(shortMsg) > a.width {
 			shortMsg = shortMsg[:a.width]
@@ -2106,13 +2140,12 @@ func (a *App) buildInputRows() []string {
 		if shortPad < 0 {
 			shortPad = 0
 		}
-		// Line 2: full command details, dim — only show if it adds info beyond the summary
 		detail := a.approvalDesc
 		if detail == a.approvalSummary {
 			detail = ""
 		}
-		approvalRows := []string{yellowSep}
-		approvalRows = append(approvalRows, fmt.Sprintf("[33;1m%s%s[0m", strings.Repeat(" ", shortPad), shortMsg))
+		approvalRows := []string{gradSep}
+		approvalRows = append(approvalRows, fmt.Sprintf("%s%s%s[0m", color, strings.Repeat(" ", shortPad), shortMsg))
 		if detail != "" {
 			if len(detail) > a.width {
 				detail = detail[:a.width]
@@ -2123,7 +2156,7 @@ func (a *App) buildInputRows() []string {
 			}
 			approvalRows = append(approvalRows, fmt.Sprintf("[2m%s%s[0m", strings.Repeat(" ", detailPad), detail))
 		}
-		approvalRows = append(approvalRows, yellowSep)
+		approvalRows = append(approvalRows, gradSep)
 		return approvalRows
 	}
 
