@@ -12,6 +12,16 @@ Dedicated file exploration tools — use these instead of bash for all file disc
 - **Quick decision guide:** Know the file name/pattern? → glob first. Know the code pattern? → grep first. Exploring unfamiliar project? → Start from the project snapshot, then glob to narrow.
 - Do NOT use bash for file operations (find, rg, cat, head, tail, grep) — the dedicated tools produce structured, compact output that saves tokens.
 {{- end}}
+{{- if and .HasEditFile .HasWriteFile}}
+
+### edit_file, write_file
+Dedicated file modification tools — prefer these over bash for all file changes.
+- **edit_file**: Replace a specific string in a file. old_string must be unique (or use replace_all). Returns a unified diff showing exactly what changed.
+- **write_file**: Create a new file or overwrite an existing one. Returns a summary and diff.
+- Always read_file before editing to ensure correct context.
+- Use edit_file for surgical changes. Use write_file for new files or full rewrites.
+- Do NOT use bash for file modifications (echo, sed, awk, cat heredoc) — edit_file/write_file produce structured diffs and are safer.
+{{- end}}
 {{- if .HasBash}}
 
 ### bash
@@ -28,6 +38,9 @@ Runs commands inside an isolated Docker container (image: {{.ContainerImage}}) w
 - Pipe long output through head/tail/grep to keep results focused.
 {{- end}}
 - Use bash for: running builds, tests, installs, and commands that aren't file reads.
+{{- if and .HasEditFile .HasWriteFile}}
+- Do NOT use bash for file editing (echo, sed, awk, cat heredoc) — use edit_file/write_file instead.
+{{- end}}
 - Run tests after changes.
 {{- end}}
 {{- if .HasGit}}

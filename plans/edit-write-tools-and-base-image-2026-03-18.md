@@ -169,9 +169,9 @@ This guarantees that edit-file, write-file, ripgrep, git, and python3 are always
 - [x] 4c: Improve `collapseToolResult()` for diff output — show hunk headers and a balanced sample of changes rather than arbitrary first/last lines
 
 ## Phase 5: System prompt and guidance
-- [ ] 5a: Add `HasEditFile` and `HasWriteFile` flags to `PromptData`, set them in `buildSystemPrompt()` based on tool presence
-- [ ] 5b: Add `edit_file, write_file` section to prompts/tools.md with usage guidance (prefer over bash, read before edit, edit for changes, write for new files)
-- [ ] 5c: Update bash section in tools.md to explicitly say "Do NOT use bash for file editing — use edit_file/write_file instead"
+- [x] 5a: Add `HasEditFile` and `HasWriteFile` flags to `PromptData`, set them in `buildSystemPrompt()` based on tool presence
+- [x] 5b: Add `edit_file, write_file` section to prompts/tools.md with usage guidance (prefer over bash, read before edit, edit for changes, write for new files)
+- [x] 5c: Update bash section in tools.md to explicitly say "Do NOT use bash for file editing — use edit_file/write_file instead"
 
 ## Phase 6: Tests
 - [ ] 6a: Unit tests for EditFileTool and WriteFileTool Go structs (mock container exec, verify command construction and JSON parsing)
