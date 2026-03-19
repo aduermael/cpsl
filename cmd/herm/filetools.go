@@ -365,3 +365,217 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 func (t *ReadFileTool) RequiresApproval(_ json.RawMessage) bool {
 	return false
 }
+
+// EditFileTool performs exact string replacement in a file inside the Docker container.
+// It pipes JSON to the edit-file CLI tool and returns the unified diff.
+type EditFileTool struct {
+	container *ContainerClient
+}
+
+// NewEditFileTool creates an EditFileTool with the given container client.
+func NewEditFileTool(container *ContainerClient) *EditFileTool {
+	return &EditFileTool{container: container}
+}
+
+func (t *EditFileTool) Definition() types.ToolDefinition {
+	return types.ToolDefinition{
+		Name:        "edit_file",
+		Description: "Replace a specific string in a file. old_string must appear exactly once unless replace_all is true. Returns a unified diff showing the change. Always read_file before editing to ensure correct context.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file_path": {
+					"type": "string",
+					"description": "Path to the file, relative to /workspace (e.g. 'src/main.go')"
+				},
+				"old_string": {
+					"type": "string",
+					"description": "The exact string to find and replace (must be unique in the file unless replace_all is true)"
+				},
+				"new_string": {
+					"type": "string",
+					"description": "The replacement string"
+				},
+				"replace_all": {
+					"type": "boolean",
+					"description": "Replace all occurrences instead of requiring uniqueness (default: false)"
+				}
+			},
+			"required": ["file_path", "old_string", "new_string"]
+		}`),
+	}
+}
+
+type editFileInput struct {
+	FilePath   string `json:"file_path"`
+	OldString  string `json:"old_string"`
+	NewString  string `json:"new_string"`
+	ReplaceAll bool   `json:"replace_all,omitempty"`
+}
+
+// editFileResponse matches the JSON output from the edit-file CLI tool.
+type editFileResponse struct {
+	OK    bool   `json:"ok"`
+	Diff  string `json:"diff,omitempty"`
+	Error string `json:"error,omitempty"`
+}
+
+func (t *EditFileTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var in editFileInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return "", fmt.Errorf("invalid edit_file input: %w", err)
+	}
+	if in.FilePath == "" {
+		return "", fmt.Errorf("file_path is required")
+	}
+	if in.OldString == "" {
+		return "", fmt.Errorf("old_string is required")
+	}
+
+	// Resolve path relative to /workspace.
+	filePath := in.FilePath
+	if !strings.HasPrefix(filePath, "/") {
+		filePath = "/workspace/" + filePath
+	}
+
+	// Build JSON input for the CLI tool with the resolved path.
+	cliInput := editFileInput{
+		FilePath:   filePath,
+		OldString:  in.OldString,
+		NewString:  in.NewString,
+		ReplaceAll: in.ReplaceAll,
+	}
+	inputJSON, err := json.Marshal(cliInput)
+	if err != nil {
+		return "", fmt.Errorf("marshalling edit-file input: %w", err)
+	}
+
+	cmd := fmt.Sprintf("echo %s | edit-file", shellQuote(string(inputJSON)))
+	result, err := t.container.Exec(cmd, 30)
+	if err != nil {
+		return "", err
+	}
+
+	output := strings.TrimSpace(result.Stdout + result.Stderr)
+
+	var resp editFileResponse
+	if err := json.Unmarshal([]byte(output), &resp); err != nil {
+		// CLI didn't return valid JSON — return raw output as error.
+		return fmt.Sprintf("edit-file error: %s", output), nil
+	}
+
+	if !resp.OK {
+		return fmt.Sprintf("error: %s", resp.Error), nil
+	}
+	return resp.Diff, nil
+}
+
+func (t *EditFileTool) RequiresApproval(_ json.RawMessage) bool {
+	return false
+}
+
+// WriteFileTool creates or overwrites a file inside the Docker container.
+// It pipes JSON to the write-file CLI tool and returns a summary with diff.
+type WriteFileTool struct {
+	container *ContainerClient
+}
+
+// NewWriteFileTool creates a WriteFileTool with the given container client.
+func NewWriteFileTool(container *ContainerClient) *WriteFileTool {
+	return &WriteFileTool{container: container}
+}
+
+func (t *WriteFileTool) Definition() types.ToolDefinition {
+	return types.ToolDefinition{
+		Name:        "write_file",
+		Description: "Create a new file or overwrite an existing one. Returns a summary (line count, byte count) and a unified diff if overwriting. Use for new files or complete rewrites; prefer edit_file for targeted changes.",
+		InputSchema: json.RawMessage(`{
+			"type": "object",
+			"properties": {
+				"file_path": {
+					"type": "string",
+					"description": "Path to the file, relative to /workspace (e.g. 'src/main.go')"
+				},
+				"content": {
+					"type": "string",
+					"description": "The full content to write to the file"
+				}
+			},
+			"required": ["file_path", "content"]
+		}`),
+	}
+}
+
+type writeFileInput struct {
+	FilePath string `json:"file_path"`
+	Content  string `json:"content"`
+}
+
+// writeFileResponse matches the JSON output from the write-file CLI tool.
+type writeFileResponse struct {
+	OK      bool   `json:"ok"`
+	Created bool   `json:"created,omitempty"`
+	Diff    string `json:"diff,omitempty"`
+	Summary string `json:"summary,omitempty"`
+	Error   string `json:"error,omitempty"`
+}
+
+func (t *WriteFileTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	var in writeFileInput
+	if err := json.Unmarshal(input, &in); err != nil {
+		return "", fmt.Errorf("invalid write_file input: %w", err)
+	}
+	if in.FilePath == "" {
+		return "", fmt.Errorf("file_path is required")
+	}
+
+	// Resolve path relative to /workspace.
+	filePath := in.FilePath
+	if !strings.HasPrefix(filePath, "/") {
+		filePath = "/workspace/" + filePath
+	}
+
+	// Build JSON input for the CLI tool with the resolved path.
+	cliInput := writeFileInput{
+		FilePath: filePath,
+		Content:  in.Content,
+	}
+	inputJSON, err := json.Marshal(cliInput)
+	if err != nil {
+		return "", fmt.Errorf("marshalling write-file input: %w", err)
+	}
+
+	cmd := fmt.Sprintf("echo %s | write-file", shellQuote(string(inputJSON)))
+	result, err := t.container.Exec(cmd, 30)
+	if err != nil {
+		return "", err
+	}
+
+	output := strings.TrimSpace(result.Stdout + result.Stderr)
+
+	var resp writeFileResponse
+	if err := json.Unmarshal([]byte(output), &resp); err != nil {
+		return fmt.Sprintf("write-file error: %s", output), nil
+	}
+
+	if !resp.OK {
+		return fmt.Sprintf("error: %s", resp.Error), nil
+	}
+
+	// Build result: summary first, then diff if present.
+	var parts []string
+	if resp.Summary != "" {
+		parts = append(parts, resp.Summary)
+	}
+	if resp.Diff != "" {
+		parts = append(parts, resp.Diff)
+	}
+	if len(parts) == 0 {
+		return "File written.", nil
+	}
+	return strings.Join(parts, "\n"), nil
+}
+
+func (t *WriteFileTool) RequiresApproval(_ json.RawMessage) bool {
+	return false
+}

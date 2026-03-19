@@ -159,7 +159,7 @@ This guarantees that edit-file, write-file, ripgrep, git, and python3 are always
 - [x] 2e: Update devenv skill doc and prompts/tools.md devenv section to require `FROM aduermael/herm:<tag>` as the base for all custom Dockerfiles, removing alpine references and `debian:bookworm-slim` recommendations
 
 ## Phase 3: EditFileTool and WriteFileTool
-- [ ] 3a: Add `EditFileTool` struct in filetools.go following existing pattern — pipes JSON input to `edit-file` CLI in container via `container.Exec()`, parses JSON output, returns diff string. Schema: file_path (required), old_string (required), new_string (required), replace_all (optional bool)
+- [x] 3a: Add `EditFileTool` struct in filetools.go following existing pattern — pipes JSON input to `edit-file` CLI in container via `container.Exec()`, parses JSON output, returns diff string. Schema: file_path (required), old_string (required), new_string (required), replace_all (optional bool)
 - [ ] 3b: Add `WriteFileTool` struct in filetools.go — pipes JSON input to `write-file` CLI in container, returns creation summary or diff. Schema: file_path (required), content (required)
 - [ ] 3c: Register EditFileTool and WriteFileTool in `handleStartAgent()` alongside the other container tools (no probing needed — the herm base image always has them)
 
