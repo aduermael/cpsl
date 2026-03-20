@@ -164,9 +164,9 @@ Replace the naive first-500-bytes summary with a model-generated summary that ca
 
 - [x] 4a: **Add `summarizeWithModel()` function** — New function in `subagent.go` that calls the exploration model with a short prompt: "Summarize the key findings from this sub-agent's output in 3-5 bullet points. Focus on facts, decisions, and actionable information. Skip preamble." Input: full sub-agent output (truncated to ~4000 chars to fit in a single cheap call). Output: structured summary. Falls back to `summarizeOutput()` (first 500 bytes) if the model call fails.
 
-- [ ] 4b: **Use model summary in `formatSubAgentResult()`** — Replace the `summarizeOutput()` call with `summarizeWithModel()`. The tool result now contains an intelligent summary that the main agent can act on without reading the full output file. This costs ~0.001$ per sub-agent call (haiku-level pricing on ~1K tokens) but saves the main agent from reading the output file in most cases.
+- [x] 4b: **Use model summary in `formatSubAgentResult()`** — Replace the `summarizeOutput()` call with `summarizeWithModel()`. The tool result now contains an intelligent summary that the main agent can act on without reading the full output file. This costs ~0.001$ per sub-agent call (haiku-level pricing on ~1K tokens) but saves the main agent from reading the output file in most cases.
 
-- [ ] 4c: **Add summary quality indicator** — Append `[summary: model]` or `[summary: truncated]` to the tool result so the main agent knows whether it got an intelligent summary or a fallback. If truncated, the agent should read the full file.
+- [x] 4c: **Add summary quality indicator** — Append `[summary: model]` or `[summary: truncated]` to the tool result so the main agent knows whether it got an intelligent summary or a fallback. If truncated, the agent should read the full file.
 
 - [ ] 4d: **Test model summarization** — Test: model summary is concise and structured, fallback works when model call fails, very short outputs skip summarization (not worth the call), summary indicator is present.
 

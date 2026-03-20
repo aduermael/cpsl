@@ -400,32 +400,39 @@ func TestSubAgentToolResultContainsAgentID(t *testing.T) {
 }
 
 func TestFormatSubAgentResult(t *testing.T) {
-	// With output path, no tokens
-	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", 0, 0)
+	// With output path, no tokens, no model summary
+	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 0, 0)
 	want := "[agent_id: abc123] [output: /tmp/.herm/agents/abc123.md]\n\nhello world"
 	if got != want {
 		t.Errorf("with path, no tokens: got %q, want %q", got, want)
 	}
 
 	// Without output path (write failed)
-	got2 := formatSubAgentResult("abc123", "", "hello world", 0, 0)
+	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 0)
 	want2 := "[agent_id: abc123]\n\nhello world"
 	if got2 != want2 {
 		t.Errorf("without path: got %q, want %q", got2, want2)
 	}
 
 	// With output path and token usage
-	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", 5000, 1200)
+	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 5000, 1200)
 	want3 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=5000 output=1200]\n\nresult"
 	if got3 != want3 {
 		t.Errorf("with tokens: got %q, want %q", got3, want3)
 	}
 
 	// Without output path but with tokens
-	got4 := formatSubAgentResult("abc123", "", "result", 100, 50)
+	got4 := formatSubAgentResult("abc123", "", "result", false, 100, 50)
 	want4 := "[agent_id: abc123] [tokens: input=100 output=50]\n\nresult"
 	if got4 != want4 {
 		t.Errorf("tokens without path: got %q, want %q", got4, want4)
+	}
+
+	// With model summary indicator
+	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 1000, 200)
+	want5 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=1000 output=200] [summary: model]\n\n- finding 1\n- finding 2"
+	if got5 != want5 {
+		t.Errorf("model summary: got %q, want %q", got5, want5)
 	}
 }
 
