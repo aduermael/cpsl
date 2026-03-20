@@ -205,6 +205,81 @@ When a sub-agent fails, tell the main agent why so it can adapt.
 
 ---
 
+## Phase 7: Fix Shell Piping for Container Binaries
+
+The `echo` command in dash (the `/bin/sh` on `debian:bookworm-slim`) interprets backslash escape sequences **even inside single quotes**. Every `\n` in JSON → literal newline, every `\t` → literal tab, `\\` → single `\`. This silently corrupts JSON piped to `edit-file` and `write-file`, causing `invalid character '\n' in string literal` on every multi-line edit.
+
+**Root cause:** `filetools.go:497` and `:592` — `echo <json> | <binary>` construction.
+
+**Why `sanitizeToolJSON` didn't help:** That fix operates on the host side (Go → struct parsing). The corruption happens later: `json.Marshal()` produces valid JSON with `\n` escapes, but `echo` in the container shell re-interprets them into literal control characters before the binary sees them.
+
+**Codebase context:**
+- `filetools.go:497` — `echo %s | edit-file`
+- `filetools.go:592` — `echo %s | write-file`
+- `filetools.go:56-60` — `shellQuote()` escapes single quotes but doesn't help with echo interpretation
+- Container shell: `/bin/sh` → `dash` on `debian:bookworm-slim`
+- Binary input: `json.NewDecoder(os.Stdin)` in `tools/edit-file/main.go:26` and `tools/write-file/main.go:26`
+
+**Fix:** Replace `echo` with `printf '%s'`. The `%s` format specifier passes the argument verbatim — no escape interpretation. This is a one-line change per tool but fixes a whole class of failures.
+
+- [ ] 7a: **Replace `echo` with `printf '%s'` in edit_file and write_file** — Change `filetools.go:497` from `echo %s | edit-file` to `printf '%%s' %s | edit-file`. Same at `:592` for write-file. `printf '%s'` passes the shell argument literally — no backslash interpretation.
+
+- [ ] 7b: **Add tests for multi-line JSON through shell pipe** — Test that old_string/new_string containing `\n`, `\t`, `\\`, and `\"` survive the full pipeline: `json.Marshal → shellQuote → printf → binary stdin → json.Decode`. The current tab-in-input tests use a mock container and never exercise the real shell; add a test that verifies the constructed command string doesn't rely on echo behavior.
+
+- [ ] 7c: **Audit outline tool for the same issue** — The outline tool builds grep commands with `shellQuote()` for file paths. File paths typically don't contain backslash sequences, but verify the pattern is safe. If the outline binary (Phase 8) will use JSON stdin, it must use `printf '%s'` from the start.
+
+**Failure modes:**
+- `printf` not available: Extremely unlikely — it's a POSIX built-in, present in all sh-compatible shells including dash, ash, busybox sh.
+- Double `%` in format: The Go format string needs `%%s` to produce the literal `%s` that printf sees. Getting this wrong would print `%s` literally or cause a printf format error.
+
+---
+
+## Phase 8: Outline Binary in Container
+
+Replace the grep-based outline tool with a dedicated compiled binary, matching the pattern of `edit-file` and `write-file`. A binary can use Go's `go/parser` + `go/ast` for precise Go file parsing, and structured regex for other languages — more accurate than shell grep and immune to shell escaping issues.
+
+**Why a binary is better than grep:**
+1. **Precision:** Go's AST parser extracts exact function signatures including receiver types, return types, and generics — grep can't distinguish `func` in a comment from a real declaration.
+2. **Multi-line signatures:** Go functions with long parameter lists span multiple lines. Grep captures only the `func` line; the binary can capture the full signature.
+3. **Simpler invocation:** Takes file path as a CLI argument — no JSON piping, no shell escaping, no echo/printf issues. Just `outline /workspace/path/to/file.go`.
+4. **Nesting awareness:** For Python/JS, can track indentation to show class→method hierarchy. Grep is flat.
+5. **Smaller token footprint:** No grep command string in the conversation; just the tool call and structured output.
+
+**Codebase context:**
+- Current grep implementation: `filetools.go:627-765`, `outlinePatterns` map at `:663-686`
+- Edit/write binary pattern: `tools/edit-file/main.go`, `tools/write-file/main.go`
+- Container build: `Dockerfile:5-8` (builder stage compiles Go binaries)
+- Container version: `config.go:197` — `hermImageTag = "0.2"`
+- Tool registration: `main.go:4685` — `NewOutlineTool(a.container)`
+
+**What needs to change:**
+
+- [ ] 8a: **Create `tools/outline/main.go`** — Compiled Go binary that takes a file path as its only argument. Detects language from extension. For `.go` files, uses `go/parser.ParseFile` + `go/ast` to extract function signatures (with receivers, params, returns), type declarations, interface methods, and const/var blocks. For Python/JS/TS/Rust/Ruby/Java/C, uses the existing regex patterns from `outlinePatterns` but applied with Go's `regexp` package (more capable than grep -E). Falls back to head+tail for unknown extensions. Outputs line-numbered signatures to stdout, capped at 100 lines. Exits 0 on success, 1 on error (with error message to stderr).
+
+- [ ] 8b: **Add Go AST extraction** — The main value-add: for `.go` files, parse the full AST and extract:
+  - `package` declaration
+  - `func` with full signature: `func (r *Receiver) Name(params) (returns)`
+  - `type` declarations: `type Name struct/interface/alias`
+  - Interface method signatures
+  - `const`/`var` block names
+  - Nesting shown via indentation (interface methods indented under the interface)
+  This gives precise output that grep-based patterns can't match. For a 700-line Go file, the AST approach produces ~30-50 accurate signature lines vs grep's ~40-80 noisier lines.
+
+- [ ] 8c: **Add to Dockerfile and bump container version** — Add `RUN cd /build/tools/outline && go build -o /out/outline .` to the builder stage. Copy the binary alongside edit-file and write-file. Bump `hermImageTag` in `config.go` from `"0.2"` to `"0.3"`.
+
+- [ ] 8d: **Update OutlineTool to call binary** — Replace the grep-based `Execute()` in `filetools.go` with a simple container exec: `outline <filepath>`. No JSON piping needed — the file path is passed as a CLI argument (already sanitized by shellQuote). Remove the `outlinePatterns` map and grep command construction. The tool's input parsing (JSON from LLM) stays on the host side; only the file path is sent to the container.
+
+- [ ] 8e: **Update base.Dockerfile template** — The `dockerfiles/base.Dockerfile` template uses `FROM aduermael/herm:__HERM_VERSION__`. After bumping to 0.3, users who run `devenv build` will get the new image with the outline binary. No template changes needed — just the version bump.
+
+- [ ] 8f: **Test outline binary** — Unit tests in `tools/outline/main_test.go` for: Go AST extraction (functions, methods, types, interfaces, generics), Python class/def extraction, JS/TS export/function/class, fallback for unknown extensions, binary file rejection, empty file handling, file not found error. Integration test in `filetools_test.go` verifying the OutlineTool.Execute produces structured output via the binary.
+
+**Failure modes:**
+- Go file with syntax errors: `go/parser` supports `parser.AllErrors` mode — extract whatever it can. Degrade gracefully to regex fallback.
+- Very large files: AST parsing is fast (Go parser handles 10K+ line files in <100ms). Cap output at 100 lines regardless.
+- Binary missing from container (old image): OutlineTool.Execute should detect the error and fall back to the current grep approach. Check exit code or stderr for "not found".
+
+---
+
 ## Out of Scope (Future Work)
 
 - **Repository map (tree-sitter + PageRank):** The outline tool is a pragmatic step toward this. A full repo map would give ~1K token architectural awareness but requires tree-sitter binaries in the container and significant implementation effort.
