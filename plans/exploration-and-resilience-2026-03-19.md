@@ -60,7 +60,11 @@ Fix the confusing merged sub-agent display. Each active sub-agent should show it
 
 - [ ] 1d: **Show agent completion as a structured message** — When `EventSubAgentStatus` with `"done"` arrives, instead of the current `"[sub-agent] completed: <first line>"`, show: `[agent <short-id>] completed: <task label>`. Include token usage if available. The user should be able to match the completion message back to the agent they saw running.
 
-- [ ] 1e: **Test per-agent display** — Verify: single agent shows labeled status, parallel agents show separate lines, agent completion shows structured summary, display handles rapid event interleaving correctly.
+- [ ] 1e: **Separate main-agent vs sub-agent token counters** — Currently `sessionInputTokens`/`sessionOutputTokens` include sub-agent usage because sub-agents forward `EventUsage` events that get added to the same counters (main.go ~line 4862). Split this: add `mainAgentInputTokens`/`mainAgentOutputTokens` fields that only count main-agent LLM calls. The status line (↑/↓ display at ~line 2026) should show main-agent tokens only. The `/stats` display should show both: main agent tokens and total tokens (including sub-agents). To distinguish, tag `EventUsage` events from sub-agents — they already flow through `SubAgentTool.forward()` which could set a flag, or use the existing `AgentID` field (empty = main agent).
+
+- [ ] 1f: **Show per-agent token usage in completion messages** — When a sub-agent completes, the completion message in the conversation should include its token usage: `[agent <short-id>] completed: <task label> (↑Nk ↓Nk, M tool calls)`. The sub-agent already tracks `totalInputTokens`/`totalOutputTokens` in `Execute()` — include them in the `EventSubAgentStatus` "done" event or in a new field on the completion message. Tool call count can be derived from `turns` counter already in `Execute()`.
+
+- [ ] 1g: **Test per-agent display** — Verify: single agent shows labeled status, parallel agents show separate lines, agent completion shows structured summary with token counts, status line shows only main-agent tokens, `/stats` shows both main and total, display handles rapid event interleaving correctly.
 
 **Failure modes:**
 - AgentID mismatch: events without matching start event → create entry on first event with "unknown task" label
