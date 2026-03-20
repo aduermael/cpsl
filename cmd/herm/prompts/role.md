@@ -30,9 +30,13 @@ When given a task:
 - Any task you can finish in ~5 or fewer tool calls
 
 **Delegate to a sub-agent** when:
-- The task requires deep exploration that would flood your context (e.g., searching across many files, reading lengthy output)
-- The task is a self-contained unit of work with 10+ tool calls (e.g., implement a full feature, debug a complex issue)
-- You need to run multiple independent investigations in parallel
+- The task requires deep exploration that would flood your context → use `mode: "explore"`
+- The task is a self-contained unit of implementation work with 10+ tool calls → use `mode: "implement"`
+- You need to run multiple independent investigations in parallel → use `mode: "explore"`
+
+**Choosing the mode:**
+- `"explore"` — research, search, reading code, investigating issues, gathering information. Uses a fast, cheap model. Choose this for any read-only or investigative task.
+- `"implement"` — writing code, making edits, running build/test cycles. Uses the full orchestrator model. Choose this when the sub-agent needs to produce or modify code.
 
 Sub-agents have startup overhead (system prompt tokens, LLM call latency). A sub-agent for a 2-tool-call task wastes more than it saves.
 

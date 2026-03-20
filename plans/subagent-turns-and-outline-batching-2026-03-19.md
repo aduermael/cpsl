@@ -43,7 +43,7 @@ distinction crystal clear to the LLM.
 - [x] 1a: Refactor `SubAgentTool` struct — rename `model` to `mainModel`, keep `explorationModel`; update `NewSubAgentTool()` constructor signature and `main.go` call site to pass `modelID` as `mainModel` and `explorationModelID` as `explorationModel`
 - [x] 1b: Add `mode` field to `subAgentInput` struct and tool `InputSchema` (enum: `"explore"`, `"implement"`; required); in `Execute()`, select model based on mode; validate that mode is one of the two values
 - [x] 1c: Update tool `Definition()` description to clearly explain the two modes and when to use each; update `prompts/tools.md` agent section to document modes
-- [ ] 1d: Update `prompts/role.md` "When to Delegate" section — replace the current generic delegation guidance with mode-specific guidance: `explore` for research/search/reading, `implement` for writing code/making changes; make it unambiguous
+- [x] 1d: Update `prompts/role.md` "When to Delegate" section — replace the current generic delegation guidance with mode-specific guidance: `explore` for research/search/reading, `implement` for writing code/making changes; make it unambiguous
 - [ ] 1e: Update `buildSubAgentTools()` to pass both models through to nested sub-agents
 - [ ] 1f: Update tests — fix constructor calls throughout `subagent_test.go` for new signature; add tests for mode validation (invalid mode returns error), model selection (explore uses explorationModel, implement uses mainModel)
 
