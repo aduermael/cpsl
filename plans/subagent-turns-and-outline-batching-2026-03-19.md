@@ -106,7 +106,7 @@ Cap `file_paths` at a reasonable limit (e.g., 20 files) to prevent abuse.
 
 - [x] 3a: Extend `outlineInput` struct to add `FilePaths []string` field; update `InputSchema` in `Definition()` to include `file_paths` array property; update `Description` to mention multi-file support
 - [x] 3b: Refactor `Execute()` — extract single-file logic into a helper, add multi-file loop that calls the helper for each path and combines results with `=== <path> ===` headers between files
-- [ ] 3c: Update `prompts/tools.md` outline description to mention multi-file support
+- [x] 3c: Update `prompts/tools.md` outline description to mention multi-file support
 - [ ] 3d: Add tests — `TestOutlineTool_Execute_MultipleFiles` (happy path), `TestOutlineTool_Execute_MultipleFiles_PartialError` (one file fails, others succeed), `TestOutlineTool_Execute_MultipleFiles_TooMany` (over cap returns error), `TestOutlineTool_Execute_BothInputs` (file_path + file_paths merges correctly)
 
 **Success criteria:**

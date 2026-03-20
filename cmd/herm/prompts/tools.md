@@ -9,7 +9,7 @@ Dedicated file exploration tools — use these instead of bash for all file disc
 - **grep**: Search file contents by regex. Modes: files_with_matches (default), content (with line numbers), count. Supports glob filters and context lines.
 - **read_file**: Read file contents with line numbers. Supports offset/limit for partial reads — avoid loading entire large files.
 {{- if $.HasOutline}}
-- **outline**: Extract function/type/class signatures from a file (~50-100 tokens). Use before read_file when exploring unfamiliar files — understand the structure first, then read only the sections you need.
+- **outline**: Extract function/type/class signatures from one or more files (~50-100 tokens per file). Accepts `file_path` (single) or `file_paths` (array, max 20) to batch multiple outlines in one call. Use before read_file when exploring unfamiliar files — understand the structure first, then read only the sections you need.
 {{- end}}
 - Explore in layers: glob (structure) → grep (search){{if $.HasOutline}} → outline (signatures){{end}} → read_file (examine). Each step narrows focus.
 - **Quick decision guide:** Know the file name/pattern? → glob first. Know the code pattern? → grep first. Exploring unfamiliar project? → Start from the project snapshot, then glob to narrow.
