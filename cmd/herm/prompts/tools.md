@@ -112,10 +112,14 @@ Your primary tool for environment setup. Manages a single Dockerfile at .herm/Do
 ### agent
 Spawns a sub-agent with its own context window. Each sub-agent has startup cost (system prompt tokens + LLM call latency), so only use when the benefit outweighs that overhead.
 
+**Modes — you must specify one:**
+- `"explore"` — uses a fast, cheap model. For research, search, reading code, investigating issues, gathering information.
+- `"implement"` — uses the full orchestrator model. For writing code, making edits, running build/test cycles, executing changes.
+
 **When to use:**
-- Tasks requiring deep exploration across many files (10+ tool calls)
-- Self-contained implementation work that would produce verbose output
-- Running multiple independent investigations in parallel (spawn several sub-agents)
+- Tasks requiring deep exploration across many files (10+ tool calls) → `explore`
+- Self-contained implementation work that would produce verbose output → `implement`
+- Running multiple independent investigations in parallel (spawn several sub-agents) → `explore`
 
 **When NOT to use — act directly instead:**
 - A single grep, glob, or file read

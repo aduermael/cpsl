@@ -71,7 +71,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 func (t *SubAgentTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "agent",
-		Description: "Spawn a sub-agent to handle a complex subtask. The sub-agent has its own context window and communicates only via its output — no shared memory. Use for: multi-step research, implementation tasks, debugging sessions, or any work that would consume too much of your context. You can resume a previous sub-agent by passing its agent_id with a new task.",
+		Description: "Spawn a sub-agent to handle a complex subtask. The sub-agent has its own context window and communicates only via its output — no shared memory. Choose a mode: 'explore' (fast, cheap model) for research, search, reading, and investigation tasks; 'implement' (full orchestrator model) for writing code, making edits, and executing changes. You can resume a previous sub-agent by passing its agent_id with a new task.",
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
