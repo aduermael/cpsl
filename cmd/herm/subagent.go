@@ -14,8 +14,9 @@ import (
 	"langdag.com/langdag/types"
 )
 
-// defaultSubAgentMaxTurns is the default tool-call cap per sub-agent invocation.
-const defaultSubAgentMaxTurns = 15
+// defaultSubAgentMaxTurns is the default response-cycle cap per sub-agent invocation.
+// A "turn" is one LLM response cycle, which may contain multiple tool calls.
+const defaultSubAgentMaxTurns = 20
 
 // defaultMaxAgentDepth is the default maximum nesting depth for sub-agents.
 // Depth 1 means the main agent can spawn sub-agents, but sub-agents cannot
@@ -208,13 +209,17 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	var currentTool string
 
 	turns := 0
+	responseCounted := false // tracks whether the current LLM response has been counted as a turn
 	for event := range agent.Events() {
 		switch event.Type {
 		case EventTextDelta:
 			textParts = append(textParts, event.Text)
 			t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: event.Text})
 		case EventToolCallStart:
-			turns++
+			if !responseCounted {
+				turns++
+				responseCounted = true
+			}
 			currentTool = event.ToolName
 			if turns > t.maxTurns {
 				agent.Cancel()
@@ -223,6 +228,9 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		case EventToolCallDone:
 			currentTool = ""
 		case EventUsage:
+			// EventUsage fires once per LLM response — reset the flag so the
+			// next batch of tool calls counts as a new turn.
+			responseCounted = false
 			if event.Usage != nil {
 				totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 				totalOutputTokens += event.Usage.OutputTokens

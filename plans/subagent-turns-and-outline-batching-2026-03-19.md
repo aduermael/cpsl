@@ -77,7 +77,7 @@ This way, 5 tool calls in one response = 1 turn. The limit check stays on
 Also bump `defaultSubAgentMaxTurns` from 15 to 20 and update comment from
 "tool-call cap" to "response-cycle cap".
 
-- [ ] 2a: Change turn counting in `Execute()` event loop — add `responseCounted` bool, increment on first `EventToolCallStart` per response, reset on `EventUsage`
+- [x] 2a: Change turn counting in `Execute()` event loop — add `responseCounted` bool, increment on first `EventToolCallStart` per response, reset on `EventUsage`
 - [ ] 2b: Update `defaultSubAgentMaxTurns` constant from 15 to 20 and update comment
 - [ ] 2c: Update `prompts/tools.md` — change turn-limit wording to reflect response-based counting
 - [ ] 2d: Update tests — fix hard-coded turn expectations; add a new test that verifies multiple tool calls in one response count as 1 turn (will need `scriptedProvider` or equivalent to emit multiple `EventToolCallStart` events)
