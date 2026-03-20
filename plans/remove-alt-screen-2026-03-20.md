@@ -22,9 +22,9 @@
 - [x] 1c: Update shell-mode transitions — currently exit/re-enter alt screen; without alt screen: clear screen before shell (`\033[H\033[2J\033[3J`), restore terminal, run shell, re-enter raw mode, clear screen, full re-render
 
 ## Phase 2: Verify and fix edge cases
-- [ ] 2a: Ensure the SIGWINCH → `renderFull()` path produces a clean re-render: hide cursor before clearing (`\033[?25l`), clear screen + scrollback, write rows, show cursor — this eliminates flicker during resize
-- [ ] 2b: Verify that the overflow render path (content > terminal height) works correctly: visible rows written at position 1, `\033[J` clears below, cursor positioned correctly via `scrollShift`
-- [ ] 2c: Verify exit behavior: on clean exit and on Ctrl+C/Ctrl+D, the conversation output remains in the terminal and the shell prompt appears below it
+- [x] 2a: Ensure the SIGWINCH → `renderFull()` path produces a clean re-render: hide cursor before clearing (`\033[?25l`), clear screen + scrollback, write rows, show cursor — this eliminates flicker during resize
+- [x] 2b: Verify that the overflow render path (content > terminal height) works correctly: visible rows written at position 1, `\033[J` clears below, cursor positioned correctly via `scrollShift`
+- [x] 2c: Verify exit behavior: on clean exit and on Ctrl+C/Ctrl+D, the conversation output remains in the terminal and the shell prompt appears below it
 
 ## Phase 3: Add tests and verify cross-terminal behavior
 - [ ] 3a: Add a test that verifies `renderFull()` output uses `\033[H\033[2J\033[3J` (full clear), and that `writeRows` output uses `\033[2K` per line and ends with `\033[J`

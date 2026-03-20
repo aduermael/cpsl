@@ -2472,8 +2472,8 @@ func (a *App) render() {
 // Use on resize (SIGWINCH) for an artifact-free re-render.
 func (a *App) renderFull() {
 	a.scrollShift = 0 // reset so render() writes from top
-	os.Stdout.WriteString("\033[H\033[2J\033[3J")
-	a.render()
+	os.Stdout.WriteString("\033[?25l\033[H\033[2J\033[3J") // hide cursor, clear screen + scrollback
+	a.render() // render() → positionCursor() restores cursor visibility
 }
 
 func (a *App) renderInput() {
