@@ -1579,3 +1579,293 @@ func TestExplorationFlowParallelSubAgents(t *testing.T) {
 		t.Errorf("max concurrency = %d, want 2 (parallel sub-agents)", mc)
 	}
 }
+
+// --- Phase 6c: Resilience tests ---
+
+// failThenSucceedProvider returns errors on specified call indices, then succeeds.
+type failThenSucceedProvider struct {
+	mu          sync.Mutex
+	callIdx     int
+	failOnCalls map[int]error          // call index → error to return
+	responses   []scriptedResponse     // responses for successful calls
+	successIdx  int                    // tracks which response to use next
+	model       string
+}
+
+func (p *failThenSucceedProvider) Complete(_ context.Context, _ *types.CompletionRequest) (*types.CompletionResponse, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	if err, fail := p.failOnCalls[idx]; fail {
+		p.mu.Unlock()
+		return nil, err
+	}
+	si := p.successIdx
+	p.successIdx++
+	p.mu.Unlock()
+
+	r := scriptedResponse{text: "ok", tokensIn: 100, tokensOut: 50}
+	if si < len(p.responses) {
+		r = p.responses[si]
+	}
+	content := []types.ContentBlock{{Type: "text", Text: r.text}}
+	content = append(content, r.toolCalls...)
+	return &types.CompletionResponse{
+		ID: fmt.Sprintf("resp-%d", si), Model: p.model,
+		Content: content, StopReason: "end_turn",
+		Usage: types.Usage{InputTokens: r.tokensIn, OutputTokens: r.tokensOut},
+	}, nil
+}
+
+func (p *failThenSucceedProvider) Stream(_ context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	if err, fail := p.failOnCalls[idx]; fail {
+		p.mu.Unlock()
+		return nil, err
+	}
+	si := p.successIdx
+	p.successIdx++
+	p.mu.Unlock()
+
+	r := scriptedResponse{text: "ok", tokensIn: 100, tokensOut: 50}
+	if si < len(p.responses) {
+		r = p.responses[si]
+	}
+
+	ch := make(chan types.StreamEvent, 20)
+	go func() {
+		defer close(ch)
+		if r.text != "" {
+			ch <- types.StreamEvent{Type: types.StreamEventDelta, Content: r.text}
+		}
+		for _, tc := range r.toolCalls {
+			tc := tc
+			ch <- types.StreamEvent{Type: types.StreamEventContentDone, ContentBlock: &tc}
+		}
+		content := []types.ContentBlock{{Type: "text", Text: r.text}}
+		content = append(content, r.toolCalls...)
+		stopReason := "end_turn"
+		if len(r.toolCalls) > 0 {
+			stopReason = "tool_use"
+		}
+		ch <- types.StreamEvent{
+			Type: types.StreamEventDone,
+			Response: &types.CompletionResponse{
+				ID: fmt.Sprintf("resp-%d", si), Model: req.Model,
+				Content: content, StopReason: stopReason,
+				Usage: types.Usage{InputTokens: r.tokensIn, OutputTokens: r.tokensOut},
+			},
+		}
+	}()
+	return ch, nil
+}
+
+func (p *failThenSucceedProvider) Name() string             { return "mock" }
+func (p *failThenSucceedProvider) Models() []types.ModelInfo { return nil }
+
+func TestResilienceRetrySucceedsAfterTransientError(t *testing.T) {
+	// Initial LLM call fails with a retryable error (429), retry succeeds.
+	prov := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			0: fmt.Errorf("HTTP 429: rate limited"),
+		},
+		responses: []scriptedResponse{
+			{text: "Hello after retry!", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	// Should have a retry event.
+	var hasRetry, hasDone bool
+	var finalText string
+	for _, ev := range events {
+		switch ev.Type {
+		case EventRetry:
+			hasRetry = true
+			if ev.Attempt != 1 {
+				t.Errorf("retry attempt = %d, want 1", ev.Attempt)
+			}
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventDone:
+			hasDone = true
+		}
+	}
+	if !hasRetry {
+		t.Error("expected EventRetry for transient 429 error")
+	}
+	if !hasDone {
+		t.Error("expected EventDone — conversation should complete after retry")
+	}
+	if !strings.Contains(finalText, "Hello after retry") {
+		t.Errorf("final text = %q, want text from successful retry", finalText)
+	}
+}
+
+func TestResiliencePermanentErrorStopsImmediately(t *testing.T) {
+	// LLM call fails with a non-retryable error (401) — should not retry.
+	prov := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			0: fmt.Errorf("HTTP 401: unauthorized"),
+		},
+		responses: []scriptedResponse{
+			{text: "should not reach this", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasRetry, hasError bool
+	for _, ev := range events {
+		if ev.Type == EventRetry {
+			hasRetry = true
+		}
+		if ev.Type == EventError && ev.Error != nil && strings.Contains(ev.Error.Error(), "401") {
+			hasError = true
+		}
+	}
+	if hasRetry {
+		t.Error("should not retry on 401 — it's a permanent error")
+	}
+	if !hasError {
+		t.Error("expected EventError with 401 details")
+	}
+}
+
+func TestResilienceRetryDuringToolLoop(t *testing.T) {
+	// First LLM call succeeds with a tool call. After tool execution, the
+	// follow-up LLM call fails once (retryable) then succeeds.
+	prov := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			1: fmt.Errorf("HTTP 502: bad gateway"), // second provider call (tool result)
+		},
+		responses: []scriptedResponse{
+			// Response 0: initial prompt → tool call
+			{
+				text: "Running tool.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c1", Name: "bash", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Response 1: after retry succeeds → final text
+			{text: "Tool completed successfully.", tokensIn: 200, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	bashTool := &testTool{name: "bash", result: "ok"}
+	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "run tool", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	var hasRetry, hasToolStart bool
+	var finalText string
+	for _, ev := range events {
+		switch ev.Type {
+		case EventRetry:
+			hasRetry = true
+		case EventToolCallStart:
+			hasToolStart = true
+		case EventTextDelta:
+			finalText += ev.Text
+		}
+	}
+	if !hasToolStart {
+		t.Error("expected tool call before retry")
+	}
+	if !hasRetry {
+		t.Error("expected retry on 502 during tool loop")
+	}
+	if !strings.Contains(finalText, "Tool completed successfully") {
+		t.Errorf("final text = %q, want success message after retry", finalText)
+	}
+}
+
+func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
+	// Sub-agent encounters an error. Main agent should get structured error info.
+	client := newTestClient("") // empty output triggers no-output path
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+
+	// Use buildResult directly with errors to verify the error reporting path.
+	result := tool.buildResult(context.Background(), "err-agent", nil,
+		[]string{"during tool \"bash\" (turn 3): HTTP 500 internal server error"},
+		500, 100, 3)
+
+	if !strings.Contains(result, "[errors:") {
+		t.Errorf("result should contain [errors:], got: %q", result)
+	}
+	if !strings.Contains(result, "HTTP 500") {
+		t.Errorf("result should include the specific error, got: %q", result)
+	}
+	if !strings.Contains(result, "Sub-agent encountered errors") {
+		t.Errorf("no-output + errors should use error body, got: %q", result)
+	}
+	if !strings.Contains(result, "[turns: 3/10]") {
+		t.Errorf("result should include turn count, got: %q", result)
+	}
+}
+
+func TestResilienceNoDeadlockOnMultipleFailures(t *testing.T) {
+	// Agent calls 2 tools in parallel; both fail. Agent should still complete
+	// without deadlock and emit EventDone.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "a1", Name: "agent", Input: json.RawMessage(`{"task":"t1"}`)},
+					{Type: "tool_use", ID: "a2", Name: "agent", Input: json.RawMessage(`{"task":"t2"}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "Both failed, adapting.", tokensIn: 200, tokensOut: 30},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	// Tool that always returns an error.
+	failingTool := &testTool{name: "agent", err: fmt.Errorf("sub-agent crashed")}
+	agent := NewAgent(client, []Tool{failingTool}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "go", "")
+
+	// Must complete within timeout — no deadlock.
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasDone bool
+	var errorResults int
+	for _, ev := range events {
+		if ev.Type == EventDone {
+			hasDone = true
+		}
+		if ev.Type == EventToolResult && ev.IsError {
+			errorResults++
+		}
+	}
+	if !hasDone {
+		t.Error("agent should complete without deadlock after tool failures")
+	}
+	if errorResults != 2 {
+		t.Errorf("expected 2 error tool results, got %d", errorResults)
+	}
+}
