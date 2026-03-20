@@ -285,7 +285,7 @@ Replace the grep-based outline tool with a dedicated compiled binary, matching t
 
 - [x] 8d: **Update OutlineTool to call binary** — Replace the grep-based `Execute()` in `filetools.go` with `t.container.ExecWithStdin(nil, 15, "outline", filePath)`. The file path is a direct CLI argument — no shell, no quoting, no escaping. Remove the `outlinePatterns` map and grep command construction. The tool's input parsing (JSON from LLM) stays on the host side; only the file path is sent to the container. Falls back to old grep approach if the binary is missing (exit code 127) for backward compatibility with `0.2` images.
 
-- [ ] 8e: **Update base.Dockerfile template** — The `dockerfiles/base.Dockerfile` template uses `FROM aduermael/herm:__HERM_VERSION__`. After bumping to 0.3, users who run `devenv build` will get the new image with the outline binary. No template changes needed — just the version bump.
+- [x] 8e: **Update base.Dockerfile template** — The `dockerfiles/base.Dockerfile` template uses `FROM aduermael/herm:__HERM_VERSION__`. After bumping to 0.3, users who run `devenv build` will get the new image with the outline binary. No template changes needed — just the version bump.
 
 - [ ] 8f: **Test outline binary** — Unit tests in `tools/outline/main_test.go` for: Go AST extraction (functions, methods, types, interfaces, generics), Python class/def extraction, JS/TS export/function/class, fallback for unknown extensions, binary file rejection, empty file handling, file not found error. Integration test in `filetools_test.go` verifying the OutlineTool.Execute produces structured output via the binary.
 
