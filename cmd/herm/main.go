@@ -4676,6 +4676,7 @@ func (a *App) maybeShowInitialModels() {
 		return
 	}
 	a.shownInitialModel = true
+	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "v" + Version + " (container: " + hermImageTag + ")"})
 	a.showModelChange(a.config.resolveActiveModel(a.models))
 }
 
@@ -5529,7 +5530,7 @@ func main() {
 
 	for _, arg := range os.Args[1:] {
 		if arg == "--version" || arg == "-v" {
-			fmt.Println("herm " + Version)
+			fmt.Println("herm " + Version + " (container: " + hermImageTag + ")")
 			os.Exit(0)
 		}
 	}
