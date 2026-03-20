@@ -123,8 +123,28 @@ func (s *mockStorage) GetSubtree(_ context.Context, _ string) ([]*types.Node, er
 	return nil, nil
 }
 
-func (s *mockStorage) GetAncestors(_ context.Context, _ string) ([]*types.Node, error) {
-	return nil, nil
+func (s *mockStorage) GetAncestors(_ context.Context, id string) ([]*types.Node, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	// Walk the parent chain from the given node up to the root.
+	var chain []*types.Node
+	current := id
+	for current != "" {
+		node, ok := s.nodes[current]
+		if !ok {
+			break
+		}
+		chain = append(chain, node)
+		if node.ParentID == "" || node.ParentID == current {
+			break
+		}
+		current = node.ParentID
+	}
+	// Reverse so root is first.
+	for i, j := 0, len(chain)-1; i < j; i, j = i+1, j-1 {
+		chain[i], chain[j] = chain[j], chain[i]
+	}
+	return chain, nil
 }
 
 func (s *mockStorage) ListRootNodes(_ context.Context) ([]*types.Node, error) {

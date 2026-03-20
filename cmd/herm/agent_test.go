@@ -1403,3 +1403,179 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 		t.Fatal("sub-agent deadlocked: forward() is blocking on full parent channel")
 	}
 }
+
+// --- Phase 6b: End-to-end exploration test ---
+
+func TestExplorationFlowOutlineThenReadThenAgent(t *testing.T) {
+	// Simulates: LLM calls outline → reads file → spawns sub-agent → synthesizes.
+	// Uses the same scripted provider pattern as TestRunToolCallDispatch but with
+	// multiple sequential tool rounds followed by a parallel agent call.
+	//
+	// The flow: outline (1 tool call) → read_file (1 tool call) → agent (parallel) → final text.
+	// Each tool response triggers one LLM re-call, so we need 4 scripted responses total.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			// Response 0: initial prompt → outline tool call
+			{
+				text: "Let me outline the file first.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c1", Name: "outline", Input: json.RawMessage(`{"file_path":"main.go"}`)},
+				},
+				tokensIn: 200, tokensOut: 50,
+			},
+			// Response 1: after outline result → read_file tool call
+			{
+				text: "Now I'll read the implementation.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c2", Name: "read_file", Input: json.RawMessage(`{"file_path":"main.go"}`)},
+				},
+				tokensIn: 300, tokensOut: 50,
+			},
+			// Response 2: after read result → agent tool call
+			{
+				text: "I'll delegate deep analysis.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c3", Name: "agent", Input: json.RawMessage(`{"task":"analyze error handling"}`)},
+				},
+				tokensIn: 400, tokensOut: 50,
+			},
+			// Response 3: after agent result → final synthesis
+			{
+				text: "The code uses structured error handling with log.Printf and os.Exit.",
+				tokensIn: 500, tokensOut: 100,
+			},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	outlineTool := &testTool{name: "outline", result: "1: func main()\n5: func handleError(err error)"}
+	readTool := &testTool{name: "read_file", result: "func handleError(err error) {\n\tos.Exit(1)\n}"}
+	agentTool := &testTool{name: "agent", result: "[agent_id: abc] [turns: 3/15] [summary: model]\n\n- Uses os.Exit"}
+
+	agent := NewAgent(client, []Tool{outlineTool, readTool, agentTool}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "understand error handling", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	// Collect tool call sequence and errors.
+	var toolOrder []string
+	var finalText string
+	var errors []string
+	for _, ev := range events {
+		switch ev.Type {
+		case EventToolCallStart:
+			toolOrder = append(toolOrder, ev.ToolName)
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventError:
+			if ev.Error != nil {
+				errors = append(errors, ev.Error.Error())
+			}
+		}
+	}
+
+	// Log any errors for debugging.
+	for _, e := range errors {
+		t.Logf("EventError: %s", e)
+	}
+
+	// The flow should produce exactly 3 tool calls in sequence.
+	if len(toolOrder) < 3 {
+		t.Fatalf("expected 3 tool calls, got %d: %v (errors: %v)", len(toolOrder), toolOrder, errors)
+	}
+	if toolOrder[0] != "outline" {
+		t.Errorf("first tool = %q, want outline", toolOrder[0])
+	}
+	if toolOrder[1] != "read_file" {
+		t.Errorf("second tool = %q, want read_file", toolOrder[1])
+	}
+	if toolOrder[2] != "agent" {
+		t.Errorf("third tool = %q, want agent", toolOrder[2])
+	}
+
+	// Agent should synthesize a final response.
+	if !strings.Contains(finalText, "structured error handling") {
+		t.Errorf("final text = %q, want to contain 'structured error handling'", finalText)
+	}
+
+	// The agent tool result should carry structured metadata.
+	var agentResult string
+	for _, ev := range events {
+		if ev.Type == EventToolResult && ev.ToolName == "agent" {
+			agentResult = ev.ToolResult
+		}
+	}
+	if !strings.Contains(agentResult, "[summary: model]") {
+		t.Errorf("agent result = %q, want to contain [summary: model]", agentResult)
+	}
+}
+
+func TestExplorationFlowParallelSubAgents(t *testing.T) {
+	// Simulates: LLM spawns 2 sub-agents in parallel for investigation, then synthesizes.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "Spawning parallel investigations.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "a1", Name: "agent", Input: json.RawMessage(`{"task":"analyze module A"}`)},
+					{Type: "tool_use", ID: "a2", Name: "agent", Input: json.RawMessage(`{"task":"analyze module B"}`)},
+				},
+				tokensIn: 200, tokensOut: 50,
+			},
+			{
+				text: "Module A handles auth, Module B handles data processing.",
+				tokensIn: 400, tokensOut: 100,
+			},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	gate := make(chan struct{})
+	tracker := &parallelTracker{name: "agent", result: "[agent_id: x] [turns: 2/15] [summary: model]\n\n- module analyzed", gate: gate}
+	agent := NewAgent(client, []Tool{tracker}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "explore the codebase architecture", "")
+
+	// Wait for both agents to be running concurrently.
+	deadline := time.After(5 * time.Second)
+	for {
+		tracker.mu.Lock()
+		r := tracker.running
+		tracker.mu.Unlock()
+		if r >= 2 {
+			break
+		}
+		select {
+		case <-deadline:
+			t.Fatal("timeout waiting for 2 concurrent sub-agents")
+		default:
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+
+	close(gate) // release both
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	// Verify both agent results were collected.
+	var agentResults int
+	for _, ev := range events {
+		if ev.Type == EventToolResult && ev.ToolName == "agent" {
+			agentResults++
+		}
+	}
+	if agentResults != 2 {
+		t.Errorf("expected 2 agent results, got %d", agentResults)
+	}
+
+	// Peak concurrency should be 2.
+	tracker.mu.Lock()
+	mc := tracker.maxConc
+	tracker.mu.Unlock()
+	if mc < 2 {
+		t.Errorf("max concurrency = %d, want 2 (parallel sub-agents)", mc)
+	}
+}

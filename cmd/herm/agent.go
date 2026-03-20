@@ -572,17 +572,20 @@ func (a *Agent) retryablePrompt(ctx context.Context, cfg retryConfig, promptFn f
 }
 
 // drainStream reads all chunks from a prompt result's stream, emitting text
-// deltas and collecting tool calls. Returns the tool calls and whether the
-// stream completed normally (chunk.Done received).
-func (a *Agent) drainStream(result *langdag.PromptResult) ([]types.ContentBlock, bool) {
+// deltas and collecting tool calls. Returns the tool calls, the assistant node
+// ID from the Done chunk, and whether the stream completed normally.
+//
+// The NodeID is extracted from the Done chunk rather than from result.NodeID
+// to avoid a race with the background goroutine that sets result.NodeID.
+func (a *Agent) drainStream(result *langdag.PromptResult) ([]types.ContentBlock, string, bool) {
 	var toolCalls []types.ContentBlock
 	for chunk := range result.Stream {
 		if chunk.Error != nil {
 			a.emit(AgentEvent{Type: EventError, Error: chunk.Error})
-			return nil, false
+			return nil, "", false
 		}
 		if chunk.Done {
-			return toolCalls, true
+			return toolCalls, chunk.NodeID, true
 		}
 		if chunk.Content != "" {
 			a.emit(AgentEvent{Type: EventTextDelta, Text: chunk.Content})
@@ -591,7 +594,7 @@ func (a *Agent) drainStream(result *langdag.PromptResult) ([]types.ContentBlock,
 			toolCalls = append(toolCalls, *chunk.ContentBlock)
 		}
 	}
-	return toolCalls, false // channel closed without Done
+	return toolCalls, "", false // channel closed without Done
 }
 
 // runLoop is the core agent loop: call LLM, handle tool calls, repeat.
@@ -612,14 +615,13 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	}
 
 	// Process streaming response, collecting tool calls from content blocks.
-	toolCalls, streamOK := a.drainStream(result)
+	toolCalls, nodeID, streamOK := a.drainStream(result)
 	if !streamOK {
 		a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("stream interrupted: closed without completion")})
 		a.emit(AgentEvent{Type: EventDone})
 		return
 	}
 
-	nodeID := result.NodeID
 	if nodeID == "" {
 		a.emit(AgentEvent{Type: EventDone})
 		return
@@ -838,13 +840,12 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		}
 
 		// Stream the follow-up response, collecting tool calls.
-		toolCalls, streamOK = a.drainStream(result)
+		toolCalls, nodeID, streamOK = a.drainStream(result)
 		if !streamOK {
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("stream interrupted: closed without completion")})
 			break
 		}
 
-		nodeID = result.NodeID
 		if nodeID == "" {
 			break
 		}
