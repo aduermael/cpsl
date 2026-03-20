@@ -900,3 +900,85 @@ func TestSubAgentToolImplementModeUsesMainModel(t *testing.T) {
 		t.Errorf("result = %q, want implement output", result)
 	}
 }
+
+// --- Phase 2: Turn counting tests ---
+
+func TestSubAgentToolBatchedToolCallsCountAsOneTurn(t *testing.T) {
+	// A single LLM response with 3 tool calls should count as 1 turn, not 3.
+	// Uses failThenSucceedProvider (from agent_test.go) which supports scripted
+	// responses with tool_use blocks.
+	mockTool := &testTool{name: "test_tool", result: "ok"}
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			{
+				text: "",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+					{Type: "tool_use", ID: "tu2", Name: "test_tool", Input: json.RawMessage(`{}`)},
+					{Type: "tool_use", ID: "tu3", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "done after 3 tool calls", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest", nil)
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"batch test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// 3 tool calls in 1 response = 1 turn, not 3.
+	if !strings.Contains(result, "[turns: 1/20]") {
+		t.Errorf("3 tool calls in one response should count as 1 turn, got: %q", result)
+	}
+}
+
+func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
+	// Two LLM responses, each with tool calls, should count as 2 turns.
+	mockTool := &testTool{name: "test_tool", result: "ok"}
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			{
+				text: "",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+					{Type: "tool_use", ID: "tu2", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{
+				text: "",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu3", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "done after two rounds", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest", nil)
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"multi-response test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// 2 responses with tool calls = 2 turns.
+	if !strings.Contains(result, "[turns: 2/20]") {
+		t.Errorf("2 responses with tool calls should count as 2 turns, got: %q", result)
+	}
+}
