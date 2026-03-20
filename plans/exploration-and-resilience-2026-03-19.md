@@ -205,32 +205,48 @@ When a sub-agent fails, tell the main agent why so it can adapt.
 
 ---
 
-## Phase 7: Fix Shell Piping for Container Binaries
+## Phase 7: Eliminate Shell from Binary Input Piping
 
 The `echo` command in dash (the `/bin/sh` on `debian:bookworm-slim`) interprets backslash escape sequences **even inside single quotes**. Every `\n` in JSON → literal newline, every `\t` → literal tab, `\\` → single `\`. This silently corrupts JSON piped to `edit-file` and `write-file`, causing `invalid character '\n' in string literal` on every multi-line edit.
 
-**Root cause:** `filetools.go:497` and `:592` — `echo <json> | <binary>` construction.
+**Root cause:** `filetools.go:497` and `:592` — `echo <json> | <binary>` via `sh -c`.
 
 **Why `sanitizeToolJSON` didn't help:** That fix operates on the host side (Go → struct parsing). The corruption happens later: `json.Marshal()` produces valid JSON with `\n` escapes, but `echo` in the container shell re-interprets them into literal control characters before the binary sees them.
 
+**The real problem is using a shell at all.** The current flow is:
+```
+Go (host) → json.Marshal → shellQuote → "sh -c 'echo ... | binary'" → binary stdin
+```
+Three unnecessary layers (shell, echo, pipe) sit between Go and the binary, each with platform-specific behavior (dash vs bash vs ash). Replacing `echo` with `printf '%s'` would fix the immediate bug but leaves the shell dependency — and the next base image or shell variant could break again.
+
+**Fix:** Add `ExecWithStdin` to `ContainerClient` that runs `docker exec -i <container> <binary>` with Go's `cmd.Stdin` wired directly to a `bytes.Reader`. No shell, no echo, no quoting, no platform-specific escape behavior. Pure Go → docker exec → binary stdin.
+
+```
+Go (host) → json.Marshal → bytes.Reader → cmd.Stdin → docker exec -i → binary stdin
+```
+
 **Codebase context:**
+- `container.go:124-159` — current `Exec()` always uses `sh -c`
+- `container.go:59-60` — `dockerCommand` is a replaceable `exec.CommandContext` for testing
 - `filetools.go:497` — `echo %s | edit-file`
 - `filetools.go:592` — `echo %s | write-file`
-- `filetools.go:56-60` — `shellQuote()` escapes single quotes but doesn't help with echo interpretation
-- Container shell: `/bin/sh` → `dash` on `debian:bookworm-slim`
+- `filetools.go:56-60` — `shellQuote()` becomes unnecessary for binary calls
 - Binary input: `json.NewDecoder(os.Stdin)` in `tools/edit-file/main.go:26` and `tools/write-file/main.go:26`
 
-**Fix:** Replace `echo` with `printf '%s'`. The `%s` format specifier passes the argument verbatim — no escape interpretation. This is a one-line change per tool but fixes a whole class of failures.
+- [ ] 7a: **Add `ExecWithStdin` to `ContainerClient`** — New method: `ExecWithStdin(stdin []byte, timeout int, args ...string) (CommandResult, error)`. Runs `docker exec -i <containerID> <args...>` with `cmd.Stdin` set to a `bytes.Reader` over the stdin slice. No `sh -c`, no shell quoting, no escape interpretation. Same stdout/stderr/exitCode capture as `Exec`. The `-i` flag tells Docker to keep stdin open so the binary can read from it.
 
-- [ ] 7a: **Replace `echo` with `printf '%s'` in edit_file and write_file** — Change `filetools.go:497` from `echo %s | edit-file` to `printf '%%s' %s | edit-file`. Same at `:592` for write-file. `printf '%s'` passes the shell argument literally — no backslash interpretation.
+- [ ] 7b: **Switch edit_file and write_file to `ExecWithStdin`** — Replace `filetools.go:497` (`echo %s | edit-file`) with `t.container.ExecWithStdin(inputJSON, 30, "edit-file")`. Same at `:592` for write-file. The `json.Marshal` output goes directly to the binary's stdin — no `shellQuote`, no `fmt.Sprintf`, no shell involved. Remove the `shellQuote` call from both paths (keep the function — other tools still use `Exec` for shell commands like grep).
 
-- [ ] 7b: **Add tests for multi-line JSON through shell pipe** — Test that old_string/new_string containing `\n`, `\t`, `\\`, and `\"` survive the full pipeline: `json.Marshal → shellQuote → printf → binary stdin → json.Decode`. The current tab-in-input tests use a mock container and never exercise the real shell; add a test that verifies the constructed command string doesn't rely on echo behavior.
+- [ ] 7c: **Update mock container for tests** — The `fakeContainer` in `filetools_test.go` needs to support `ExecWithStdin`. Add a `stdinCalls` capture so tests can verify the exact bytes sent to the binary. Update existing edit/write tests to use the new path.
 
-- [ ] 7c: **Audit outline tool for the same issue** — The outline tool builds grep commands with `shellQuote()` for file paths. File paths typically don't contain backslash sequences, but verify the pattern is safe. If the outline binary (Phase 8) will use JSON stdin, it must use `printf '%s'` from the start.
+- [ ] 7d: **Test with multi-line content** — Test that old_string/new_string containing `\n`, `\t`, `\\`, `\"`, and single quotes survive the full pipeline: `json.Marshal → ExecWithStdin → binary stdin → json.Decode`. This is now trivially correct by construction (no shell in the path), but the test documents the guarantee. Also test with real Docker if available (integration test).
+
+- [ ] 7e: **Remove `sanitizeToolJSON` workaround for tabs** — With the shell removed from the path, the only remaining need for `sanitizeToolJSON` is fixing literal control characters in the LLM's JSON *before* `json.Unmarshal` on the host side. Review whether this is still needed: if LLMs emit literal tabs in JSON, Go's `json.Unmarshal` still rejects them, so the sanitizer stays but its scope is clear — it fixes LLM JSON violations, not shell piping issues.
 
 **Failure modes:**
-- `printf` not available: Extremely unlikely — it's a POSIX built-in, present in all sh-compatible shells including dash, ash, busybox sh.
-- Double `%` in format: The Go format string needs `%%s` to produce the literal `%s` that printf sees. Getting this wrong would print `%s` literally or cause a printf format error.
+- `docker exec -i` without stdin: Works fine — docker will provide an empty stdin. The binary reads EOF and fails with "invalid JSON" which is the correct behavior.
+- Binary not found in container: Same error as today — docker exec returns exit code 126/127, caught by existing error handling.
+- Large stdin (>1MB edit): `bytes.Reader` handles this; docker exec has no stdin size limit. The binary's `json.Decoder` streams from stdin, so memory usage scales with the decoded struct, not the raw input.
 
 ---
 
@@ -267,7 +283,7 @@ Replace the grep-based outline tool with a dedicated compiled binary, matching t
 
 - [ ] 8c: **Add to Dockerfile and bump container version** — Add `RUN cd /build/tools/outline && go build -o /out/outline .` to the builder stage. Copy the binary alongside edit-file and write-file. Bump `hermImageTag` in `config.go` from `"0.2"` to `"0.3"`.
 
-- [ ] 8d: **Update OutlineTool to call binary** — Replace the grep-based `Execute()` in `filetools.go` with a simple container exec: `outline <filepath>`. No JSON piping needed — the file path is passed as a CLI argument (already sanitized by shellQuote). Remove the `outlinePatterns` map and grep command construction. The tool's input parsing (JSON from LLM) stays on the host side; only the file path is sent to the container.
+- [ ] 8d: **Update OutlineTool to call binary** — Replace the grep-based `Execute()` in `filetools.go` with `t.container.ExecWithStdin(nil, 15, "outline", filePath)`. The file path is a direct CLI argument — no shell, no quoting, no escaping. Remove the `outlinePatterns` map and grep command construction. The tool's input parsing (JSON from LLM) stays on the host side; only the file path is sent to the container. Falls back to old grep approach if the binary is missing (exit code 127) for backward compatibility with `0.2` images.
 
 - [ ] 8e: **Update base.Dockerfile template** — The `dockerfiles/base.Dockerfile` template uses `FROM aduermael/herm:__HERM_VERSION__`. After bumping to 0.3, users who run `devenv build` will get the new image with the outline binary. No template changes needed — just the version bump.
 
