@@ -1054,6 +1054,144 @@ func TestWriteFileTool_Execute_MultiLineContent(t *testing.T) {
 	}
 }
 
+// --- OutlineTool tests ---
+
+func TestOutlineTool_Definition(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewOutlineTool(c)
+	def := tool.Definition()
+
+	if def.Name != "outline" {
+		t.Errorf("Name = %q, want %q", def.Name, "outline")
+	}
+	if def.InputSchema == nil {
+		t.Error("InputSchema should not be nil")
+	}
+}
+
+func TestOutlineTool_Execute_Binary(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		if strings.Contains(cmd, "outline") {
+			return "1\tpackage main\n5\tfunc main()\n10\ttype Config struct\n", "", 0
+		}
+		return "", "unexpected", 1
+	})
+
+	tool := NewOutlineTool(container)
+	input, _ := json.Marshal(outlineInput{FilePath: "main.go"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "func main()") {
+		t.Errorf("expected func main in outline, got: %q", result)
+	}
+	if !strings.Contains(result, "type Config struct") {
+		t.Errorf("expected type Config in outline, got: %q", result)
+	}
+}
+
+func TestOutlineTool_Execute_BinaryNotFound_Fallback(t *testing.T) {
+	callCount := 0
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		callCount++
+		if callCount == 1 && strings.Contains(cmd, "outline") {
+			// Binary not found — exit code 127.
+			return "", "sh: outline: not found", 127
+		}
+		// Fallback grep should be called.
+		if strings.Contains(cmd, "grep") {
+			return "1:package main\n5:func main() {\n", "", 0
+		}
+		return "", "unexpected", 1
+	})
+
+	tool := NewOutlineTool(container)
+	input, _ := json.Marshal(outlineInput{FilePath: "main.go"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "func main") {
+		t.Errorf("expected fallback to produce output, got: %q", result)
+	}
+}
+
+func TestOutlineTool_Execute_FileNotFound(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return "", "error: stat /workspace/nonexistent.go: no such file or directory", 1
+	})
+
+	tool := NewOutlineTool(container)
+	input, _ := json.Marshal(outlineInput{FilePath: "nonexistent.go"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "error") {
+		t.Errorf("expected error message, got: %q", result)
+	}
+}
+
+func TestOutlineTool_Execute_EmptyOutput(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		return "(no declarations found)\n", "", 0
+	})
+
+	tool := NewOutlineTool(container)
+	input, _ := json.Marshal(outlineInput{FilePath: "empty.txt"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "no declarations") {
+		t.Errorf("expected 'no declarations', got: %q", result)
+	}
+}
+
+func TestOutlineTool_Execute_EmptyPath(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewOutlineTool(c)
+	input, _ := json.Marshal(outlineInput{FilePath: ""})
+	_, err := tool.Execute(context.Background(), input)
+	if err == nil {
+		t.Error("expected error for empty file_path")
+	}
+}
+
+func TestOutlineTool_Execute_RelativePath(t *testing.T) {
+	container := newFakeContainer(t, func(cmd string) (string, string, int) {
+		// Verify the path was resolved to /workspace/src/main.go.
+		if strings.Contains(cmd, "/workspace/src/main.go") {
+			return "1\tpackage main\n", "", 0
+		}
+		return "", "wrong path", 1
+	})
+
+	tool := NewOutlineTool(container)
+	input, _ := json.Marshal(outlineInput{FilePath: "src/main.go"})
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	if !strings.Contains(result, "package main") {
+		t.Errorf("expected output, got: %q", result)
+	}
+}
+
+func TestOutlineTool_NoApproval(t *testing.T) {
+	c := &ContainerClient{}
+	tool := NewOutlineTool(c)
+	if tool.RequiresApproval(nil) {
+		t.Error("outline should not require approval")
+	}
+}
+
 // --- RequiresApproval tests ---
 
 func TestFileTools_NoApproval(t *testing.T) {

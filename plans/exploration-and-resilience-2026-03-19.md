@@ -287,7 +287,7 @@ Replace the grep-based outline tool with a dedicated compiled binary, matching t
 
 - [x] 8e: **Update base.Dockerfile template** — The `dockerfiles/base.Dockerfile` template uses `FROM aduermael/herm:__HERM_VERSION__`. After bumping to 0.3, users who run `devenv build` will get the new image with the outline binary. No template changes needed — just the version bump.
 
-- [ ] 8f: **Test outline binary** — Unit tests in `tools/outline/main_test.go` for: Go AST extraction (functions, methods, types, interfaces, generics), Python class/def extraction, JS/TS export/function/class, fallback for unknown extensions, binary file rejection, empty file handling, file not found error. Integration test in `filetools_test.go` verifying the OutlineTool.Execute produces structured output via the binary.
+- [x] 8f: **Test outline binary** — Unit tests in `tools/outline/main_test.go` for: Go AST extraction (functions, methods, types, interfaces, generics), Python class/def extraction, JS/TS export/function/class, fallback for unknown extensions, binary file rejection, empty file handling, file not found error. Integration test in `filetools_test.go` verifying the OutlineTool.Execute produces structured output via the binary.
 
 **Failure modes:**
 - Go file with syntax errors: `go/parser` supports `parser.AllErrors` mode — extract whatever it can. Degrade gracefully to regex fallback.
