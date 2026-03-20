@@ -1136,6 +1136,8 @@ type commitInfoMsg struct {
 	behind      int
 	ahead       int
 	hasUpstream bool
+	diffAdd     int
+	diffDel     int
 }
 
 type worktreeListMsg struct {
@@ -1563,7 +1565,7 @@ func fetchCommitInfo(worktreePath string) commitInfoMsg {
 	cmd := exec.Command("git", "rev-list", "--count", "--left-right", "@{upstream}...HEAD")
 	cmd.Dir = worktreePath
 	if out, err := cmd.Output(); err == nil {
-		parts := strings.Split(strings.TrimSpace(string(out)), "\t")
+		parts := strings.Split(strings.TrimSpace(string(out)), "	")
 		if len(parts) == 2 {
 			msg.hasUpstream = true
 			if n, err := strconv.Atoi(parts[0]); err == nil {
@@ -1571,6 +1573,22 @@ func fetchCommitInfo(worktreePath string) commitInfoMsg {
 			}
 			if n, err := strconv.Atoi(parts[1]); err == nil {
 				msg.ahead = n
+			}
+		}
+	}
+
+	diffCmd := exec.Command("git", "diff", "--shortstat", "HEAD")
+	diffCmd.Dir = worktreePath
+	if out, err := diffCmd.Output(); err == nil {
+		line := strings.TrimSpace(string(out))
+		if re := regexp.MustCompile(`(\d+) insertion`); re.MatchString(line) {
+			if n, err := strconv.Atoi(re.FindStringSubmatch(line)[1]); err == nil {
+				msg.diffAdd = n
+			}
+		}
+		if re := regexp.MustCompile(`(\d+) deletion`); re.MatchString(line) {
+			if n, err := strconv.Atoi(re.FindStringSubmatch(line)[1]); err == nil {
+				msg.diffDel = n
 			}
 		}
 	}
@@ -5126,6 +5144,8 @@ func (a *App) handleResult(result any) {
 		a.status.HasUpstream = msg.hasUpstream
 		a.status.Behind = msg.behind
 		a.status.Ahead = msg.ahead
+		a.status.DiffAdd = msg.diffAdd
+		a.status.DiffDel = msg.diffDel
 
 	case projectSnapshotMsg:
 		a.projectSnap = &msg.snapshot
