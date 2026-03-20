@@ -1379,7 +1379,7 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 
 	// Deliberately small parent buffer — forward() must not block.
 	parentEvents := make(chan AgentEvent, 1)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 1, 0, tmpDir, "", "", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 1, 0, tmpDir, "", "")
 	tool.parentEvents = parentEvents
 
 	done := make(chan struct{})
@@ -1802,7 +1802,7 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	// Sub-agent encounters an error. Main agent should get structured error info.
 	client := newTestClient("") // empty output triggers no-output path
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	// Use buildResult directly with errors to verify the error reporting path.
 	result := tool.buildResult(context.Background(), "err-agent", nil,

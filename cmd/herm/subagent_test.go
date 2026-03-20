@@ -189,7 +189,7 @@ func newTestClient(responses ...string) *langdag.Client {
 }
 
 func TestSubAgentToolDefinition(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest", nil)
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
 	def := tool.Definition()
 	if def.Name != "agent" {
 		t.Errorf("name = %q, want agent", def.Name)
@@ -200,7 +200,7 @@ func TestSubAgentToolDefinition(t *testing.T) {
 }
 
 func TestSubAgentToolNoApproval(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest", nil)
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
 	if tool.RequiresApproval(json.RawMessage(`{"task":"hello"}`)) {
 		t.Error("sub-agent tool should never require approval")
 	}
@@ -209,7 +209,7 @@ func TestSubAgentToolNoApproval(t *testing.T) {
 func TestSubAgentToolEmptyTask(t *testing.T) {
 	client := newTestClient("hello")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"","mode":"explore"}`))
 	if err == nil {
@@ -221,7 +221,7 @@ func TestSubAgentToolEmptyTask(t *testing.T) {
 }
 
 func TestSubAgentToolInvalidJSON(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest", nil)
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
 	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -231,7 +231,7 @@ func TestSubAgentToolInvalidJSON(t *testing.T) {
 func TestSubAgentToolExecuteReturnsOutput(t *testing.T) {
 	client := newTestClient("Hello from the sub-agent!")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"say hello","mode":"explore"}`))
 	if err != nil {
@@ -247,7 +247,7 @@ func TestSubAgentToolForwardsEventsWithAgentID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parentEvents := make(chan AgentEvent, 64)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 	tool.parentEvents = parentEvents
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do work","mode":"explore"}`))
@@ -315,7 +315,7 @@ func TestSubAgentToolForwardsEventsWithAgentID(t *testing.T) {
 func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 	client := newTestClient("resumed output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	// First call — establishes a sub-agent and saves its nodeID.
 	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"initial work","mode":"explore"}`))
@@ -340,7 +340,7 @@ func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 func TestSubAgentToolUnknownAgentID(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"resume","mode":"explore","agent_id":"nonexistent"}`))
 	if err == nil {
@@ -353,7 +353,7 @@ func TestSubAgentToolUnknownAgentID(t *testing.T) {
 
 func TestSubAgentToolDepthExcludesNestedAgent(t *testing.T) {
 	// At maxDepth=1, currentDepth=0 → nextDepth=1 which is NOT < maxDepth → no nested agent tool.
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest", nil)
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
 	subTools := tool.buildSubAgentTools()
 
 	for _, st := range subTools {
@@ -366,7 +366,7 @@ func TestSubAgentToolDepthExcludesNestedAgent(t *testing.T) {
 func TestSubAgentToolDepthAllowsNestedAgent(t *testing.T) {
 	// At maxDepth=3, currentDepth=0 → nextDepth=1 < 3 → nested agent tool included.
 	baseTool := &testTool{name: "bash", result: "ok"}
-	tool := NewSubAgentTool(nil, []Tool{baseTool}, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest", nil)
+	tool := NewSubAgentTool(nil, []Tool{baseTool}, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
 	subTools := tool.buildSubAgentTools()
 
 	hasAgent := false
@@ -394,7 +394,7 @@ func TestSubAgentToolNoOutput(t *testing.T) {
 	// Provider returns empty text.
 	client := newTestClient("")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do nothing","mode":"explore"}`))
 	if err != nil {
@@ -408,7 +408,7 @@ func TestSubAgentToolNoOutput(t *testing.T) {
 func TestSubAgentToolResultContainsAgentID(t *testing.T) {
 	client := newTestClient("some output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do work","mode":"explore"}`))
 	if err != nil {
@@ -514,7 +514,7 @@ func TestSummarizeOutput(t *testing.T) {
 func TestSubAgentOutputFileWritten(t *testing.T) {
 	client := newTestClient("Full sub-agent output for file test")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write file","mode":"explore"}`))
 	if err != nil {
@@ -544,7 +544,7 @@ func TestSubAgentOutputFileLargeOutput(t *testing.T) {
 	largeOutput := strings.Repeat("This is a detailed line of output.\n", 50)
 	client := newTestClient(largeOutput)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"produce large output","mode":"explore"}`))
 	if err != nil {
@@ -630,7 +630,7 @@ func extractOutputPath(t *testing.T, result string) string {
 func TestSubAgentResultIncludesTokenUsage(t *testing.T) {
 	client := newTestClient("token test output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"count tokens","mode":"explore"}`))
 	if err != nil {
@@ -722,7 +722,7 @@ func TestSummarizeWithModelExecuteIntegration(t *testing.T) {
 	// Second response: summarization model's response.
 	client := newTestClient(largeOutput, "- bullet point summary")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"explore codebase","mode":"explore"}`))
 	if err != nil {
@@ -742,7 +742,7 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 	// NOT include a summary indicator.
 	client := newTestClient("brief result")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick check","mode":"explore"}`))
 	if err != nil {
@@ -762,7 +762,7 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 func TestSubAgentResultIncludesTurnCount(t *testing.T) {
 	client := newTestClient("turn count output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"work","mode":"explore"}`))
 	if err != nil {
@@ -783,7 +783,7 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 	// Verify that maxTurns is reflected in the turns display.
 	client := newTestClient("output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 5, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 5, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick task","mode":"explore"}`))
 	if err != nil {
@@ -813,7 +813,7 @@ func TestFormatSubAgentResultNoOutputWithErrors(t *testing.T) {
 	// use the errors as the result body instead of "(sub-agent produced no output)".
 	client := newTestClient("") // empty output
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	// We can't easily inject errors into the event stream via mock, so test
 	// buildResult directly.
@@ -833,7 +833,7 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 	// No output and no errors — should show generic message.
 	client := newTestClient("")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 0, 0)
 	if !strings.Contains(result, "sub-agent produced no output") {
@@ -846,7 +846,7 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 func TestSubAgentToolInvalidMode(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test","mode":"invalid"}`))
 	if err == nil {
@@ -860,7 +860,7 @@ func TestSubAgentToolInvalidMode(t *testing.T) {
 func TestSubAgentToolMissingMode(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test"}`))
 	if err == nil {
@@ -876,7 +876,7 @@ func TestSubAgentToolExploreModeUsesExplorationModel(t *testing.T) {
 	// We verify indirectly: explore mode should succeed and use the exploration model.
 	client := newTestClient("explore output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"search code","mode":"explore"}`))
 	if err != nil {
@@ -890,7 +890,7 @@ func TestSubAgentToolExploreModeUsesExplorationModel(t *testing.T) {
 func TestSubAgentToolImplementModeUsesMainModel(t *testing.T) {
 	client := newTestClient("implement output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
 	if err != nil {
@@ -928,7 +928,7 @@ func TestSubAgentToolBatchedToolCallsCountAsOneTurn(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"batch test","mode":"explore"}`))
 	if err != nil {
@@ -970,7 +970,7 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest", nil)
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"multi-response test","mode":"explore"}`))
 	if err != nil {
