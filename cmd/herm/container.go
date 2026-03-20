@@ -158,6 +158,48 @@ func (c *ContainerClient) Exec(command string, timeout int) (CommandResult, erro
 	}, nil
 }
 
+// ExecWithStdin runs a command inside the container with stdin piped directly
+// from the provided byte slice. Unlike Exec, this does NOT invoke a shell —
+// args are passed directly to docker exec. Use this for piping structured input
+// (e.g. JSON) to binaries without shell escaping issues.
+func (c *ContainerClient) ExecWithStdin(stdin []byte, timeout int, args ...string) (CommandResult, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if !c.running {
+		return CommandResult{}, &ContainerError{Code: ErrNotRunning, Message: "container not running"}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+
+	fullArgs := append([]string{"exec", "-i", c.containerID}, args...)
+	cmd := dockerCommand(ctx, "docker", fullArgs...)
+	cmd.Stdin = bytes.NewReader(stdin)
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	exitCode := 0
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			exitCode = exitErr.ExitCode()
+		} else {
+			return CommandResult{}, &ContainerError{
+				Code:    ErrExecFailed,
+				Message: fmt.Sprintf("docker exec: %v", err),
+			}
+		}
+	}
+
+	return CommandResult{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: exitCode,
+	}, nil
+}
+
 // ContainerID returns the Docker container ID.
 func (c *ContainerClient) ContainerID() string {
 	return c.containerID

@@ -233,7 +233,7 @@ Go (host) → json.Marshal → bytes.Reader → cmd.Stdin → docker exec -i →
 - `filetools.go:56-60` — `shellQuote()` becomes unnecessary for binary calls
 - Binary input: `json.NewDecoder(os.Stdin)` in `tools/edit-file/main.go:26` and `tools/write-file/main.go:26`
 
-- [ ] 7a: **Add `ExecWithStdin` to `ContainerClient`** — New method: `ExecWithStdin(stdin []byte, timeout int, args ...string) (CommandResult, error)`. Runs `docker exec -i <containerID> <args...>` with `cmd.Stdin` set to a `bytes.Reader` over the stdin slice. No `sh -c`, no shell quoting, no escape interpretation. Same stdout/stderr/exitCode capture as `Exec`. The `-i` flag tells Docker to keep stdin open so the binary can read from it.
+- [x] 7a: **Add `ExecWithStdin` to `ContainerClient`** — New method: `ExecWithStdin(stdin []byte, timeout int, args ...string) (CommandResult, error)`. Runs `docker exec -i <containerID> <args...>` with `cmd.Stdin` set to a `bytes.Reader` over the stdin slice. No `sh -c`, no shell quoting, no escape interpretation. Same stdout/stderr/exitCode capture as `Exec`. The `-i` flag tells Docker to keep stdin open so the binary can read from it.
 
 - [ ] 7b: **Switch edit_file and write_file to `ExecWithStdin`** — Replace `filetools.go:497` (`echo %s | edit-file`) with `t.container.ExecWithStdin(inputJSON, 30, "edit-file")`. Same at `:592` for write-file. The `json.Marshal` output goes directly to the binary's stdin — no `shellQuote`, no `fmt.Sprintf`, no shell involved. Remove the `shellQuote` call from both paths (keep the function — other tools still use `Exec` for shell commands like grep).
 

@@ -3,8 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -39,11 +41,44 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv("GO_WANT_HELPER_PROCESS") != "1" {
 		return
 	}
+	// Capture stdin to file when requested (used by ExecWithStdin tests).
+	// Only read stdin for "exec -i" calls to avoid blocking other commands.
+	if f := os.Getenv("FAKE_STDIN_FILE"); f != "" {
+		cmdLine := strings.Join(os.Args, " ")
+		if strings.Contains(cmdLine, "exec") && strings.Contains(cmdLine, "-i") {
+			data, _ := io.ReadAll(os.Stdin)
+			_ = os.WriteFile(f, data, 0644)
+		}
+	}
 	fmt.Fprint(os.Stdout, os.Getenv("FAKE_STDOUT"))
 	fmt.Fprint(os.Stderr, os.Getenv("FAKE_STDERR"))
 	code := 0
 	fmt.Sscanf(os.Getenv("FAKE_EXIT_CODE"), "%d", &code)
 	os.Exit(code)
+}
+
+// fakeDockerCommandWithStdin is like fakeDockerCommand but sets FAKE_STDIN_FILE
+// so that TestHelperProcess captures stdin bytes for verification.
+func fakeDockerCommandWithStdin(handler func(args []string) (string, string, int), stdinFile string) func(ctx context.Context, name string, args ...string) *exec.Cmd {
+	return func(ctx context.Context, name string, args ...string) *exec.Cmd {
+		fullArgs := append([]string{name}, args...)
+		stdout, stderr, exitCode := handler(fullArgs)
+
+		cs := []string{"-test.run=TestHelperProcess", "--"}
+		cs = append(cs, fullArgs...)
+		cmd := exec.CommandContext(ctx, os.Args[0], cs...)
+		env := append(os.Environ(),
+			"GO_WANT_HELPER_PROCESS=1",
+			fmt.Sprintf("FAKE_STDOUT=%s", stdout),
+			fmt.Sprintf("FAKE_STDERR=%s", stderr),
+			fmt.Sprintf("FAKE_EXIT_CODE=%d", exitCode),
+		)
+		if stdinFile != "" {
+			env = append(env, fmt.Sprintf("FAKE_STDIN_FILE=%s", stdinFile))
+		}
+		cmd.Env = env
+		return cmd
+	}
 }
 
 func TestContainerClient_IsAvailable_DockerRunning(t *testing.T) {
@@ -425,6 +460,70 @@ func TestContainerClient_RebuildNotRunning(t *testing.T) {
 	}
 	if c.containerID != newID {
 		t.Errorf("containerID = %q, want %q", c.containerID, newID)
+	}
+}
+
+func TestContainerClient_ExecWithStdin(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	stdinFile := filepath.Join(t.TempDir(), "stdin.json")
+
+	dockerCommand = fakeDockerCommandWithStdin(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "abc123\n", "", 0
+			case "exec":
+				return `{"ok":true}`, "", 0
+			case "rm":
+				return "", "", 0
+			}
+		}
+		return "", "unknown", 1
+	}, stdinFile)
+
+	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	if err := c.Start("/workspace", nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	input := []byte(`{"file_path":"/workspace/main.go","old_string":"hello\nworld","new_string":"goodbye"}`)
+	result, err := c.ExecWithStdin(input, 30, "edit-file")
+	if err != nil {
+		t.Fatalf("ExecWithStdin: %v", err)
+	}
+	if result.Stdout != `{"ok":true}` {
+		t.Errorf("stdout = %q, want %q", result.Stdout, `{"ok":true}`)
+	}
+	if result.ExitCode != 0 {
+		t.Errorf("exit code = %d, want 0", result.ExitCode)
+	}
+
+	// Verify stdin was piped correctly.
+	captured, err := os.ReadFile(stdinFile)
+	if err != nil {
+		t.Fatalf("reading captured stdin: %v", err)
+	}
+	if string(captured) != string(input) {
+		t.Errorf("captured stdin = %q, want %q", captured, input)
+	}
+
+	_ = c.Stop()
+}
+
+func TestContainerClient_ExecWithStdinNotRunning(t *testing.T) {
+	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	_, err := c.ExecWithStdin([]byte("test"), 30, "echo")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	cerr, ok := err.(*ContainerError)
+	if !ok {
+		t.Fatalf("expected ContainerError, got %T", err)
+	}
+	if cerr.Code != ErrNotRunning {
+		t.Errorf("expected code %s, got %s", ErrNotRunning, cerr.Code)
 	}
 }
 
