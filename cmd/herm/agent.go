@@ -109,6 +109,8 @@ const (
 	EventCompacted                             // conversation was auto-compacted
 	EventSubAgentDelta                         // sub-agent streaming text
 	EventSubAgentStatus                        // sub-agent status (tool calls, completion)
+	EventSubAgentStart                         // sub-agent started (carries task label)
+	EventRetry                                 // API call being retried
 )
 
 // AgentEvent carries a single event from the agent loop to the TUI.
@@ -143,6 +145,13 @@ type AgentEvent struct {
 
 	// EventDone
 	NodeID string // final assistant node ID
+
+	// EventSubAgentStart
+	Task string // sub-agent task description
+
+	// EventRetry
+	Attempt  int // current retry attempt (1-based)
+	MaxRetry int // maximum number of retries
 }
 
 // ApprovalResponse is sent back to the agent when the user approves/denies a tool call.

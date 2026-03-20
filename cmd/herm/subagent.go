@@ -171,6 +171,9 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, t.model, 0)
 	agentID := agent.ID()
 
+	// Notify the TUI that a sub-agent is starting, with its task label.
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task})
+
 	// Run the sub-agent in a goroutine and drain events.
 	done := make(chan struct{})
 	var textParts []string
