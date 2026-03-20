@@ -1731,7 +1731,7 @@ type App struct {
 	prevRowCount  int
 	sepRow        int
 	inputStartRow int
-	scrollShift   int // rows scrolled off top when content > terminal height
+	scrollShift int // rows scrolled off top when content > terminal height
 
 	// Input buffer (from simple-chat)
 	input   []rune
@@ -2454,7 +2454,7 @@ func (a *App) render() {
 	} else {
 		// No overflow, or content shrank: write from top.
 		if a.scrollShift > 0 {
-			buf.WriteString("\033[3J") // clear stale scrollback
+			buf.WriteString("\033[H\033[2J\033[3J") // clear screen + scrollback
 		}
 		writeRows(&buf, allRows, 1)
 	}
@@ -2468,10 +2468,11 @@ func (a *App) render() {
 	os.Stdout.WriteString(buf.String())
 }
 
-// renderFull clears scrollback and does a full render. Use on resize.
+// renderFull clears the visible screen and scrollback, then does a full render.
+// Use on resize (SIGWINCH) for an artifact-free re-render.
 func (a *App) renderFull() {
 	a.scrollShift = 0 // reset so render() writes from top
-	os.Stdout.WriteString("\033[3J")
+	os.Stdout.WriteString("\033[H\033[2J\033[3J")
 	a.render()
 }
 
@@ -2746,15 +2747,24 @@ func (a *App) Run() error {
 		}
 	}()
 
-	// Enter alt-screen, enable bracketed paste, enable modifyOtherKeys mode 1
-	fmt.Print("\033[?1049h")
+	// Enable bracketed paste and modifyOtherKeys (no alt screen — use main buffer
+	// so native terminal scrollback works)
 	fmt.Print("\033[?2004h")
 	fmt.Print("\033[>4;2m")
 	defer func() {
 		fmt.Print("\033[?25h")  // ensure cursor visible on exit
 		fmt.Print("\033[>4;0m") // disable modifyOtherKeys
 		fmt.Print("\033[?2004l")
-		fmt.Print("\033[?1049l")
+		// Position cursor below rendered content so shell prompt appears cleanly
+		th := getTerminalHeight()
+		lastVisRow := a.prevRowCount
+		if lastVisRow > th {
+			lastVisRow = th
+		}
+		if lastVisRow > 0 {
+			fmt.Printf("\033[%d;1H", lastVisRow)
+		}
+		fmt.Print("\r\n")
 		end := time.Now()
 		fmt.Printf("[HERM %s -> %s]\r\n",
 			startTime.Format("Jan 02 15:04"),
@@ -3105,6 +3115,21 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 		return
 	}
 
+	// SS3 sequence: ESC O <letter>
+	// Some terminals send arrow keys as SS3 instead of CSI, especially when
+	// application cursor key mode (DECCKM) is active. Scroll events converted
+	// via DECSET 1007 may also arrive in this format.
+	if b == 'O' {
+		ss3, ok := readByte()
+		if !ok {
+			return
+		}
+		if !a.awaitingApproval {
+			a.handleNavKey(ss3, nil)
+		}
+		return
+	}
+
 	if b != '[' {
 		// ESC followed by non-[ byte (e.g. Alt+key) — treat as plain escape
 		a.handlePlainEscape()
@@ -3112,38 +3137,48 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 	}
 
 	// CSI sequence: ESC [
-	b, ok = readByte()
-	if !ok {
-		return
-	}
-
-	// Check for bracketed paste: ESC [ 2 0 0 ~
-	// Also handles modifyOtherKeys: ESC [ 2 7 ; <mod> ; <code> ~
-	if b == '2' {
-		a.handleCSIDigit2(readByte, a.handlePaste)
-		return
-	}
-
-	// Modified key sequences: ESC [ 1 ; <mod> <letter>
-	if b == '1' {
-		a.handleModifiedCSI(readByte)
-		return
-	}
-
-	// Tilde sequences: ESC [ <number> ~
-	if b >= '3' && b <= '6' {
-		tilde, ok := readByte()
+	// Per ECMA-48, collect parameter bytes (0x30–0x3F) and intermediate bytes
+	// (0x20–0x2F) until a final byte (0x40–0x7E) arrives. This ensures that
+	// unknown or unexpected CSI sequences are fully consumed and never leak
+	// trailing bytes into the input buffer (e.g. mouse/scroll events from
+	// terminals like Zed that send sequences herm does not handle).
+	var params []byte
+	var final byte
+	for {
+		b, ok = readByte()
 		if !ok {
 			return
 		}
-		if tilde == '~' {
-			switch b {
-			case '3': // Delete
-				if !a.awaitingApproval {
-					a.deleteAtCursor()
-					a.renderInput()
+		if isCSIFinal(b) {
+			final = b
+			break
+		}
+		params = append(params, b)
+		if len(params) > 128 {
+			return // safety limit for malformed sequences
+		}
+	}
+
+	// Tilde-terminated sequences
+	if final == '~' {
+		ps := string(params)
+		switch {
+		case ps == "200": // Bracketed paste: ESC [ 200 ~
+			a.handlePaste(readBracketedPaste(readByte))
+		case ps == "3": // Delete: ESC [ 3 ~
+			if !a.awaitingApproval {
+				a.deleteAtCursor()
+				a.renderInput()
+			}
+		default:
+			// modifyOtherKeys: ESC [ 27 ; <mod> ; <code> ~
+			if strings.HasPrefix(ps, "27;") {
+				var mod, code int
+				if n, _ := fmt.Sscanf(ps[3:], "%d;%d", &mod, &code); n == 2 {
+					a.handleModifyOtherKeys(mod, code)
 				}
 			}
+			// All other tilde sequences (Insert, PgUp, etc.) silently consumed
 		}
 		return
 	}
@@ -3152,8 +3187,29 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 		return
 	}
 
-	switch b {
+	// Navigation keys (arrows, Home, End) — shared by CSI and SS3
+	a.handleNavKey(final, params)
+	// Unknown final bytes (mode responses, etc.): already fully consumed by
+	// the collection loop above — silently discarded.
+}
+
+// handleNavKey dispatches a navigation key (A/B/C/D/H/F) with optional CSI
+// parameters. Called for both CSI (ESC [ ... X) and SS3 (ESC O X) sequences.
+func (a *App) handleNavKey(final byte, params []byte) {
+	// Parse modifier from params (e.g. "1;5" in ESC [ 1;5 C → mod 5 = Ctrl).
+	// CSI modifier encoding: value = 1 + bitmask (Shift=1, Alt=2, Ctrl=4).
+	mod := 0
+	if i := strings.LastIndexByte(string(params), ';'); i >= 0 {
+		fmt.Sscanf(string(params[i+1:]), "%d", &mod)
+	}
+	isCtrl := mod > 0 && (mod-1)&4 != 0
+	isAlt := mod > 0 && (mod-1)&2 != 0
+
+	switch final {
 	case 'A': // Up
+		if len(params) > 0 {
+			return // parameterized/modified up — no action defined
+		}
 		if a.menuActive {
 			if a.menuCursor > 0 {
 				a.menuCursor--
@@ -3178,6 +3234,9 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 		}
 		a.renderInput()
 	case 'B': // Down
+		if len(params) > 0 {
+			return // parameterized/modified down — no action defined
+		}
 		if a.menuActive {
 			if a.menuCursor < len(a.menuLines)-1 {
 				a.menuCursor++
@@ -3207,7 +3266,10 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 		}
 		a.renderInput()
 	case 'C': // Right
-		if a.menuActive && a.menuModels != nil {
+		if isCtrl || isAlt {
+			a.moveWordRight()
+			a.renderInput()
+		} else if a.menuActive && a.menuModels != nil {
 			if a.menuSortCol < 3 {
 				a.menuSortCol++
 				a.refreshModelMenu()
@@ -3218,7 +3280,10 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 			a.renderInput()
 		}
 	case 'D': // Left
-		if a.menuActive && a.menuModels != nil {
+		if isCtrl || isAlt {
+			a.moveWordLeft()
+			a.renderInput()
+		} else if a.menuActive && a.menuModels != nil {
 			if a.menuSortCol > 0 {
 				a.menuSortCol--
 				a.refreshModelMenu()
@@ -4620,11 +4685,11 @@ func (a *App) enterShellMode() {
 	// Stop the stdin reader so it doesn't compete with the shell
 	a.stopStdinReader()
 
-	// Exit alt screen, restore terminal
-	fmt.Print("\033[?25h")   // show cursor
-	fmt.Print("\033[>4;0m")  // disable modifyOtherKeys
-	fmt.Print("\033[?2004l") // disable bracketed paste
-	fmt.Print("\033[?1049l") // exit alt screen
+	// Clear screen and restore terminal before handing off to shell
+	fmt.Print("\033[H\033[2J\033[3J") // clear screen + scrollback
+	fmt.Print("\033[?25h")            // show cursor
+	fmt.Print("\033[>4;0m")           // disable modifyOtherKeys
+	fmt.Print("\033[?2004l")          // disable bracketed paste
 	term.Restore(a.fd, a.oldState)
 
 	// Brief pause + flush to discard any stale terminal responses still in-flight.
@@ -4643,8 +4708,7 @@ func (a *App) enterShellMode() {
 	}
 	a.oldState = oldState
 
-	// Re-enter alt screen, re-enable bracketed paste, modifyOtherKeys
-	fmt.Print("\033[?1049h")
+	// Re-enable bracketed paste, modifyOtherKeys
 	fmt.Print("\033[?2004h")
 	fmt.Print("\033[>4;2m")
 
@@ -4659,7 +4723,7 @@ func (a *App) enterShellMode() {
 		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Shell session ended."})
 	}
 
-	a.render()
+	a.renderFull()
 }
 
 // ─── Agent ───

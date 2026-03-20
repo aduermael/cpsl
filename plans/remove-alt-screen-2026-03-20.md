@@ -17,9 +17,9 @@
 ---
 
 ## Phase 1: Remove alt screen and fix terminal setup/cleanup
-- [ ] 1a: Remove `\033[?1049h` from startup and `\033[?1049l` from cleanup defer; keep bracketed paste and modifyOtherKeys (both work without alt screen); on exit, position cursor below the last rendered row and print a newline so the shell prompt appears in the right place
-- [ ] 1b: In `renderFull()`, use `\033[H\033[2J\033[3J` (home + clear visible screen + clear scrollback) for a completely blank canvas before re-rendering — this is what runs on SIGWINCH and guarantees artifact-free resize; update the `render()` content-shrank path similarly
-- [ ] 1c: Update shell-mode transitions — currently exit/re-enter alt screen; without alt screen: clear screen before shell (`\033[H\033[2J\033[3J`), restore terminal, run shell, re-enter raw mode, clear screen, full re-render
+- [x] 1a: Remove `\033[?1049h` from startup and `\033[?1049l` from cleanup defer; keep bracketed paste and modifyOtherKeys (both work without alt screen); on exit, position cursor below the last rendered row and print a newline so the shell prompt appears in the right place
+- [x] 1b: In `renderFull()`, use `\033[H\033[2J\033[3J` (home + clear visible screen + clear scrollback) for a completely blank canvas before re-rendering — this is what runs on SIGWINCH and guarantees artifact-free resize; update the `render()` content-shrank path similarly
+- [x] 1c: Update shell-mode transitions — currently exit/re-enter alt screen; without alt screen: clear screen before shell (`\033[H\033[2J\033[3J`), restore terminal, run shell, re-enter raw mode, clear screen, full re-render
 
 ## Phase 2: Verify and fix edge cases
 - [ ] 2a: Ensure the SIGWINCH → `renderFull()` path produces a clean re-render: hide cursor before clearing (`\033[?25l`), clear screen + scrollback, write rows, show cursor — this eliminates flicker during resize
