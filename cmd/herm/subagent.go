@@ -79,12 +79,17 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 					"type": "string",
 					"description": "A clear description of the task for the sub-agent to complete"
 				},
+				"mode": {
+					"type": "string",
+					"enum": ["explore", "implement"],
+					"description": "The sub-agent mode. 'explore' uses a fast, cheap model for research, search, and reading tasks. 'implement' uses the full orchestrator model for writing code and making changes."
+				},
 				"agent_id": {
 					"type": "string",
 					"description": "Optional: ID of a previous sub-agent to resume. The sub-agent continues from where it left off with its full context preserved."
 				}
 			},
-			"required": ["task"]
+			"required": ["task", "mode"]
 		}`),
 	}
 }
@@ -95,6 +100,7 @@ func (t *SubAgentTool) RequiresApproval(_ json.RawMessage) bool {
 
 type subAgentInput struct {
 	Task    string `json:"task"`
+	Mode    string `json:"mode"`
 	AgentID string `json:"agent_id,omitempty"`
 }
 
@@ -152,6 +158,15 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	if in.Task == "" {
 		return "", fmt.Errorf("task is required")
 	}
+	if in.Mode != "explore" && in.Mode != "implement" {
+		return "", fmt.Errorf("mode must be \"explore\" or \"implement\", got %q", in.Mode)
+	}
+
+	// Select model based on mode: explore uses the cheap model, implement uses the full model.
+	model := t.explorationModel
+	if in.Mode == "implement" {
+		model = t.mainModel
+	}
 
 	// Determine if we're resuming a previous sub-agent.
 	var parentNodeID string
@@ -170,7 +185,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	// skills, and uses a compact role section instead of the full orchestrator framing.
 	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, t.snapshot)
 
-	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, t.mainModel, 0)
+	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, model, 0)
 	agentID := agent.ID()
 
 	// Notify the TUI that a sub-agent is starting, with its task label.
