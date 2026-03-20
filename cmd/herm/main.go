@@ -4740,7 +4740,7 @@ func (a *App) startAgent(userMessage string) {
 	if !supportsServerTools(modelProvider, explorationModelID) {
 		subAgentServerTools = nil
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage, a.projectSnap)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, explorationModelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage, a.projectSnap)
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string

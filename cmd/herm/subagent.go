@@ -26,24 +26,25 @@ const defaultMaxAgentDepth = 1
 // Communication is output-only: the sub-agent returns a result string and
 // that is the sole information passed back to the caller.
 type SubAgentTool struct {
-	client         *langdag.Client
-	tools          []Tool
-	serverTools    []types.ToolDefinition
-	model          string
-	maxTurns       int
-	maxDepth       int    // maximum nesting depth from this level
-	currentDepth   int    // current nesting depth (0 = spawned by main agent)
-	workDir        string
-	personality    string
-	containerImage string
-	snapshot       *projectSnapshot // project snapshot for sub-agent system prompts
-	parentEvents   chan<- AgentEvent // set after construction; forwards live events to TUI
+	client           *langdag.Client
+	tools            []Tool
+	serverTools      []types.ToolDefinition
+	model            string
+	explorationModel string // cheap model for summarization; empty = use truncation fallback
+	maxTurns         int
+	maxDepth         int    // maximum nesting depth from this level
+	currentDepth     int    // current nesting depth (0 = spawned by main agent)
+	workDir          string
+	personality      string
+	containerImage   string
+	snapshot         *projectSnapshot // project snapshot for sub-agent system prompts
+	parentEvents     chan<- AgentEvent // set after construction; forwards live events to TUI
 
 	mu         sync.Mutex
 	agentNodes map[string]string // agentID → last nodeID (for resume)
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string, snapshot *projectSnapshot) *SubAgentTool {
+func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, model string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string, snapshot *projectSnapshot) *SubAgentTool {
 	if maxTurns <= 0 {
 		maxTurns = defaultSubAgentMaxTurns
 	}
@@ -51,18 +52,19 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		maxDepth = defaultMaxAgentDepth
 	}
 	return &SubAgentTool{
-		client:         client,
-		tools:          tools,
-		serverTools:    serverTools,
-		model:          model,
-		maxTurns:       maxTurns,
-		maxDepth:       maxDepth,
-		currentDepth:   currentDepth,
-		workDir:        workDir,
-		personality:    personality,
-		containerImage: containerImage,
-		snapshot:       snapshot,
-		agentNodes:     make(map[string]string),
+		client:           client,
+		tools:            tools,
+		serverTools:      serverTools,
+		model:            model,
+		explorationModel: explorationModel,
+		maxTurns:         maxTurns,
+		maxDepth:         maxDepth,
+		currentDepth:     currentDepth,
+		workDir:          workDir,
+		personality:      personality,
+		containerImage:   containerImage,
+		snapshot:         snapshot,
+		agentNodes:       make(map[string]string),
 	}
 }
 
@@ -133,7 +135,7 @@ func (t *SubAgentTool) buildSubAgentTools() []Tool {
 	nextDepth := t.currentDepth + 1
 	if nextDepth < t.maxDepth {
 		// Sub-agent is allowed to spawn its own sub-agents.
-		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.model, t.maxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage, t.snapshot)
+		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.model, t.explorationModel, t.maxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage, t.snapshot)
 		child.parentEvents = t.parentEvents
 		tools = append(tools, child)
 	}
@@ -286,6 +288,56 @@ func summarizeOutput(s string) string {
 		cut = cut[:i]
 	}
 	return cut + "\n[... full output in file above]"
+}
+
+// summarizeWithModelMaxChars is the max characters of sub-agent output to send
+// to the exploration model for summarization.
+const summarizeWithModelMaxChars = 4000
+
+// summarizeWithModelPrompt is the prompt sent to the exploration model for
+// generating a structured summary of a sub-agent's output.
+const summarizeWithModelPrompt = `Summarize the key findings from this sub-agent's output in 3-5 bullet points. Focus on facts, decisions, and actionable information. Skip preamble. Output only the bullet points.
+
+--- SUB-AGENT OUTPUT ---
+`
+
+// summarizeWithModel calls the exploration model to generate a structured
+// summary of a sub-agent's output. Falls back to summarizeOutput() if the
+// model is not set or the call fails. Returns the summary and whether the
+// model was used (true) or truncation fallback (false).
+func (t *SubAgentTool) summarizeWithModel(ctx context.Context, output string) (string, bool) {
+	// Short outputs don't need model summarization.
+	if len(output) <= subAgentSummaryBytes {
+		return output, false
+	}
+
+	// No exploration model configured — fall back to truncation.
+	if t.explorationModel == "" || t.client == nil {
+		return summarizeOutput(output), false
+	}
+
+	// Truncate the input to the model to keep costs low.
+	modelInput := output
+	if len(modelInput) > summarizeWithModelMaxChars {
+		modelInput = modelInput[:summarizeWithModelMaxChars]
+		if i := strings.LastIndex(modelInput, "\n"); i > 0 {
+			modelInput = modelInput[:i]
+		}
+		modelInput += "\n[... truncated]"
+	}
+
+	summary, err := callLLMDirect(ctx, t.client, t.explorationModel, summarizeWithModelPrompt+modelInput)
+	if err != nil {
+		debugLog("summarizeWithModel failed: %v", err)
+		return summarizeOutput(output), false
+	}
+
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return summarizeOutput(output), false
+	}
+
+	return summary, true
 }
 
 // agentOutputDir returns the directory for sub-agent output files.

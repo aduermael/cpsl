@@ -1379,7 +1379,7 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 
 	// Deliberately small parent buffer — forward() must not block.
 	parentEvents := make(chan AgentEvent, 1)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", 10, 1, 0, tmpDir, "", "", nil)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 1, 0, tmpDir, "", "", nil)
 	tool.parentEvents = parentEvents
 
 	done := make(chan struct{})
