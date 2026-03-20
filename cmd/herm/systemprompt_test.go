@@ -536,6 +536,31 @@ func TestBuildSystemPromptAgentTool(t *testing.T) {
 	}
 }
 
+func TestBuildSystemPromptAgentResultGuidance(t *testing.T) {
+	tools := []Tool{stubTool{"agent"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+
+	for _, fragment := range []string{
+		"[summary: model]",
+		"[summary: truncated]",
+		"read the full output file",
+		"[errors:",
+		"[turns:",
+	} {
+		if !strings.Contains(prompt, fragment) {
+			t.Errorf("agent result guidance missing %q", fragment)
+		}
+	}
+}
+
+func TestBuildSystemPromptRetryGuidance(t *testing.T) {
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+
+	if !strings.Contains(prompt, "retried automatically") {
+		t.Error("practices section should contain automatic retry guidance")
+	}
+}
+
 func TestBuildSystemPromptAllServerTools(t *testing.T) {
 	// Provide only server tools — no client tools at all.
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}

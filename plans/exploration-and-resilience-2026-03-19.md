@@ -197,7 +197,7 @@ When a sub-agent fails, tell the main agent why so it can adapt.
 
 ## Phase 6: Integration Tests & Prompt Tuning
 
-- [ ] 6a: **Update system prompt for new tools and behaviors** — Add outline tool guidance, retry behavior explanation (agent should not manually retry on API errors — the system handles it), and guidance for interpreting structured sub-agent results (check `[summary: truncated]` → read the output file).
+- [x] 6a: **Update system prompt for new tools and behaviors** — Add outline tool guidance, retry behavior explanation (agent should not manually retry on API errors — the system handles it), and guidance for interpreting structured sub-agent results (check `[summary: truncated]` → read the output file).
 
 - [ ] 6b: **End-to-end exploration test** — Simulate a "understand how X works" task and verify: agent uses outline before full reads, spawns sub-agents for parallel research, sub-agent display shows per-agent progress, results are structured, total token usage is lower than current approach.
 

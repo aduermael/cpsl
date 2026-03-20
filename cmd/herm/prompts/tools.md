@@ -126,6 +126,13 @@ Spawns a sub-agent with its own context window. Each sub-agent has startup cost 
 **Usage:**
 - Provide a clear, self-contained task description — the sub-agent has the same tools you do but no shared memory.
 - Resume a previous sub-agent by passing its agent_id with a new task — this continues from where it left off with full context preserved.
+
+**Reading results:**
+- Results include metadata: `[agent_id]`, `[output]`, `[tokens]`, `[turns]`, and a summary.
+- `[summary: model]` — intelligent summary; usually sufficient to act on.
+- `[summary: truncated]` — naive truncation; read the full output file via `read_file` for complete findings.
+- `[errors: ...]` — sub-agent hit errors; review and consider retrying with a narrower task.
+- `[turns: N/M]` where N=M means the sub-agent hit its turn limit and may have incomplete results.
 {{- end}}
 {{- if .HasWebSearch}}
 
