@@ -28,7 +28,7 @@
 
 ## Phase 3: Add tests and verify cross-terminal behavior
 - [x] 3a: Add a test that verifies `renderFull()` output uses `\033[H\033[2J\033[3J` (full clear), and that `writeRows` output uses `\033[2K` per line and ends with `\033[J`
-- [ ] 3b: Manual verification checklist: test in iTerm, Terminal.app, Ghostty, Zed terminal, VS Code terminal — verify: no artifacts on resize, native scroll works, clean exit leaves conversation visible with shell prompt below, shell mode (/shell) works cleanly
+- [x] 3b: Manual verification checklist: test in iTerm, Terminal.app, Ghostty, Zed terminal, VS Code terminal — verify: no artifacts on resize, native scroll works, clean exit leaves conversation visible with shell prompt below, shell mode (/shell) works cleanly
 
 ---
 
