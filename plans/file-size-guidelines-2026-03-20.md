@@ -83,7 +83,7 @@ main.go is still ~2300 lines after phase 7. The config editor UI (~530 lines) is
 
 The command dispatch (~360 lines) and shell mode (~58 lines) are cohesive command-handling logic.
 
-- [ ] 9a: Create `commands.go` — move slash command handling: `handleCommand`, `handleCompactCommand`, `handleUsageCommand`, `promptForWorktreeName`, `switchToWorktree`, `isInWorktree`, `enterShellMode`. Add doc comment.
+- [x] 9a: Create `commands.go` — move slash command handling: `handleCommand`, `handleCompactCommand`, `handleUsageCommand`, `promptForWorktreeName`, `switchToWorktree`, `isInWorktree`, `enterShellMode`. Add doc comment.
 - [ ] 9b: Verify all tests pass after commands extraction
 
 ## Phase 10: Split main.go — extract agent orchestration
