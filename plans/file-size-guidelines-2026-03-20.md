@@ -95,8 +95,8 @@ The agent UI methods (~418 lines) bridge the App and Agent types. agent.go (860 
 
 ## Phase 11: Final validation
 
-- [ ] 11a: Run full test suite, verify no regressions
-- [ ] 11b: Verify all source files are under 1000 lines; verify all non-test .go files have doc comments; update GUIDELINES.md if any rules changed during implementation
+- [x] 11a: Run full test suite, verify no regressions
+- [x] 11b: Verify all source files are under 1000 lines; verify all non-test .go files have doc comments; update GUIDELINES.md if any rules changed during implementation
 
 ### Success criteria
 

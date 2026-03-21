@@ -1,3 +1,5 @@
+// markdown.go implements inline Markdown rendering for the terminal, including
+// bold, italic, code spans, strikethrough, and link formatting with ANSI escapes.
 package main
 
 import (

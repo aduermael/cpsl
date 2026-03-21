@@ -15,6 +15,31 @@ import (
 	"langdag.com/langdag/types"
 )
 
+// ─── Commands and autocomplete ───
+
+var commands = []string{"/branches", "/clear", "/compact", "/config", "/model", "/session", "/shell", "/update", "/usage", "/worktrees"}
+var sessionSubcommands = []string{"/session list", "/session load", "/session show"}
+
+func filterCommands(prefix string) []string {
+	var matches []string
+	for _, cmd := range commands {
+		if strings.HasPrefix(cmd, prefix) {
+			matches = append(matches, cmd)
+		}
+	}
+	// Only show session subcommands when /session is the sole base match.
+	if len(matches) == 1 && matches[0] == "/session" {
+		matches = matches[:0]
+		all := append([]string{"/session"}, sessionSubcommands...)
+		for _, cmd := range all {
+			if strings.HasPrefix(cmd, prefix) {
+				matches = append(matches, cmd)
+			}
+		}
+	}
+	return matches
+}
+
 func (a *App) handleCommand(input string) {
 	cmd := strings.Fields(input)[0]
 
