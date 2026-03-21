@@ -91,7 +91,7 @@ The command dispatch (~360 lines) and shell mode (~58 lines) are cohesive comman
 The agent UI methods (~418 lines) bridge the App and Agent types. agent.go (860 lines) is too large to absorb them, so they go in a new file.
 
 - [x] 10a: Create `agentui.go` — move agent orchestration methods on App: `showModelChange`, `maybeShowInitialModels`, `startAgent`, `drainAgentEvents`, `handleAgentEvent`. Add doc comment.
-- [ ] 10b: Verify all tests pass and that main.go is under 1000 lines
+- [x] 10b: Verify all tests pass and that main.go is under 1000 lines
 
 ## Phase 11: Final validation
 
