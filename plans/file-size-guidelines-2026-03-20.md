@@ -29,7 +29,7 @@ Test files over 1000 lines (`agent_test.go` at 1,871, `filetools_test.go` at 1,3
 
 ## Phase 1: Create coding guidelines document
 
-- [ ] 1a: Create `GUIDELINES.md` at the repo root with rules covering: max file size (1000 lines for source, flexible for tests), package-level doc comments required on every non-test .go file, and other Go style conventions observed in the codebase (naming, error handling, test patterns)
+- [x] 1a: Create `GUIDELINES.md` at the repo root with rules covering: max file size (1000 lines for source, flexible for tests), package-level doc comments required on every non-test .go file, and other Go style conventions observed in the codebase (naming, error handling, test patterns)
 
 ## Phase 2: Add doc comments to existing files
 
