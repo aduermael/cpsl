@@ -53,8 +53,8 @@ main.go's rendering functions (~1500 lines) are the largest cohesive group and h
 
 ## Phase 4: Split main.go — extract content processing
 
-- [ ] 4a: Create `content.go` — move content/attachment processing: `expandPastes`, `expandAttachments`, `isFilePath`, `isImageExt`, `mimeForExt`, `toolCallSummary`, `approvalCmdDesc`, `collapseToolResult`, `collapseDiff`, `compactLineNumbers`, `isDiffContent`, `diffLineStyle`, and related types/constants. Add doc comment.
-- [ ] 4b: Verify all tests pass after content extraction
+- [x] 4a: Create `content.go` — move content/attachment processing: `expandPastes`, `expandAttachments`, `isFilePath`, `isImageExt`, `mimeForExt`, `toolCallSummary`, `approvalCmdDesc`, `collapseToolResult`, `collapseDiff`, `compactLineNumbers`, `isDiffContent`, `diffLineStyle`, and related types/constants. Add doc comment.
+- [x] 4b: Verify all tests pass after content extraction
 
 ## Phase 5: Split main.go — extract session management
 
