@@ -76,7 +76,7 @@ main.go's rendering functions (~1500 lines) are the largest cohesive group and h
 
 main.go is still ~2300 lines after phase 7. The config editor UI (~530 lines) is a self-contained mode with its own types and methods.
 
-- [ ] 8a: Create `configeditor.go` — move config editor types and methods: `cfgTabNames`, `cfgField` struct, `maskKey`, `enterConfigMode`, `exitConfigMode`, `openConfigModelPicker`, `cfgCurrentFields`, `settingsTabFields`, `projectTabFields`, `buildConfigRows`, `handleConfigByte`, `handleConfigEditByte`. Add doc comment.
+- [x] 8a: Create `configeditor.go` — move config editor types and methods: `cfgTabNames`, `cfgField` struct, `maskKey`, `enterConfigMode`, `exitConfigMode`, `openConfigModelPicker`, `cfgCurrentFields`, `settingsTabFields`, `projectTabFields`, `buildConfigRows`, `handleConfigByte`, `handleConfigEditByte`. Add doc comment.
 - [ ] 8b: Verify all tests pass after config editor extraction
 
 ## Phase 9: Split main.go — extract commands and shell mode

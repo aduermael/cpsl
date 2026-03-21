@@ -1,0 +1,551 @@
+// configeditor.go implements the interactive config editor UI, including
+// tab navigation, field editing, model picker integration, and key handling.
+package main
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+)
+
+func maskKey(key string) string {
+	if key == "" {
+		return "(not set)"
+	}
+	if len(key) <= 8 {
+		return "****"
+	}
+	return key[:4] + "..." + key[len(key)-4:]
+}
+
+// ─── Config editor ───
+
+var cfgTabNames = []string{"API Keys", "Global", "Project"}
+
+type cfgField struct {
+	label      string
+	get        func(Config) string
+	display    func(Config) string    // masked display; nil means use get
+	set        func(*Config, string)
+	toggle     func(*Config)          // if non-nil, Enter toggles instead of opening editor
+	globalHint func(Config) string    // if set, shows "(global: X)" when field value is empty
+	picker     func(*App)             // if non-nil, Enter opens a picker (e.g. model selector) instead of editor
+}
+
+var cfgAPIKeyFields = []cfgField{
+	{label: "Anthropic", get: func(c Config) string { return c.AnthropicAPIKey }, display: func(c Config) string { return maskKey(c.AnthropicAPIKey) }, set: func(c *Config, v string) { c.AnthropicAPIKey = v }},
+	{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
+	{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
+	{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
+}
+
+func (a *App) enterConfigMode() {
+	a.cfgActive = true
+	a.cfgTab = 0
+	a.cfgCursor = 0
+	a.cfgEditing = false
+	a.cfgEditBuf = nil
+	a.cfgEditCursor = 0
+	a.cfgDraft = a.globalConfig
+	a.cfgProjectDraft = a.projectConfig
+	a.renderInput()
+}
+
+func (a *App) exitConfigMode(save bool) {
+	if save {
+		a.globalConfig = a.cfgDraft
+		a.projectConfig = a.cfgProjectDraft
+		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
+		a.displaySystemPrompts = a.config.DisplaySystemPrompts
+		var saveErr bool
+		if err := saveConfig(a.globalConfig); err != nil {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving global config: %v", err)})
+			saveErr = true
+		}
+		if a.repoRoot != "" {
+			if err := saveProjectConfig(a.repoRoot, a.projectConfig); err != nil {
+				a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error saving project config: %v", err)})
+				saveErr = true
+			}
+		}
+		if !saveErr {
+			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Config saved."})
+		}
+		// Show updated model if it changed
+		if a.models != nil {
+			a.showModelChange(a.config.resolveActiveModel(a.models))
+		}
+		// Reinitialize langdag client with updated config
+		go func() {
+			client, err := newLangdagClient(a.config)
+			a.resultCh <- langdagReadyMsg{client: client, provider: a.config.defaultLangdagProvider(), err: err}
+		}()
+	}
+	a.cfgActive = false
+	a.cfgEditing = false
+	a.cfgEditBuf = nil
+	a.render()
+}
+
+// openConfigModelPicker opens an inline model menu within the config editor.
+// getCurrentID returns the currently selected model ID (for highlighting).
+// onSelect is called with the chosen model ID when the user makes a selection.
+func (a *App) openConfigModelPicker(getCurrentID func() string, onSelect func(string)) {
+	if a.models == nil {
+		return
+	}
+	available := a.cfgDraft.availableModels(a.models)
+	if len(available) == 0 {
+		return
+	}
+
+	activeID := getCurrentID()
+	a.menuModels = available
+	a.menuActiveID = activeID
+	a.menuSortCol = sortColFromName(a.cfgDraft.ModelSortCol)
+	a.menuSortAsc = sortAscFromMap(a.cfgDraft.ModelSortDirs)
+	asc := a.menuSortAsc[a.menuSortCol]
+	sortModelsByCol(a.menuModels, a.menuSortCol, asc)
+	header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, asc)
+
+	activeIdx := 0
+	for i, m := range a.menuModels {
+		if m.ID == activeID {
+			activeIdx = i
+			break
+		}
+	}
+
+	a.menuHeader = header
+	a.menuLines = lines
+	a.menuCursor = activeIdx
+	maxVisible := getTerminalHeight() * 60 / 100
+	if maxVisible < 1 {
+		maxVisible = 1
+	}
+	if activeIdx >= maxVisible {
+		a.menuScrollOffset = activeIdx - maxVisible + 1
+	} else {
+		a.menuScrollOffset = 0
+	}
+	a.menuActive = true
+	a.menuAction = func(idx int) {
+		if idx >= 0 && idx < len(a.menuModels) {
+			onSelect(a.menuModels[idx].ID)
+		}
+		a.menuLines = nil
+		a.menuHeader = ""
+		a.menuActive = false
+		a.menuAction = nil
+		a.menuScrollOffset = 0
+		a.menuModels = nil
+		a.menuActiveID = ""
+		// Config mode stays active — renderInput will show config fields again.
+	}
+	a.renderInput()
+}
+
+func (a *App) cfgCurrentFields() []cfgField {
+	switch a.cfgTab {
+	case 0:
+		return cfgAPIKeyFields
+	case 1:
+		return a.settingsTabFields()
+	case 2:
+		return a.projectTabFields()
+	}
+	return nil
+}
+
+func (a *App) settingsTabFields() []cfgField {
+	return []cfgField{
+		{label: "Active Model", get: func(c Config) string { return c.ActiveModel }, set: func(c *Config, v string) { c.ActiveModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ActiveModel }, func(id string) { a.cfgDraft.ActiveModel = id }) }},
+		{label: "Exploration Model", get: func(c Config) string { return c.ExplorationModel }, set: func(c *Config, v string) { c.ExplorationModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ExplorationModel }, func(id string) { a.cfgDraft.ExplorationModel = id }) }},
+		{label: "Paste Collapse", get: func(c Config) string { return strconv.Itoa(c.PasteCollapseMinChars) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil { c.PasteCollapseMinChars = n } }},
+		{label: "Show System Prompt", get: func(c Config) string { if c.DisplaySystemPrompts { return "on" }; return "off" }, toggle: func(c *Config) { c.DisplaySystemPrompts = !c.DisplaySystemPrompts }},
+		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
+		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
+		{label: "Git Co-Author", get: func(c Config) string { if c.effectiveGitCoAuthor() { return "on" }; return "off" }, toggle: func(c *Config) { if c.GitCoAuthor == nil { f := false; c.GitCoAuthor = &f } else { v := !*c.GitCoAuthor; c.GitCoAuthor = &v } }},
+	}
+}
+
+func (a *App) projectTabFields() []cfgField {
+	return []cfgField{
+		{
+			label:      "Active Model",
+			get:        func(_ Config) string { return a.cfgProjectDraft.ActiveModel },
+			set:        func(_ *Config, v string) { a.cfgProjectDraft.ActiveModel = v },
+			globalHint: func(c Config) string { return c.ActiveModel },
+			picker:     func(a *App) { a.openConfigModelPicker(func() string { return a.cfgProjectDraft.ActiveModel }, func(id string) { a.cfgProjectDraft.ActiveModel = id }) },
+		},
+		{
+			label:      "Exploration Model",
+			get:        func(_ Config) string { return a.cfgProjectDraft.ExplorationModel },
+			set:        func(_ *Config, v string) { a.cfgProjectDraft.ExplorationModel = v },
+			globalHint: func(c Config) string { return c.ExplorationModel },
+			picker:     func(a *App) { a.openConfigModelPicker(func() string { return a.cfgProjectDraft.ExplorationModel }, func(id string) { a.cfgProjectDraft.ExplorationModel = id }) },
+		},
+		{
+			label:      "Personality",
+			get:        func(_ Config) string { return a.cfgProjectDraft.Personality },
+			set:        func(_ *Config, v string) { a.cfgProjectDraft.Personality = v },
+			globalHint: func(c Config) string { return c.Personality },
+		},
+		{
+			label: "Sub-Agent Max Turns",
+			get: func(_ Config) string {
+				if a.cfgProjectDraft.SubAgentMaxTurns == 0 {
+					return ""
+				}
+				return strconv.Itoa(a.cfgProjectDraft.SubAgentMaxTurns)
+			},
+			set: func(_ *Config, v string) {
+				if n, err := strconv.Atoi(v); err == nil && n > 0 {
+					a.cfgProjectDraft.SubAgentMaxTurns = n
+				} else {
+					a.cfgProjectDraft.SubAgentMaxTurns = 0
+				}
+			},
+			globalHint: func(c Config) string {
+				n := c.SubAgentMaxTurns
+				if n <= 0 {
+					n = 15
+				}
+				return strconv.Itoa(n)
+			},
+		},
+	}
+}
+
+func (a *App) buildConfigRows() []string {
+	var rows []string
+
+	// Tab bar
+	var tabParts []string
+	for i, name := range cfgTabNames {
+		if i == a.cfgTab {
+			tabParts = append(tabParts, fmt.Sprintf("\033[36;1m[%s]\033[0m", name))
+		} else {
+			tabParts = append(tabParts, fmt.Sprintf("\033[2m %s \033[0m", name))
+		}
+	}
+	rows = append(rows, strings.Join(tabParts, " "))
+
+	// No-project message for Project tab
+	if a.cfgTab == 2 && a.repoRoot == "" {
+		rows = append(rows, "\033[2mNo project detected (not in a git repository)\033[0m")
+		rows = append(rows, "\033[2m←/→=tab  Esc=close  Ctrl+S=save & close\033[0m")
+		return rows
+	}
+
+	// When a model picker menu is active, render it inline below the tab bar
+	if a.menuActive && len(a.menuLines) > 0 {
+		w := a.width
+		if a.menuHeader != "" {
+			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(a.menuHeader, w)))
+		}
+		maxVisible := getTerminalHeight() * 60 / 100
+		if maxVisible < 1 {
+			maxVisible = 1
+		}
+		total := len(a.menuLines)
+		end := a.menuScrollOffset + maxVisible
+		if end > total {
+			end = total
+		}
+		for i := a.menuScrollOffset; i < end; i++ {
+			line := a.menuLines[i]
+			if i == a.menuCursor {
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(line, w-2)))
+			} else {
+				rows = append(rows, truncateWithEllipsis(line, w))
+			}
+		}
+		first := a.menuScrollOffset + 1
+		last := end
+		rows = append(rows, fmt.Sprintf("\033[2m(%d->%d / %d)\033[0m", first, last, total))
+		rows = append(rows, "\033[2m←/→ sort column  Tab flip order  Enter select  Esc close\033[0m")
+		return rows
+	}
+
+	// Fields
+	fields := a.cfgCurrentFields()
+	for i, f := range fields {
+		if a.cfgEditing && i == a.cfgCursor {
+			// Show editable text input with underline
+			editStr := string(a.cfgEditBuf)
+			rows = append(rows, fmt.Sprintf("\033[36;1m%s: \033[4m%s\033[0m \033[36;1m◆\033[0m", f.label, editStr))
+		} else {
+			val := ""
+			if f.display != nil {
+				val = f.display(a.cfgDraft)
+			} else {
+				val = f.get(a.cfgDraft)
+			}
+			if val == "" {
+				if f.globalHint != nil {
+					hint := f.globalHint(a.cfgDraft)
+					if hint == "" {
+						hint = "not set"
+					}
+					val = fmt.Sprintf("(global: %s)", hint)
+				} else {
+					val = "(not set)"
+				}
+			}
+			if i == a.cfgCursor {
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s: %s ◆\033[0m", f.label, val))
+			} else {
+				rows = append(rows, fmt.Sprintf("%s: %s", f.label, val))
+			}
+		}
+	}
+
+	// Help line
+	if a.cfgEditing {
+		rows = append(rows, "\033[2mEnter=confirm  Esc=cancel\033[0m")
+	} else {
+		rows = append(rows, "\033[2m←/→=tab  ↑/↓=select  Enter=edit  Esc=close  Ctrl+S=save & close\033[0m")
+	}
+
+	return rows
+}
+
+func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) {
+	if a.cfgEditing {
+		a.handleConfigEditByte(ch, stdinCh, readByte)
+		return
+	}
+
+	switch {
+	case ch == '\033': // Escape sequence
+		var b byte
+		var ok bool
+		select {
+		case b, ok = <-stdinCh:
+			if !ok {
+				return
+			}
+		case <-time.After(50 * time.Millisecond):
+			a.exitConfigMode(false)
+			return
+		}
+		if b != '[' {
+			a.exitConfigMode(false)
+			return
+		}
+		b, ok = readByte()
+		if !ok {
+			return
+		}
+		switch b {
+		case 'A': // Up
+			if a.cfgCursor > 0 {
+				a.cfgCursor--
+			} else {
+				fields := a.cfgCurrentFields()
+				if len(fields) > 0 {
+					a.cfgCursor = len(fields) - 1
+				}
+			}
+			a.renderInput()
+		case 'B': // Down
+			fields := a.cfgCurrentFields()
+			if a.cfgCursor < len(fields)-1 {
+				a.cfgCursor++
+			} else {
+				a.cfgCursor = 0
+			}
+			a.renderInput()
+		case 'C': // Right - next tab
+			a.cfgTab++
+			if a.cfgTab >= len(cfgTabNames) {
+				a.cfgTab = 0
+			}
+			a.cfgCursor = 0
+			a.renderInput()
+		case 'D': // Left - prev tab
+			a.cfgTab--
+			if a.cfgTab < 0 {
+				a.cfgTab = len(cfgTabNames) - 1
+			}
+			a.cfgCursor = 0
+			a.renderInput()
+		case '2': // modifyOtherKeys (Ctrl+S, Ctrl+C, etc.)
+			a.handleCSIDigit2(readByte, func(string) {})
+		default:
+			// Consume modified key sequences (ESC [ 1 ; mod letter)
+			if b == '1' {
+				readByte() // ;
+				readByte() // mod
+				readByte() // letter
+			}
+		}
+
+	case ch == '\r': // Enter - toggle, picker, or start editing current field
+		if a.cfgTab == 2 && a.repoRoot == "" {
+			break // Project tab non-editable without a repo
+		}
+		fields := a.cfgCurrentFields()
+		if len(fields) > 0 && a.cfgCursor < len(fields) {
+			f := fields[a.cfgCursor]
+			if f.picker != nil {
+				f.picker(a)
+			} else if f.toggle != nil {
+				f.toggle(&a.cfgDraft)
+			} else {
+				a.cfgEditing = true
+				val := f.get(a.cfgDraft)
+				a.cfgEditBuf = []rune(val)
+				a.cfgEditCursor = len(a.cfgEditBuf)
+			}
+		}
+		a.renderInput()
+
+	case ch == 0x13: // Ctrl+S - save and close
+		a.exitConfigMode(true)
+
+	case ch == 3 || ch == 4: // Ctrl+C/D - exit without saving
+		a.exitConfigMode(false)
+	}
+}
+
+func (a *App) handleConfigEditByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) {
+	switch {
+	case ch == '\033': // Escape
+		var b byte
+		var ok bool
+		select {
+		case b, ok = <-stdinCh:
+			if !ok {
+				return
+			}
+		case <-time.After(50 * time.Millisecond):
+			// Plain Escape - cancel edit
+			a.cfgEditing = false
+			a.cfgEditBuf = nil
+			a.renderInput()
+			return
+		}
+		if b != '[' {
+			a.cfgEditing = false
+			a.cfgEditBuf = nil
+			a.renderInput()
+			return
+		}
+		b, ok = readByte()
+		if !ok {
+			return
+		}
+		switch b {
+		case 'C': // Right
+			if a.cfgEditCursor < len(a.cfgEditBuf) {
+				a.cfgEditCursor++
+				a.renderInput()
+			}
+		case 'D': // Left
+			if a.cfgEditCursor > 0 {
+				a.cfgEditCursor--
+				a.renderInput()
+			}
+		case 'H': // Home
+			a.cfgEditCursor = 0
+			a.renderInput()
+		case 'F': // End
+			a.cfgEditCursor = len(a.cfgEditBuf)
+			a.renderInput()
+		case '2': // Bracketed paste or modifyOtherKeys
+			a.handleCSIDigit2(readByte, func(s string) {
+				pasted := []rune(s)
+				tail := make([]rune, len(a.cfgEditBuf[a.cfgEditCursor:]))
+				copy(tail, a.cfgEditBuf[a.cfgEditCursor:])
+				a.cfgEditBuf = append(a.cfgEditBuf[:a.cfgEditCursor], append(pasted, tail...)...)
+				a.cfgEditCursor += len(pasted)
+				a.renderInput()
+			})
+		case '3': // Delete
+			if t, ok := readByte(); ok && t == '~' {
+				if a.cfgEditCursor < len(a.cfgEditBuf) {
+					a.cfgEditBuf = append(a.cfgEditBuf[:a.cfgEditCursor], a.cfgEditBuf[a.cfgEditCursor+1:]...)
+					a.renderInput()
+				}
+			}
+		default:
+			// consume remaining bytes of sequences
+			if b == '1' {
+				readByte()
+				readByte()
+				readByte()
+			}
+		}
+
+	case ch == '\r': // Enter - confirm edit
+		fields := a.cfgCurrentFields()
+		if a.cfgCursor < len(fields) {
+			fields[a.cfgCursor].set(&a.cfgDraft, string(a.cfgEditBuf))
+		}
+		a.cfgEditing = false
+		a.cfgEditBuf = nil
+		a.renderInput()
+
+	case ch == 127 || ch == 0x08: // Backspace
+		if a.cfgEditCursor > 0 {
+			a.cfgEditCursor--
+			a.cfgEditBuf = append(a.cfgEditBuf[:a.cfgEditCursor], a.cfgEditBuf[a.cfgEditCursor+1:]...)
+			a.renderInput()
+		}
+
+	case ch == 0x01: // Ctrl+A
+		a.cfgEditCursor = 0
+		a.renderInput()
+
+	case ch == 0x05: // Ctrl+E
+		a.cfgEditCursor = len(a.cfgEditBuf)
+		a.renderInput()
+
+	case ch == 0x15: // Ctrl+U - kill to start
+		a.cfgEditBuf = a.cfgEditBuf[a.cfgEditCursor:]
+		a.cfgEditCursor = 0
+		a.renderInput()
+
+	case ch == 0x0b: // Ctrl+K - kill to end
+		a.cfgEditBuf = a.cfgEditBuf[:a.cfgEditCursor]
+		a.renderInput()
+
+	case ch == 0x17: // Ctrl+W - delete word backward
+		if a.cfgEditCursor > 0 {
+			i := a.cfgEditCursor - 1
+			for i > 0 && a.cfgEditBuf[i] == ' ' {
+				i--
+			}
+			for i > 0 && a.cfgEditBuf[i-1] != ' ' {
+				i--
+			}
+			a.cfgEditBuf = append(a.cfgEditBuf[:i], a.cfgEditBuf[a.cfgEditCursor:]...)
+			a.cfgEditCursor = i
+			a.renderInput()
+		}
+
+	case ch >= 0x20: // Printable character
+		r := rune(ch)
+		if ch >= 0x80 {
+			b := []byte{ch}
+			n := utf8ByteLen(ch)
+			for i := 1; i < n; i++ {
+				next, ok := readByte()
+				if !ok {
+					return
+				}
+				b = append(b, next)
+			}
+			r, _ = utf8.DecodeRune(b)
+		}
+		a.cfgEditBuf = append(a.cfgEditBuf, 0)
+		copy(a.cfgEditBuf[a.cfgEditCursor+1:], a.cfgEditBuf[a.cfgEditCursor:])
+		a.cfgEditBuf[a.cfgEditCursor] = r
+		a.cfgEditCursor++
+		a.renderInput()
+	}
+}
