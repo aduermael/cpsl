@@ -63,8 +63,8 @@ main.go's rendering functions (~1500 lines) are the largest cohesive group and h
 
 ## Phase 6: Split main.go — extract input handling
 
-- [ ] 6a: Create `input.go` — move input and key event handling: key code constants, `EventKey`, `EventPaste`, `EventResize` types, `Key`/`Modifier` enums, input processing methods on App (key dispatch, history navigation, paste handling). Add doc comment.
-- [ ] 6b: Verify all tests pass after input extraction
+- [x] 6a: Create `input.go` — move input and key event handling: key code constants, `EventKey`, `EventPaste`, `EventResize` types, `Key`/`Modifier` enums, input processing methods on App (key dispatch, history navigation, paste handling). Add doc comment.
+- [x] 6b: Verify all tests pass after input extraction
 
 ## Phase 7: Split main.go — extract background tasks and utilities
 
