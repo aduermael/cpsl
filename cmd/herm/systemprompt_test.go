@@ -520,9 +520,9 @@ func TestBuildSystemPromptAgentTool(t *testing.T) {
 	tools := []Tool{stubTool{"agent"}}
 	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
 
-	// The agent tool triggers the orchestrator role in the role template.
-	if !strings.Contains(prompt, "orchestrator") {
-		t.Error("role section should describe orchestrator role when agent tool is present")
+	// The role is always "expert coding agent" regardless of agent tool presence.
+	if !strings.Contains(prompt, "expert coding agent") {
+		t.Error("role section should describe expert coding agent")
 	}
 	// The agent subsection should appear in the Tools section.
 	if !strings.Contains(prompt, "### agent") {
@@ -657,9 +657,9 @@ func TestBuildSubAgentSystemPrompt(t *testing.T) {
 		t.Error("sub-agent prompt should not contain Skills section")
 	}
 
-	// Should NOT contain orchestrator framing.
-	if strings.Contains(prompt, "orchestrator") {
-		t.Error("sub-agent prompt should not contain orchestrator role")
+	// Should NOT contain main-agent role framing.
+	if strings.Contains(prompt, "expert coding agent") {
+		t.Error("sub-agent prompt should not contain main-agent role")
 	}
 
 	// Should NOT contain delegation guidance.
@@ -680,7 +680,7 @@ func TestBuildSubAgentSystemPromptNoAgentSection(t *testing.T) {
 
 func TestBuildSubAgentSystemPromptWithAgentTool(t *testing.T) {
 	// When depth allows nesting, the agent tool section should be present
-	// but the role should still be sub-agent, not orchestrator.
+	// but the role should still be the sub-agent preamble.
 	tools := []Tool{stubTool{"bash"}, stubTool{"agent"}}
 	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
 

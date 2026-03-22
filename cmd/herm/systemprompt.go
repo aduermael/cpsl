@@ -93,7 +93,7 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 
 // buildSubAgentSystemPrompt constructs a leaner system prompt for sub-agents.
 // It reuses the same template infrastructure but sets IsSubAgent=true, which
-// replaces the orchestrator role with the sub-agent preamble and skips
+// uses the sub-agent preamble instead of the main agent role and skips
 // communication, personality, and skills sections to reduce token overhead.
 func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, workDir string, containerImage string, snap *projectSnapshot) string {
 	toolNames := make(map[string]bool)

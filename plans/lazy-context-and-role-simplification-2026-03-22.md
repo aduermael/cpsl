@@ -44,8 +44,8 @@
 
 Collapse role.md from three branches to two. Remove the "orchestrator" identity.
 
-- [ ] 1a: Rewrite `role.md` — merge the `HasAgent` and non-`HasAgent` branches into a single main agent role ("expert coding agent"). Keep the sub-agent branch (`IsSubAgent`) unchanged. Remove all delegation heuristics (lines 24-46) — these move to the agent tool's markdown description in Phase 2
-- [ ] 1b: Update `systemprompt_test.go` — tests checking for "orchestrator" or three-branch structure need updating. Adjust the sub-agent ratio threshold if needed
+- [x] 1a: Rewrite `role.md` — merge the `HasAgent` and non-`HasAgent` branches into a single main agent role ("expert coding agent"). Keep the sub-agent branch (`IsSubAgent`) unchanged. Remove all delegation heuristics (lines 24-46) — these move to the agent tool's markdown description in Phase 2
+- [x] 1b: Update `systemprompt_test.go` — tests checking for "orchestrator" or three-branch structure need updating. Adjust the sub-agent ratio threshold if needed
 
 ## Phase 2: Tool description markdown files
 
