@@ -59,7 +59,7 @@ Create per-tool markdown files that replace both inline Description strings and 
 
 - [x] 2d: Slim down `tools.md` to only cross-tool guidance. Remove all per-tool `### sections`. Keep only: the "explore in layers" workflow pattern, "prefer dedicated tools over bash" reminder, and "quick decision guide" (glob vs grep vs outline). This should be ~10-15 lines. Remove the `HasGlob`, `HasEditFile`, `HasBash`, `HasGit`, `HasDevenv`, `HasAgent`, `HasWebSearch` conditionals that gate per-tool sections — they're no longer needed since guidance is in Description fields
 
-- [ ] 2e: Update tests. Existing tests that check for `### bash`, `### git`, etc. in the system prompt need rewriting — those sections no longer exist there. Add new tests verifying: (1) each tool's `Definition().Description` contains expected guidance keywords, (2) the slimmed `tools.md` renders only cross-tool guidance, (3) `loadToolDescriptions()` correctly parses all markdown files and replaces placeholders
+- [x] 2e: Update tests. Existing tests that check for `### bash`, `### git`, etc. in the system prompt need rewriting — those sections no longer exist there. Add new tests verifying: (1) each tool's `Definition().Description` contains expected guidance keywords, (2) the slimmed `tools.md` renders only cross-tool guidance, (3) `loadToolDescriptions()` correctly parses all markdown files and replaces placeholders
 
 ## Phase 3: Consolidate devenv skill
 

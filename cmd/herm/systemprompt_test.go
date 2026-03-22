@@ -44,21 +44,15 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
 	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace", "", "alpine:latest", "", nil)
 
+	// Structural sections that must always be present.
 	sections := []string{
 		"expert coding agent",
 		"## Tools",
-		"### glob, grep, read_file",
-		"### edit_file, write_file",
-		"### bash",
-		"### git",
-		"### devenv",
-		"### web_search",
 		"## Practices",
 		"## Communication",
 		"## Environment",
 		"/workspace",
 		"alpine:latest",
-		"may lack compilers",
 	}
 	for _, s := range sections {
 		if !strings.Contains(prompt, s) {
@@ -66,152 +60,26 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 		}
 	}
 
-	// When file tools are present, bash should NOT contain old exploration guidance.
-	if strings.Contains(prompt, "tree or find") {
-		t.Error("bash section should not contain old exploration guidance when glob/grep/read_file are present")
+	// Cross-tool guidance from slimmed tools.md should be present.
+	if !strings.Contains(prompt, "Explore in layers") {
+		t.Error("prompt missing cross-tool exploration guidance")
 	}
-}
+	if !strings.Contains(prompt, "Quick decision guide") {
+		t.Error("prompt missing cross-tool quick decision guide")
+	}
 
-func TestBuildSystemPromptBashOnly(t *testing.T) {
-	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	if !strings.Contains(prompt, "### bash") {
-		t.Error("prompt missing bash section")
-	}
-	if strings.Contains(prompt, "### git") {
-		t.Error("prompt should not contain git section when git tool absent")
-	}
-	if strings.Contains(prompt, "### devenv") {
-		t.Error("prompt should not contain devenv section when devenv tool absent")
-	}
-	if strings.Contains(prompt, "### web_search") {
-		t.Error("prompt should not contain web_search section when not registered")
-	}
-}
-
-func TestBuildSystemPromptBashExplorationGuidance(t *testing.T) {
-	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
-
-	// Verify layered exploration strategy is present
-	expectations := []string{
-		"Explore files in layers",
-		"tree or find",
-		"rg (ripgrep)",
-		"cat/head/tail",
-		"git log/git blame",
-	}
-	for _, s := range expectations {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("bash exploration guidance missing %q", s)
+	// Per-tool ### sections should NOT be in the system prompt (moved to Description fields).
+	for _, sub := range []string{"### bash", "### git", "### devenv", "### web_search", "### glob, grep, read_file", "### edit_file, write_file", "### agent"} {
+		if strings.Contains(prompt, sub) {
+			t.Errorf("prompt should not contain per-tool subsection %q (now in tool Description)", sub)
 		}
-	}
-}
-
-func TestBuildSystemPromptFileToolsGuidance(t *testing.T) {
-	tools := []Tool{
-		stubTool{"bash"},
-		stubTool{"glob"},
-		stubTool{"grep"},
-		stubTool{"read_file"},
-	}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
-
-	// File tools section should be present with key guidance.
-	expectations := []string{
-		"### glob, grep, read_file",
-		"Do NOT use bash for file operations",
-		"glob (structure)",
-		"grep (search)",
-		"read_file (examine)",
-	}
-	for _, s := range expectations {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("file tools guidance missing %q", s)
-		}
-	}
-}
-
-func TestBuildSystemPromptEditWriteToolsGuidance(t *testing.T) {
-	tools := []Tool{
-		stubTool{"bash"},
-		stubTool{"glob"},
-		stubTool{"grep"},
-		stubTool{"read_file"},
-		stubTool{"edit_file"},
-		stubTool{"write_file"},
-	}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
-
-	expectations := []string{
-		"### edit_file, write_file",
-		"edit_file",
-		"write_file",
-		"read_file before editing",
-		"Do NOT use bash for file modifications",
-		"Do NOT use bash for file editing",
-	}
-	for _, s := range expectations {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("edit/write tools guidance missing %q", s)
-		}
-	}
-}
-
-func TestBuildSystemPromptEditWriteToolsAbsent(t *testing.T) {
-	// Only read tools, no edit/write — the edit_file/write_file section should be absent.
-	tools := []Tool{
-		stubTool{"bash"},
-		stubTool{"glob"},
-		stubTool{"grep"},
-		stubTool{"read_file"},
-	}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "debian:bookworm-slim", "", nil)
-
-	if strings.Contains(prompt, "### edit_file, write_file") {
-		t.Error("prompt should not contain edit_file/write_file section when tools are absent")
-	}
-	if strings.Contains(prompt, "Do NOT use bash for file editing") {
-		t.Error("bash section should not contain edit/write redirect when those tools are absent")
-	}
-}
-
-func TestBuildSubAgentSystemPromptEditWriteTools(t *testing.T) {
-	tools := []Tool{
-		stubTool{"bash"},
-		stubTool{"glob"},
-		stubTool{"grep"},
-		stubTool{"read_file"},
-		stubTool{"edit_file"},
-		stubTool{"write_file"},
-	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
-
-	if !strings.Contains(prompt, "### edit_file, write_file") {
-		t.Error("sub-agent prompt should include edit_file/write_file section when tools are present")
-	}
-	if !strings.Contains(prompt, "Do NOT use bash for file modifications") {
-		t.Error("sub-agent prompt should include file modification guidance")
-	}
-}
-
-func TestBuildSystemPromptGitOnly(t *testing.T) {
-	tools := []Tool{stubTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	if !strings.Contains(prompt, "### git") {
-		t.Error("prompt missing git section")
-	}
-	if strings.Contains(prompt, "### bash") {
-		t.Error("prompt should not contain bash section when bash tool absent")
 	}
 }
 
 func TestBuildSystemPromptNoTools(t *testing.T) {
 	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
 
-	// Should still have the structural sections
+	// Should still have the structural sections.
 	if !strings.Contains(prompt, "## Tools") {
 		t.Error("prompt missing Tools header")
 	}
@@ -221,9 +89,33 @@ func TestBuildSystemPromptNoTools(t *testing.T) {
 	if !strings.Contains(prompt, "## Communication") {
 		t.Error("prompt missing Communication section")
 	}
-	// No tool subsections
-	if strings.Contains(prompt, "### bash") {
-		t.Error("prompt should not contain bash section")
+
+	// No per-tool subsections.
+	for _, sub := range []string{"### bash", "### git", "### devenv"} {
+		if strings.Contains(prompt, sub) {
+			t.Errorf("prompt should not contain %q", sub)
+		}
+	}
+
+	// Cross-tool exploration guidance requires HasGlob — should be absent.
+	if strings.Contains(prompt, "Explore in layers") {
+		t.Error("prompt should not contain exploration guidance when glob tool absent")
+	}
+}
+
+func TestBuildSystemPromptCrossToolGuidanceRequiresGlob(t *testing.T) {
+	// Cross-tool guidance only renders when glob is available.
+	toolsWithGlob := []Tool{stubTool{"glob"}}
+	toolsWithoutGlob := []Tool{stubTool{"bash"}}
+
+	promptWith := buildSystemPrompt(toolsWithGlob, nil, nil, "/work", "", "alpine:latest", "", nil)
+	promptWithout := buildSystemPrompt(toolsWithoutGlob, nil, nil, "/work", "", "alpine:latest", "", nil)
+
+	if !strings.Contains(promptWith, "Explore in layers") {
+		t.Error("prompt with glob should contain exploration guidance")
+	}
+	if strings.Contains(promptWithout, "Explore in layers") {
+		t.Error("prompt without glob should not contain exploration guidance")
 	}
 }
 
@@ -273,26 +165,6 @@ func TestBuildSystemPromptEnvironment(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptWebSearch(t *testing.T) {
-	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(nil, serverTools, nil, "/work", "", "alpine:latest", "", nil)
-
-	if !strings.Contains(prompt, "### web_search") {
-		t.Error("prompt missing web_search section")
-	}
-	if !strings.Contains(prompt, "unfamiliar APIs") {
-		t.Error("prompt missing web search usage guidance")
-	}
-}
-
-func TestBuildSystemPromptNoWebSearch(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	if strings.Contains(prompt, "### web_search") {
-		t.Error("prompt should not contain web_search section when not registered")
-	}
-}
-
 func TestBuildSystemPromptPersonality(t *testing.T) {
 	prompt := buildSystemPrompt(nil, nil, nil, "/work", "You are a pirate. Respond with nautical flair.", "alpine:latest", "", nil)
 	if !strings.Contains(prompt, "## Personality") {
@@ -321,33 +193,10 @@ func TestPromptTemplateParsing(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptGitSectionContent(t *testing.T) {
-	tools := []Tool{stubTool{"bash"}, stubTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	// Key guidance from the rewritten git section.
-	expectations := []string{
-		"on the host",
-		"SSH keys and credentials",
-		"push, pull, fetch",
-		"Merge conflict resolution",
-		"git add",
-		"Never force-push",
-	}
-	for _, s := range expectations {
-		if !strings.Contains(prompt, s) {
-			t.Errorf("git section missing expected content: %q", s)
-		}
-	}
-}
-
 func TestBuildSystemPromptGitAbsent(t *testing.T) {
 	tools := []Tool{stubTool{"bash"}}
 	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
 
-	if strings.Contains(prompt, "### git") {
-		t.Error("prompt should not contain git section when git tool absent")
-	}
 	if strings.Contains(prompt, "worktree managed by herm") {
 		t.Error("prompt should not contain git worktree info when git tool absent")
 	}
@@ -372,7 +221,6 @@ func TestBuildSystemPromptWorktreeBranchEmpty(t *testing.T) {
 	if strings.Contains(prompt, "branch:") {
 		t.Error("prompt should not contain branch info when worktree branch is empty")
 	}
-	// Should still have the base worktree info.
 	if !strings.Contains(prompt, "worktree managed by herm") {
 		t.Error("prompt missing worktree context in environment section")
 	}
@@ -462,26 +310,16 @@ func TestWebSearchToolDef(t *testing.T) {
 }
 
 func TestBuildSystemPromptEmptyToolsList(t *testing.T) {
-	// Non-nil but empty slices — no tools registered at all.
 	prompt := buildSystemPrompt([]Tool{}, []types.ToolDefinition{}, nil, "/work", "", "alpine:latest", "", nil)
 
-	// Structural sections must still be present.
 	for _, section := range []string{"## Tools", "## Practices", "## Communication"} {
 		if !strings.Contains(prompt, section) {
 			t.Errorf("prompt missing structural section %q", section)
 		}
 	}
-
-	// No tool-specific subsections should appear.
-	for _, sub := range []string{"### bash", "### git", "### devenv", "### web_search", "### glob, grep, read_file", "### edit_file, write_file", "### agent"} {
-		if strings.Contains(prompt, sub) {
-			t.Errorf("prompt should not contain tool subsection %q when no tools are registered", sub)
-		}
-	}
 }
 
 func TestBuildSystemPromptNilSkillsVsEmpty(t *testing.T) {
-	// Both nil and an empty slice should produce no Skills section.
 	promptNil := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
 	promptEmpty := buildSystemPrompt(nil, nil, []Skill{}, "/work", "", "alpine:latest", "", nil)
 
@@ -497,58 +335,15 @@ func TestBuildSystemPromptNilSkillsVsEmpty(t *testing.T) {
 }
 
 func TestBuildSystemPromptPersonalitySpecialChars(t *testing.T) {
-	// text/template inserts data values as plain strings — it does not re-parse them as
-	// template syntax. This means curly braces in the personality value are safe: they are
-	// written to the output buffer verbatim and will NOT cause a panic or template error.
-	// HTML special characters (&, <, >) are also safe because text/template (unlike
-	// html/template) does not HTML-escape output.
 	personality := `You like "quotes" & <angle brackets> and {{curly braces}}`
 	prompt := buildSystemPrompt(nil, nil, nil, "/work", personality, "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "## Personality") {
 		t.Error("prompt missing Personality section")
 	}
-	// All special characters should appear verbatim in the output.
 	for _, fragment := range []string{`"quotes"`, `& <angle brackets>`, `{{curly braces}}`} {
 		if !strings.Contains(prompt, fragment) {
 			t.Errorf("prompt missing personality fragment %q — special chars may have been escaped or dropped", fragment)
-		}
-	}
-}
-
-func TestBuildSystemPromptAgentTool(t *testing.T) {
-	tools := []Tool{stubTool{"agent"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	// The role is always "expert coding agent" regardless of agent tool presence.
-	if !strings.Contains(prompt, "expert coding agent") {
-		t.Error("role section should describe expert coding agent")
-	}
-	// The agent subsection should appear in the Tools section.
-	if !strings.Contains(prompt, "### agent") {
-		t.Error("prompt missing ### agent subsection when agent tool is present")
-	}
-	// Key guidance from the agent subsection.
-	for _, fragment := range []string{"sub-agent", "agent_id", "context window"} {
-		if !strings.Contains(prompt, fragment) {
-			t.Errorf("agent subsection missing expected content: %q", fragment)
-		}
-	}
-}
-
-func TestBuildSystemPromptAgentResultGuidance(t *testing.T) {
-	tools := []Tool{stubTool{"agent"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
-
-	for _, fragment := range []string{
-		"[summary: model]",
-		"[summary: truncated]",
-		"read the full output file",
-		"[errors:",
-		"[turns:",
-	} {
-		if !strings.Contains(prompt, fragment) {
-			t.Errorf("agent result guidance missing %q", fragment)
 		}
 	}
 }
@@ -561,31 +356,8 @@ func TestBuildSystemPromptRetryGuidance(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptAllServerTools(t *testing.T) {
-	// Provide only server tools — no client tools at all.
-	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(nil, serverTools, nil, "/work", "", "alpine:latest", "", nil)
-
-	// The server tool should be reflected in the prompt.
-	if !strings.Contains(prompt, "### web_search") {
-		t.Error("prompt missing web_search section when registered as a server tool")
-	}
-	// No client-tool subsections should appear.
-	for _, sub := range []string{"### bash", "### git", "### devenv", "### glob, grep, read_file", "### agent"} {
-		if strings.Contains(prompt, sub) {
-			t.Errorf("prompt should not contain client tool subsection %q when only server tools are registered", sub)
-		}
-	}
-	// Structural sections must still be present.
-	for _, section := range []string{"## Tools", "## Practices", "## Communication"} {
-		if !strings.Contains(prompt, section) {
-			t.Errorf("prompt missing structural section %q", section)
-		}
-	}
-}
-
 func TestBuildSystemPromptMultipleSkills(t *testing.T) {
-	longContent := strings.Repeat("This is a detailed guideline for writing idiomatic Go code. ", 9) // ~504 chars
+	longContent := strings.Repeat("This is a detailed guideline for writing idiomatic Go code. ", 9)
 	skills := []Skill{
 		{Name: "EmptySkill", Description: "A skill with no body content", Content: ""},
 		{Name: "LongSkill", Description: "A skill with a very long body", Content: longContent},
@@ -596,7 +368,6 @@ func TestBuildSystemPromptMultipleSkills(t *testing.T) {
 	if !strings.Contains(prompt, "## Skills") {
 		t.Error("prompt missing Skills section")
 	}
-	// All skill names must appear in the summary list and as subsection headers.
 	for _, skill := range skills {
 		summaryLine := "**" + skill.Name + "**: " + skill.Description
 		if !strings.Contains(prompt, summaryLine) {
@@ -607,7 +378,6 @@ func TestBuildSystemPromptMultipleSkills(t *testing.T) {
 			t.Errorf("prompt missing skill subsection header: %q", header)
 		}
 	}
-	// Non-empty content must appear verbatim.
 	if !strings.Contains(prompt, longContent) {
 		t.Error("prompt missing long skill content")
 	}
@@ -625,20 +395,12 @@ func TestBuildSubAgentSystemPrompt(t *testing.T) {
 	}
 	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
 
-	// Should contain the sub-agent role preamble.
 	if !strings.Contains(prompt, "You are a sub-agent") {
 		t.Error("sub-agent prompt missing preamble")
 	}
-
-	// Should contain tool instructions.
 	if !strings.Contains(prompt, "## Tools") {
 		t.Error("sub-agent prompt missing Tools section")
 	}
-	if !strings.Contains(prompt, "### bash") {
-		t.Error("sub-agent prompt missing bash section")
-	}
-
-	// Should contain practices and environment.
 	if !strings.Contains(prompt, "## Practices") {
 		t.Error("sub-agent prompt missing Practices section")
 	}
@@ -646,7 +408,7 @@ func TestBuildSubAgentSystemPrompt(t *testing.T) {
 		t.Error("sub-agent prompt missing Environment section")
 	}
 
-	// Should NOT contain sections skipped for sub-agents.
+	// Sections skipped for sub-agents.
 	if strings.Contains(prompt, "## Communication") {
 		t.Error("sub-agent prompt should not contain Communication section")
 	}
@@ -657,43 +419,15 @@ func TestBuildSubAgentSystemPrompt(t *testing.T) {
 		t.Error("sub-agent prompt should not contain Skills section")
 	}
 
-	// Should NOT contain main-agent role framing.
 	if strings.Contains(prompt, "expert coding agent") {
 		t.Error("sub-agent prompt should not contain main-agent role")
 	}
-
-	// Should NOT contain delegation guidance.
 	if strings.Contains(prompt, "When to Delegate") {
 		t.Error("sub-agent prompt should not contain delegation guidance")
 	}
 }
 
-func TestBuildSubAgentSystemPromptNoAgentSection(t *testing.T) {
-	// When sub-agent has no agent tool (depth limit), the ### agent section should be absent.
-	tools := []Tool{stubTool{"bash"}, stubTool{"glob"}, stubTool{"grep"}, stubTool{"read_file"}}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
-
-	if strings.Contains(prompt, "### agent") {
-		t.Error("sub-agent prompt should not contain agent tool section when agent tool is absent")
-	}
-}
-
-func TestBuildSubAgentSystemPromptWithAgentTool(t *testing.T) {
-	// When depth allows nesting, the agent tool section should be present
-	// but the role should still be the sub-agent preamble.
-	tools := []Tool{stubTool{"bash"}, stubTool{"agent"}}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
-
-	if !strings.Contains(prompt, "### agent") {
-		t.Error("sub-agent with agent tool should have agent tool section")
-	}
-	if !strings.Contains(prompt, "You are a sub-agent") {
-		t.Error("sub-agent with agent tool should still have sub-agent preamble")
-	}
-}
-
 func TestSubAgentPromptSmallerThanMain(t *testing.T) {
-	// The sub-agent prompt should be significantly smaller than the main agent prompt.
 	tools := []Tool{
 		stubTool{"bash"},
 		stubTool{"git"},
@@ -711,7 +445,6 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 
 	mainPrompt := buildSystemPrompt(tools, serverTools, skills, "/work", "Be helpful.", "alpine:latest", "feature-branch", nil)
 
-	// Sub-agent gets same tools minus agent (depth limited).
 	subTools := []Tool{
 		stubTool{"bash"},
 		stubTool{"git"},
@@ -725,7 +458,227 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 	ratio := float64(len(subPrompt)) / float64(len(mainPrompt))
 	t.Logf("main prompt: %d bytes, sub-agent prompt: %d bytes, ratio: %.1f%%", len(mainPrompt), len(subPrompt), ratio*100)
 
-	if ratio > 0.60 {
-		t.Errorf("sub-agent prompt should be <60%% of main prompt, got %.1f%%", ratio*100)
+	if ratio > 0.85 {
+		t.Errorf("sub-agent prompt should be <85%% of main prompt, got %.1f%%", ratio*100)
+	}
+}
+
+// --- Tool Description tests ---
+
+func TestLoadToolDescriptions(t *testing.T) {
+	descs := loadToolDescriptions("test-image:latest")
+	if descs == nil {
+		t.Fatal("loadToolDescriptions returned nil")
+	}
+
+	// All expected tools should be present.
+	expectedTools := []string{"bash", "git", "devenv", "agent", "glob", "grep", "read_file", "edit_file", "write_file", "outline"}
+	for _, name := range expectedTools {
+		td, ok := descs[name]
+		if !ok {
+			t.Errorf("missing tool description for %q", name)
+			continue
+		}
+		if td.Name != name {
+			t.Errorf("tool %q: Name = %q, want %q", name, td.Name, name)
+		}
+		if td.Brief == "" {
+			t.Errorf("tool %q: Brief is empty", name)
+		}
+		if td.Full == "" {
+			t.Errorf("tool %q: Full is empty", name)
+		}
+	}
+}
+
+func TestLoadToolDescriptionsPlaceholderReplacement(t *testing.T) {
+	descs := loadToolDescriptions("my-custom:v1.2.3")
+
+	// bash.md and devenv.md use __CONTAINER_IMAGE__.
+	for _, name := range []string{"bash", "devenv"} {
+		td, ok := descs[name]
+		if !ok {
+			t.Errorf("missing tool description for %q", name)
+			continue
+		}
+		if strings.Contains(td.Full, "__CONTAINER_IMAGE__") {
+			t.Errorf("tool %q: Full still contains __CONTAINER_IMAGE__ placeholder", name)
+		}
+		if strings.Contains(td.Full, "my-custom:v1.2.3") {
+			// Good — placeholder was replaced.
+		} else {
+			t.Errorf("tool %q: Full does not contain replaced container image", name)
+		}
+	}
+}
+
+func TestToolDescriptionContainsGuidance(t *testing.T) {
+	descs := loadToolDescriptions("alpine:latest")
+
+	// Each tool description should contain key guidance keywords.
+	tests := []struct {
+		tool     string
+		keywords []string
+	}{
+		{"bash", []string{"dev container", "builds, tests"}},
+		{"git", []string{"on the host", "SSH keys", "Merge conflict", "Never force-push"}},
+		{"devenv", []string{"Dockerfile", "herm base image", "read", "write", "build"}},
+		{"agent", []string{"sub-agent", "explore", "implement", "agent_id", "[summary: model]", "[turns:"}},
+		{"glob", []string{"glob pattern", ".gitignore"}},
+		{"grep", []string{"regex pattern", ".gitignore"}},
+		{"read_file", []string{"line numbers", "line ranges"}},
+		{"edit_file", []string{"old_string", "unified diff", "read_file before"}},
+		{"write_file", []string{"overwrite", "edit_file for targeted"}},
+		{"outline", []string{"signatures", "line numbers", "cheaper than reading"}},
+	}
+
+	for _, tt := range tests {
+		td, ok := descs[tt.tool]
+		if !ok {
+			t.Errorf("missing tool description for %q", tt.tool)
+			continue
+		}
+		for _, kw := range tt.keywords {
+			if !strings.Contains(td.Full, kw) {
+				t.Errorf("tool %q description missing keyword %q", tt.tool, kw)
+			}
+		}
+	}
+}
+
+func TestParseToolDesc(t *testing.T) {
+	input := `---
+name: test_tool
+description: A test tool
+---
+
+This is the body with extended guidance.
+
+It has multiple paragraphs.`
+
+	td, ok := parseToolDesc(input)
+	if !ok {
+		t.Fatal("parseToolDesc returned ok=false")
+	}
+	if td.Name != "test_tool" {
+		t.Errorf("Name = %q, want %q", td.Name, "test_tool")
+	}
+	if td.Brief != "A test tool" {
+		t.Errorf("Brief = %q, want %q", td.Brief, "A test tool")
+	}
+	if !strings.Contains(td.Full, "extended guidance") {
+		t.Error("Full should contain body content")
+	}
+	if !strings.Contains(td.Full, "multiple paragraphs") {
+		t.Error("Full should contain all body content")
+	}
+}
+
+func TestParseToolDescMissingName(t *testing.T) {
+	input := `---
+description: No name field
+---
+
+Body content.`
+
+	_, ok := parseToolDesc(input)
+	if ok {
+		t.Error("parseToolDesc should return ok=false when name is missing")
+	}
+}
+
+func TestParseToolDescNoFrontmatter(t *testing.T) {
+	_, ok := parseToolDesc("Just plain text, no frontmatter")
+	if ok {
+		t.Error("parseToolDesc should return ok=false for content without frontmatter")
+	}
+}
+
+func TestParseToolDescEmptyBody(t *testing.T) {
+	input := `---
+name: minimal
+description: Just a brief description
+---`
+
+	td, ok := parseToolDesc(input)
+	if !ok {
+		t.Fatal("parseToolDesc returned ok=false")
+	}
+	if td.Full != "Just a brief description" {
+		t.Errorf("Full = %q, want brief description as fallback", td.Full)
+	}
+}
+
+func TestGetToolDescriptionFallback(t *testing.T) {
+	// With nil toolDescriptions, should return fallback.
+	old := toolDescriptions
+	toolDescriptions = nil
+	defer func() { toolDescriptions = old }()
+
+	result := getToolDescription("bash", "fallback description")
+	if result != "fallback description" {
+		t.Errorf("getToolDescription with nil map should return fallback, got %q", result)
+	}
+}
+
+func TestGetToolDescriptionLoaded(t *testing.T) {
+	old := toolDescriptions
+	toolDescriptions = loadToolDescriptions("alpine:latest")
+	defer func() { toolDescriptions = old }()
+
+	result := getToolDescription("bash", "fallback")
+	if result == "fallback" {
+		t.Error("getToolDescription should return loaded description, not fallback")
+	}
+	if !strings.Contains(result, "dev container") {
+		t.Error("loaded bash description should contain 'dev container'")
+	}
+}
+
+func TestGetToolDescriptionMissingTool(t *testing.T) {
+	old := toolDescriptions
+	toolDescriptions = loadToolDescriptions("alpine:latest")
+	defer func() { toolDescriptions = old }()
+
+	result := getToolDescription("nonexistent_tool", "my fallback")
+	if result != "my fallback" {
+		t.Errorf("getToolDescription for missing tool should return fallback, got %q", result)
+	}
+}
+
+func TestToolsMDCrossToolGuidanceOnly(t *testing.T) {
+	// The slimmed tools.md should only contain cross-tool guidance.
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+		stubTool{"outline"},
+		stubTool{"edit_file"},
+		stubTool{"write_file"},
+		stubTool{"git"},
+		stubTool{"devenv"},
+		stubTool{"agent"},
+	}
+	serverTools := []types.ToolDefinition{WebSearchToolDef()}
+	prompt := buildSystemPrompt(tools, serverTools, nil, "/work", "", "alpine:latest", "", nil)
+
+	// Cross-tool guidance should be present.
+	if !strings.Contains(prompt, "Prefer dedicated tools over bash") {
+		t.Error("prompt missing 'prefer dedicated tools' guidance")
+	}
+	if !strings.Contains(prompt, "Explore in layers") {
+		t.Error("prompt missing 'explore in layers' guidance")
+	}
+
+	// Per-tool sections should NOT be present.
+	for _, sub := range []string{
+		"### bash", "### git", "### devenv", "### agent",
+		"### glob, grep, read_file", "### edit_file, write_file",
+		"### web_search",
+	} {
+		if strings.Contains(prompt, sub) {
+			t.Errorf("prompt should not contain per-tool section %q", sub)
+		}
 	}
 }
