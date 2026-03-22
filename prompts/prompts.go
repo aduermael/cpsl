@@ -11,8 +11,21 @@ import (
 //go:embed *.md
 var templateFS embed.FS
 
+// funcMap provides helper functions available in all prompt templates.
+var funcMap = template.FuncMap{
+	// containsStr reports whether s appears in the given string slice.
+	"containsStr": func(slice []string, s string) bool {
+		for _, v := range slice {
+			if v == s {
+				return true
+			}
+		}
+		return false
+	},
+}
+
 // Templates is the parsed prompt template set (system, role, tools, etc.).
-var Templates = template.Must(template.ParseFS(templateFS, "*.md"))
+var Templates = template.Must(template.New("").Funcs(funcMap).ParseFS(templateFS, "*.md"))
 
 //go:embed tools/*.md
 var ToolDescFS embed.FS

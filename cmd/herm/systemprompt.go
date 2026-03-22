@@ -14,7 +14,7 @@ import (
 // PromptData holds all values passed to the system prompt templates.
 type PromptData struct {
 	HasBash        bool
-	RunsOnHost     bool
+	HostTools      []string // tool names that execute on the host (e.g. "git")
 	HasDevenv      bool
 	HasAgent       bool
 	HasWebSearch   bool
@@ -44,8 +44,13 @@ type PromptData struct {
 // Structured into: Role, Tools, Practices, Communication, Skills, Environment.
 func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string, containerImage string, worktreeBranch string, snap *projectSnapshot) string {
 	toolNames := make(map[string]bool)
+	var hostTools []string
 	for _, t := range tools {
-		toolNames[t.Definition().Name] = true
+		name := t.Definition().Name
+		toolNames[name] = true
+		if t.HostTool() {
+			hostTools = append(hostTools, name)
+		}
 	}
 	for _, st := range serverTools {
 		toolNames[st.Name] = true
@@ -53,7 +58,7 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 
 	data := PromptData{
 		HasBash:        toolNames["bash"],
-		RunsOnHost:     toolNames["git"],
+		HostTools:      hostTools,
 		HasDevenv:      toolNames["devenv"],
 		HasAgent:       toolNames["agent"],
 		HasWebSearch:   toolNames[types.ServerToolWebSearch],
@@ -91,8 +96,13 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 // personality, and skills to reduce token overhead.
 func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, workDir string, containerImage string, snap *projectSnapshot) string {
 	toolNames := make(map[string]bool)
+	var hostTools []string
 	for _, t := range tools {
-		toolNames[t.Definition().Name] = true
+		name := t.Definition().Name
+		toolNames[name] = true
+		if t.HostTool() {
+			hostTools = append(hostTools, name)
+		}
 	}
 	for _, st := range serverTools {
 		toolNames[st.Name] = true
@@ -100,7 +110,7 @@ func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition,
 
 	data := PromptData{
 		HasBash:        toolNames["bash"],
-		RunsOnHost:     toolNames["git"],
+		HostTools:      hostTools,
 		HasDevenv:      toolNames["devenv"],
 		HasAgent:       toolNames["agent"],
 		HasWebSearch:   toolNames[types.ServerToolWebSearch],
