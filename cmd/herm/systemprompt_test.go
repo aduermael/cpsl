@@ -186,7 +186,7 @@ func TestBuildSystemPromptNoPersonality(t *testing.T) {
 
 func TestPromptTemplateParsing(t *testing.T) {
 	// Verify all expected templates are defined in the embedded FS.
-	expected := []string{"system", "role", "tools", "practices", "communication", "personality", "skills", "environment"}
+	expected := []string{"system", "system_subagent", "role", "role_subagent", "tools", "practices", "communication", "personality", "skills", "environment"}
 	for _, name := range expected {
 		tmpl := prompts.Templates.Lookup(name)
 		if tmpl == nil {
