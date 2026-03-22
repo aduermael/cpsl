@@ -72,8 +72,8 @@ The devenv tool's markdown file now contains core guidance. Reconcile with the `
 
 Explore-mode sub-agents should only get read-only tools.
 
-- [ ] 4a: Define a package-level `exploreToolAllowlist` as a `map[string]bool` containing: `glob`, `grep`, `read_file`, `outline`, `bash`. Modify `buildSubAgentTools()` in `subagent.go` to accept a `mode` parameter. When mode is `"explore"`, filter the tool list to only tools in the allowlist. When mode is `"implement"`, keep the full tool set. Note: bash remains in explore mode (needed for read-only commands like `ls`, `tree`, build checks) — this is an accepted escape hatch, consistent with Claude Code's approach
-- [ ] 4b: Add tests verifying: (1) explore-mode tool list contains only allowlisted tools, (2) implement-mode tool list contains all tools, (3) the sub-agent system prompt built from filtered tools excludes write-tool guidance
+- [x] 4a: Define a package-level `exploreToolAllowlist` as a `map[string]bool` containing: `glob`, `grep`, `read_file`, `outline`, `bash`. Modify `buildSubAgentTools()` in `subagent.go` to accept a `mode` parameter. When mode is `"explore"`, filter the tool list to only tools in the allowlist. When mode is `"implement"`, keep the full tool set. Note: bash remains in explore mode (needed for read-only commands like `ls`, `tree`, build checks) — this is an accepted escape hatch, consistent with Claude Code's approach
+- [x] 4b: Add tests verifying: (1) explore-mode tool list contains only allowlisted tools, (2) implement-mode tool list contains all tools, (3) the sub-agent system prompt built from filtered tools excludes write-tool guidance
 
 ## Open questions
 

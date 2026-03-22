@@ -132,12 +132,30 @@ func (t *SubAgentTool) loadNodeID(agentID string) (string, bool) {
 	return nodeID, ok
 }
 
+// exploreToolAllowlist is the set of tools available to explore-mode sub-agents.
+// These are read-only tools plus bash (needed for read-only commands like ls,
+// tree, and build checks — an accepted escape hatch consistent with Claude Code).
+var exploreToolAllowlist = map[string]bool{
+	"glob":      true,
+	"grep":      true,
+	"read_file": true,
+	"outline":   true,
+	"bash":      true,
+}
+
 // buildSubAgentTools returns the tools available to the sub-agent.
+// When mode is "explore", only tools in exploreToolAllowlist are included.
+// When mode is "implement", the full tool set is included.
 // If the current depth allows further nesting, includes a new SubAgentTool
 // at the next depth level. Otherwise the sub-agent cannot spawn children.
-func (t *SubAgentTool) buildSubAgentTools() []Tool {
-	tools := make([]Tool, len(t.tools))
-	copy(tools, t.tools)
+func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
+	var tools []Tool
+	for _, tool := range t.tools {
+		if mode == "explore" && !exploreToolAllowlist[tool.Definition().Name] {
+			continue
+		}
+		tools = append(tools, tool)
+	}
 
 	nextDepth := t.currentDepth + 1
 	if nextDepth < t.maxDepth {
@@ -180,7 +198,8 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	}
 
 	// Build the sub-agent's tool set (may include nested agent tool if depth allows).
-	subTools := t.buildSubAgentTools()
+	// Explore mode gets read-only tools only; implement mode gets everything.
+	subTools := t.buildSubAgentTools(in.Mode)
 
 	// Fetch a fresh project snapshot so the sub-agent sees the current state
 	// of the worktree (files, commits, status) rather than a stale startup copy.
