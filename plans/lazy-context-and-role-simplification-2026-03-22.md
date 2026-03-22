@@ -104,7 +104,7 @@ The single `system.md` template branches on `.IsSubAgent`, and that conditional 
 
 - [x] 8a: Create `system_subagent.md` as a new entry-point template for sub-agents. It should define `{{define "system_subagent"}}` and chain only the templates relevant to sub-agents (role, tools, practices, environment — no communication, personality, or skills). Remove the `{{if not .IsSubAgent}}` conditional from `system.md` — it becomes the main-agent-only entry point
 - [x] 8b: Update `buildSubAgentSystemPrompt()` in `systemprompt.go` to execute `"system_subagent"` instead of `"system"`. Update `prompts.go` to ensure the new file is included in the embed
-- [ ] 8c: Simplify `role.md` — split into `role.md` (main agent) and `role_subagent.md` (sub-agent), removing the top-level `{{if .IsSubAgent}}` branch. Update both `system.md` and `system_subagent.md` to reference the appropriate role template
+- [x] 8c: Simplify `role.md` — split into `role.md` (main agent) and `role_subagent.md` (sub-agent), removing the top-level `{{if .IsSubAgent}}` branch. Update both `system.md` and `system_subagent.md` to reference the appropriate role template
 - [ ] 8d: Add Go template comments (`{{/* ... */}}`) as docstrings to each template file. Each file should have a brief comment at the top describing its purpose and which entry point uses it. These are standard `text/template` comments, stripped at render time
 - [ ] 8e: Update `systemprompt_test.go` — the `TestPromptTemplateParsing` test needs to include the new template names. Existing tests for `buildSubAgentSystemPrompt` should still pass since behavior is unchanged. Run `go test ./...`
 
