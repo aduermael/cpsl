@@ -7,8 +7,8 @@
 - Working directory: {{.WorkDir}}
 - Container image: {{.ContainerImage}}
 - Project mounted at: /workspace
-{{- if .RunsOnHost}}
-- Git: project is in a worktree managed by herm{{if .WorktreeBranch}} (branch: {{.WorktreeBranch}}){{end}}
+{{- if .HostTools}}
+- Host tools: {{range $i, $t := .HostTools}}{{if $i}}, {{end}}{{$t}}{{end}}{{if containsStr .HostTools "git"}} (worktree{{if .WorktreeBranch}}: {{.WorktreeBranch}}{{end}}){{end}}
 {{- end}}
 {{- if .HasBash}}
 - Attachments mounted at: /attachments (files attached to the current message are available here)
