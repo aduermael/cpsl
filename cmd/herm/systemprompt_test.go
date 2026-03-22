@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"herm/prompts"
+
 	"langdag.com/langdag/types"
 )
 
@@ -186,7 +188,7 @@ func TestPromptTemplateParsing(t *testing.T) {
 	// Verify all expected templates are defined in the embedded FS.
 	expected := []string{"system", "role", "tools", "practices", "communication", "personality", "skills", "environment"}
 	for _, name := range expected {
-		tmpl := promptTemplates.Lookup(name)
+		tmpl := prompts.Templates.Lookup(name)
 		if tmpl == nil {
 			t.Errorf("template %q not found in embedded template set", name)
 		}

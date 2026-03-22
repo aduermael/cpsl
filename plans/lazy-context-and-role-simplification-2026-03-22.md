@@ -94,8 +94,8 @@ Phase 4 filters tools for explore mode, but `role.md` still unconditionally tell
 The `cmd/herm/prompts/` directory is buried too deep. Move it to the repo root so all system prompt markdown is easily discoverable. Note: `//go:embed` does not allow `..` paths, so the embed FS must be restructured — likely a dedicated `prompts` package with its own embed, imported by `cmd/herm`.
 
 - [x] 7a: Create a `prompts/` package at the repo root. Move all 18 markdown files from `cmd/herm/prompts/` into `prompts/` (preserving the `tools/` subdirectory). Add a `prompts.go` file that embeds the files and exports the template set and tool description FS. This package owns `//go:embed prompts/*.md` and `//go:embed tools/*.md` (relative to its own directory)
-- [ ] 7b: Update `cmd/herm/systemprompt.go` to import the new `prompts` package instead of using its own embed. Remove the old `//go:embed prompts/*.md` directive. Update `promptTemplates` to use the exported template set from the prompts package
-- [ ] 7c: Update `cmd/herm/tooldesc.go` to import the new `prompts` package instead of embedding `prompts/tools/*.md` directly. Remove the old `//go:embed prompts/tools/*.md` directive
+- [x] 7b: Update `cmd/herm/systemprompt.go` to import the new `prompts` package instead of using its own embed. Remove the old `//go:embed prompts/*.md` directive. Update `promptTemplates` to use the exported template set from the prompts package
+- [x] 7c: Update `cmd/herm/tooldesc.go` to import the new `prompts` package instead of embedding `prompts/tools/*.md` directly. Remove the old `//go:embed prompts/tools/*.md` directive
 - [ ] 7d: Remove the now-empty `cmd/herm/prompts/` directory. Update any tests that reference prompt paths. Run `go test ./...` to verify everything still works
 
 ## Open questions

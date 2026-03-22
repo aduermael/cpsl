@@ -4,18 +4,12 @@ package main
 
 import (
 	"bytes"
-	"embed"
-	"text/template"
 	"time"
+
+	"herm/prompts"
 
 	"langdag.com/langdag/types"
 )
-
-//go:embed prompts/*.md
-var promptFS embed.FS
-
-// promptTemplates is the parsed prompt template set, initialized once.
-var promptTemplates = template.Must(template.ParseFS(promptFS, "prompts/*.md"))
 
 // PromptData holds all values passed to the system prompt templates.
 type PromptData struct {
@@ -84,7 +78,7 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 	}
 
 	var buf bytes.Buffer
-	if err := promptTemplates.ExecuteTemplate(&buf, "system", data); err != nil {
+	if err := prompts.Templates.ExecuteTemplate(&buf, "system", data); err != nil {
 		// Templates are embedded and tested; a failure here is a bug.
 		panic("systemprompt: " + err.Error())
 	}
@@ -130,7 +124,7 @@ func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition,
 	}
 
 	var buf bytes.Buffer
-	if err := promptTemplates.ExecuteTemplate(&buf, "system", data); err != nil {
+	if err := prompts.Templates.ExecuteTemplate(&buf, "system", data); err != nil {
 		panic("systemprompt: " + err.Error())
 	}
 	return buf.String()

@@ -5,12 +5,9 @@
 package main
 
 import (
-	"embed"
+	"herm/prompts"
 	"strings"
 )
-
-//go:embed prompts/tools/*.md
-var toolDescFS embed.FS
 
 // ToolDesc holds a parsed tool description from a markdown file.
 type ToolDesc struct {
@@ -27,7 +24,7 @@ var toolDescriptions map[string]ToolDesc
 // directory and returns a map keyed by tool name. Dynamic placeholders
 // (__CONTAINER_IMAGE__) are replaced with the provided values.
 func loadToolDescriptions(containerImage string) map[string]ToolDesc {
-	entries, err := toolDescFS.ReadDir("prompts/tools")
+	entries, err := prompts.ToolDescFS.ReadDir("tools")
 	if err != nil {
 		return nil
 	}
@@ -38,7 +35,7 @@ func loadToolDescriptions(containerImage string) map[string]ToolDesc {
 			continue
 		}
 
-		data, err := toolDescFS.ReadFile("prompts/tools/" + e.Name())
+		data, err := prompts.ToolDescFS.ReadFile("tools/" + e.Name())
 		if err != nil {
 			continue
 		}
