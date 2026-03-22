@@ -86,9 +86,9 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 }
 
 // buildSubAgentSystemPrompt constructs a leaner system prompt for sub-agents.
-// It reuses the same template infrastructure but sets IsSubAgent=true, which
-// uses the sub-agent preamble instead of the main agent role and skips
-// communication, personality, and skills sections to reduce token overhead.
+// It uses the "system_subagent" entry-point template which chains only
+// role, tools, practices, and environment — skipping communication,
+// personality, and skills to reduce token overhead.
 func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, workDir string, containerImage string, snap *projectSnapshot) string {
 	toolNames := make(map[string]bool)
 	for _, t := range tools {
@@ -124,7 +124,7 @@ func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition,
 	}
 
 	var buf bytes.Buffer
-	if err := prompts.Templates.ExecuteTemplate(&buf, "system", data); err != nil {
+	if err := prompts.Templates.ExecuteTemplate(&buf, "system_subagent", data); err != nil {
 		panic("systemprompt: " + err.Error())
 	}
 	return buf.String()
