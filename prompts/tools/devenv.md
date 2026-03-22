@@ -1,9 +1,10 @@
 ---
 name: devenv
 description: Manage the dev container Dockerfile at .herm/Dockerfile
+runs_on: container
 ---
 
-Manage the single dev container Dockerfile at .herm/Dockerfile. The built image replaces the running container and persists across sessions. Use this to install languages, tools, compilers, and system dependencies permanently. Always read before writing.
+Runs inside the dev container. Manage the single dev container Dockerfile at .herm/Dockerfile. The built image replaces the running container and persists across sessions. Use this to install languages, tools, compilers, and system dependencies permanently. Always read before writing.
 
 ONE environment per project. There is exactly one Dockerfile. When adding new tools, extend it — never create a parallel one.
 

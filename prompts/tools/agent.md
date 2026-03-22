@@ -1,9 +1,10 @@
 ---
 name: agent
 description: Spawn a sub-agent to handle a complex subtask
+runs_on: container
 ---
 
-Spawn a sub-agent with its own context window. Each sub-agent has startup cost (system prompt tokens + LLM call latency), so only use when the benefit outweighs that overhead.
+Runs inside the dev container. Spawn a sub-agent with its own context window. Each sub-agent has startup cost (system prompt tokens + LLM call latency), so only use when the benefit outweighs that overhead.
 
 **Modes — you must specify one:**
 - `"explore"` — uses a fast, cheap model. For research, search, reading code, investigating issues, gathering information.

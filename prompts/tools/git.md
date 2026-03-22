@@ -1,9 +1,10 @@
 ---
 name: git
 description: Run git commands on the host in the project worktree
+runs_on: host
 ---
 
-Run git commands on the host in the project worktree — not inside the container. This is the recommended way to run git for the main project because:
+Runs on the host (not in the container). Run git commands in the project worktree. This is the recommended way to run git for the main project because:
 1. The container may not have git installed.
 2. Only the host has SSH keys and credentials for remote operations.
 
