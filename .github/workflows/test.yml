@@ -18,3 +18,20 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+  prompt-length:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check prompt files are at most 100 lines
+        run: |
+          failed=0
+          for f in prompts/*.md; do
+            lines=$(wc -l < "$f")
+            if [ "$lines" -gt 100 ]; then
+              echo "ERROR: $f has $lines lines (max 100)"
+              failed=1
+            fi
+          done
+          exit $failed
