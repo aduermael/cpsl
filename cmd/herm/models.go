@@ -32,10 +32,11 @@ var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenA
 type ModelDef struct {
 	Provider        string
 	ID              string
-	PromptPrice     float64 // USD per million input tokens
-	CompletionPrice float64 // USD per million output tokens
-	ContextWindow   int     // tokens
-	SWEScore        float64 // SWE-bench Verified score (0 = no data)
+	PromptPrice     float64  // USD per million input tokens
+	CompletionPrice float64  // USD per million output tokens
+	ContextWindow   int      // tokens
+	SWEScore        float64  // SWE-bench Verified score (0 = no data)
+	ServerTools     []string // server-side tool capabilities (e.g. "web_search")
 }
 
 // modelsFromCatalog builds the model list from the langdag catalog.
@@ -53,6 +54,7 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 				PromptPrice:     p.InputPricePer1M,
 				CompletionPrice: p.OutputPricePer1M,
 				ContextWindow:   p.ContextWindow,
+				ServerTools:     p.ServerTools,
 			})
 		}
 	}
@@ -60,12 +62,10 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 }
 
 // supportsServerTools reports whether a model supports server-side tools
-// (e.g. web search). For Grok, only the grok-4 family supports them.
-func supportsServerTools(provider, modelID string) bool {
-	if provider == ProviderGrok && !strings.HasPrefix(modelID, "grok-4") {
-		return false
-	}
-	return true
+// (e.g. web search) based on catalog metadata from langdag.
+func supportsServerTools(models []ModelDef, modelID string) bool {
+	m := findModelByID(models, modelID)
+	return m != nil && len(m.ServerTools) > 0
 }
 
 // filterModelsByProviders returns models whose provider is in the given set.

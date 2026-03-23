@@ -148,7 +148,7 @@ func (a *App) startAgent(userMessage string) {
 	// Server-side tools (e.g. web search) are handled by the LLM provider.
 	// Some models don't support them, so we check before including them.
 	var serverTools []types.ToolDefinition
-	if supportsServerTools(modelProvider, modelID) {
+	if supportsServerTools(a.models, modelID) {
 		serverTools = []types.ToolDefinition{WebSearchToolDef()}
 	}
 
@@ -193,7 +193,7 @@ func (a *App) startAgent(userMessage string) {
 	}
 	explorationModelID := a.config.resolveExplorationModel(a.models)
 	subAgentServerTools := serverTools
-	if !supportsServerTools(modelProvider, explorationModelID) {
+	if !supportsServerTools(a.models, explorationModelID) {
 		subAgentServerTools = nil
 	}
 	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)

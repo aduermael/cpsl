@@ -228,6 +228,32 @@ func TestModelsFromCatalog(t *testing.T) {
 	}
 }
 
+func TestModelsFromCatalogServerTools(t *testing.T) {
+	catalog := &langdag.ModelCatalog{
+		Providers: map[string][]langdag.ModelPricing{
+			"anthropic": {
+				{ID: "claude-sonnet-4", InputPricePer1M: 3, OutputPricePer1M: 15, ContextWindow: 200000, ServerTools: []string{"web_search"}},
+			},
+			"grok": {
+				{ID: "grok-3", InputPricePer1M: 3, OutputPricePer1M: 15, ContextWindow: 131072},
+			},
+		},
+	}
+	models := modelsFromCatalog(catalog)
+	// anthropic model should have server tools
+	if m := findModelByID(models, "claude-sonnet-4"); m == nil {
+		t.Fatal("claude-sonnet-4 not found")
+	} else if len(m.ServerTools) != 1 || m.ServerTools[0] != "web_search" {
+		t.Errorf("claude-sonnet-4 ServerTools = %v, want [web_search]", m.ServerTools)
+	}
+	// grok model should have no server tools
+	if m := findModelByID(models, "grok-3"); m == nil {
+		t.Fatal("grok-3 not found")
+	} else if len(m.ServerTools) != 0 {
+		t.Errorf("grok-3 ServerTools = %v, want []", m.ServerTools)
+	}
+}
+
 func TestModelsFromCatalogNil(t *testing.T) {
 	models := modelsFromCatalog(nil)
 	if models != nil {
@@ -700,33 +726,37 @@ func TestFormatCostTiny(t *testing.T) {
 
 // --- supportsServerTools tests ---
 
-func TestSupportsServerToolsGrok4(t *testing.T) {
-	if !supportsServerTools(ProviderGrok, "grok-4-1-fast-reasoning") {
-		t.Error("grok-4 models should support server tools")
+func TestSupportsServerToolsWithCapability(t *testing.T) {
+	models := []ModelDef{
+		{ID: "claude-sonnet-4-6", Provider: ProviderAnthropic, ServerTools: []string{"web_search"}},
+		{ID: "gpt-4o", Provider: ProviderOpenAI, ServerTools: []string{"web_search"}},
+		{ID: "grok-4-1-fast-reasoning", Provider: ProviderGrok, ServerTools: []string{"web_search"}},
+	}
+	for _, m := range models {
+		if !supportsServerTools(models, m.ID) {
+			t.Errorf("%s should support server tools", m.ID)
+		}
 	}
 }
 
-func TestSupportsServerToolsGrok3(t *testing.T) {
-	if supportsServerTools(ProviderGrok, "grok-3") {
-		t.Error("grok-3 should not support server tools")
+func TestSupportsServerToolsWithoutCapability(t *testing.T) {
+	models := []ModelDef{
+		{ID: "grok-3", Provider: ProviderGrok},
+		{ID: "grok-code-fast-1", Provider: ProviderGrok},
+	}
+	for _, m := range models {
+		if supportsServerTools(models, m.ID) {
+			t.Errorf("%s should not support server tools", m.ID)
+		}
 	}
 }
 
-func TestSupportsServerToolsGrokCodeFast(t *testing.T) {
-	if supportsServerTools(ProviderGrok, "grok-code-fast-1") {
-		t.Error("grok-code-fast-1 should not support server tools")
+func TestSupportsServerToolsUnknownModel(t *testing.T) {
+	models := []ModelDef{
+		{ID: "claude-sonnet-4-6", Provider: ProviderAnthropic, ServerTools: []string{"web_search"}},
 	}
-}
-
-func TestSupportsServerToolsAnthropic(t *testing.T) {
-	if !supportsServerTools(ProviderAnthropic, "claude-sonnet-4-6") {
-		t.Error("anthropic models should support server tools")
-	}
-}
-
-func TestSupportsServerToolsOpenAI(t *testing.T) {
-	if !supportsServerTools(ProviderOpenAI, "gpt-4o") {
-		t.Error("openai models should support server tools")
+	if supportsServerTools(models, "nonexistent-model") {
+		t.Error("unknown model should not support server tools")
 	}
 }
 
