@@ -126,7 +126,36 @@ The `RunsOnHost` boolean is a proxy for "git tool is present" but pretends to be
 
 - [x] 9f: Update `systemprompt_test.go`. Remove tests checking for `RunsOnHost` boolean behavior. Add tests verifying: (1) `HostTools` slice is correctly populated from tools where `HostTool()` returns `true`, (2) main and sub-agent prompts enumerate host tool names explicitly when present, (3) when no host tools exist (e.g. explore-mode sub-agent without git), the host exception section is omitted entirely, (4) each tool struct returns the expected `HostTool()` value
 
+## Phase 10: Smarter project snapshot with tree view and truncation
+
+The current project snapshot uses `ls -1` (flat listing) with a fallback to `tree -L 2` only when ≤8 entries. This is too shallow for most projects. The "clean" label for uncommitted changes is terse and unnatural.
+
+**Goal:** Two-level tree view with smart truncation, and better wording for clean status.
+
+- [ ] 10a: Create a `buildProjectTree(rootPath string, maxTopLevel, maxPerSubdir int) string` function in `background.go`. It should: (1) list top-level entries, (2) for directories, list one level of sub-entries, (3) truncate top-level entries beyond `maxTopLevel` (default 20) with a "+N more" line, (4) truncate sub-entries beyond `maxPerSubdir` (default 8) with "+N more" per directory, (5) use simple indentation (2 spaces) rather than ASCII tree characters. The function runs `ls` commands in the container — no new dependencies. Important files (README, go.mod, package.json, Makefile, Dockerfile) should be kept when truncating top-level, with less notable entries dropped first
+
+- [ ] 10b: Update `fetchProjectSnapshot()` in `background.go` (lines 431-509) to use `buildProjectTree()` instead of the current `ls -1` / `tree -L 2` fallback logic. Keep the 2-second timeout. The `projectSnapshot.TopLevel` field now holds hierarchical output
+
+- [ ] 10c: Update `prompts/environment.md` template. Change the "Uncommitted changes" section: when `GitStatus` is empty, render "no uncommitted changes" instead of "clean". Keep current behavior when `GitStatus` is non-empty
+
+- [ ] 10d: Update tests. Modify `TestBuildSystemPromptCleanRepo` in `snapshot_test.go` to check for "no uncommitted changes" instead of "clean". Add `TestBuildProjectTree` verifying: (1) two-level output for normal directories, (2) "+N more" truncation when entries exceed limits, (3) important files preserved during truncation
+
+## Phase 11: Add tool inventory to system prompt
+
+Tool descriptions currently live only in API tool Definition fields (`prompts/tools/*.md`). The rendered system prompt text has no tool inventory — users viewing it see no list of available tools, no sub-agent mention, and no delegation guidance. This is a gap for both transparency (users inspecting the prompt) and LLM grounding (the model benefits from seeing a tool summary in its system prompt context).
+
+**Goal:** Add a compact tool summary to the system prompt so available tools and their brief descriptions are visible in the rendered text.
+
+- [ ] 11a: Add a `ToolSummaries []ToolSummary` field to `PromptData` in `systemprompt.go`. The `ToolSummary` struct has `Name string` and `Brief string`. In both `buildSystemPrompt()` and `buildSubAgentSystemPrompt()`, populate it by iterating tools and extracting the brief description from `toolDescriptions` (the loaded `map[string]ToolDesc`). For server tools (web_search), use a hardcoded brief. This requires `loadToolDescriptions()` to run before prompt building — verify it's already called at startup or adjust initialization order
+
+- [ ] 11b: Update `prompts/tools.md` template. After the "## Tools" header, add a conditional tool listing section that renders when `ToolSummaries` is non-empty. Format as a compact bullet list: `- **tool_name**: brief description` for each tool. Keep the existing cross-tool guidance below the listing. For sub-agents (system_subagent.md also chains tools.md), the listing reflects their filtered tool set automatically since ToolSummaries is built from the actual tools passed
+
+- [ ] 11c: Update `prompts/role.md` to briefly mention delegation capability when the agent tool is available. Add a conditional after the workflow steps: `{{if .HasAgent}}You can delegate complex subtasks to sub-agents — see the agent tool.{{end}}`. This restores the delegation awareness removed when the orchestrator identity was collapsed, without reintroducing the heavy orchestrator framing
+
+- [ ] 11d: Update tests. Modify `TestBuildSystemPromptAllTools` to verify tool names appear in the rendered prompt (e.g. "bash", "git", "devenv"). Add `TestBuildSystemPromptToolInventory` verifying: (1) tool summaries render as bullet list, (2) sub-agent prompt shows only filtered tools in the listing, (3) no tools → no listing section. Update `TestBuildSubAgentSystemPrompt` to verify explore-mode sub-agents don't see write tools in the listing
+
 ## Open questions
 
 - **web_search**: This is a server-side tool (no Go Definition() method — it's a `types.ToolDefinition` literal). Should it also get a markdown file, or keep the inline definition? Leaning toward keeping it inline since it's 3 lines and provider-defined.
 - **Placeholder syntax**: `__CONTAINER_IMAGE__` matches the existing `__HERM_VERSION__` pattern in devenv. Are there other dynamic values needed beyond ContainerImage?
+- **Tree depth vs token cost**: Two levels is a good default, but large monorepos could still blow up. The `maxTopLevel` and `maxPerSubdir` caps mitigate this, but we may need a total line cap (~100 lines) as a safety valve.
