@@ -81,10 +81,12 @@ func fakeDockerCommandWithStdin(handler func(args []string) (string, string, int
 	}
 }
 
-func TestContainerClient_IsAvailable_DockerRunning(t *testing.T) {
-	orig := dockerCommand
-	defer func() { dockerCommand = orig }()
+func TestContainerClient_CheckDocker_OK(t *testing.T) {
+	origCmd := dockerCommand
+	origPath := lookPath
+	defer func() { dockerCommand = origCmd; lookPath = origPath }()
 
+	lookPath = func(file string) (string, error) { return "/usr/bin/docker", nil }
 	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
 		if len(args) >= 2 && args[1] == "info" {
 			return "", "", 0
@@ -93,22 +95,54 @@ func TestContainerClient_IsAvailable_DockerRunning(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if !c.IsAvailable() {
-		t.Error("expected IsAvailable to return true when docker info succeeds")
+	if err := c.CheckDocker(); err != nil {
+		t.Errorf("expected no error, got %v", err)
 	}
 }
 
-func TestContainerClient_IsAvailable_DockerNotRunning(t *testing.T) {
-	orig := dockerCommand
-	defer func() { dockerCommand = orig }()
+func TestContainerClient_CheckDocker_NotInstalled(t *testing.T) {
+	origPath := lookPath
+	defer func() { lookPath = origPath }()
 
+	lookPath = func(file string) (string, error) {
+		return "", &exec.Error{Name: file, Err: exec.ErrNotFound}
+	}
+
+	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	err := c.CheckDocker()
+	if err == nil {
+		t.Fatal("expected error when docker is not installed")
+	}
+	cerr, ok := err.(*ContainerError)
+	if !ok {
+		t.Fatalf("expected *ContainerError, got %T", err)
+	}
+	if cerr.Code != ErrDockerNotFound {
+		t.Errorf("expected code %s, got %s", ErrDockerNotFound, cerr.Code)
+	}
+}
+
+func TestContainerClient_CheckDocker_DaemonNotRunning(t *testing.T) {
+	origCmd := dockerCommand
+	origPath := lookPath
+	defer func() { dockerCommand = origCmd; lookPath = origPath }()
+
+	lookPath = func(file string) (string, error) { return "/usr/bin/docker", nil }
 	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
 		return "", "Cannot connect to the Docker daemon", 1
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if c.IsAvailable() {
-		t.Error("expected IsAvailable to return false when docker info fails")
+	err := c.CheckDocker()
+	if err == nil {
+		t.Fatal("expected error when daemon is not running")
+	}
+	cerr, ok := err.(*ContainerError)
+	if !ok {
+		t.Fatalf("expected *ContainerError, got %T", err)
+	}
+	if cerr.Code != ErrDockerNotRunning {
+		t.Errorf("expected code %s, got %s", ErrDockerNotRunning, cerr.Code)
 	}
 }
 
@@ -137,9 +171,8 @@ func TestContainerClient_StopIdempotent(t *testing.T) {
 
 func TestContainerError_Format(t *testing.T) {
 	err := &ContainerError{Code: ErrDockerNotFound, Message: "not found"}
-	expected := "container DockerNotFound: not found"
-	if err.Error() != expected {
-		t.Errorf("expected %q, got %q", expected, err.Error())
+	if err.Error() != "not found" {
+		t.Errorf("expected %q, got %q", "not found", err.Error())
 	}
 }
 
