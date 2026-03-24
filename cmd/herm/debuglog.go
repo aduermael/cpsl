@@ -124,3 +124,50 @@ func (s *sessionSummaryBuilder) String() string {
 	}
 	return out
 }
+
+// regenerateDebugFile truncates and rewrites the debug file from the current
+// conversation state. Called on resize and /clear to keep the debug file in
+// sync with what the user sees.
+func (a *App) regenerateDebugFile() {
+	if a.debugFile == nil {
+		return
+	}
+	// Truncate the file
+	a.debugFile.Truncate(0)
+	a.debugFile.Seek(0, 0)
+
+	// Rewrite all messages
+	for _, msg := range a.messages {
+		switch msg.kind {
+		case msgUser:
+			debugWrite(a.debugFile, "User Message", msg.content)
+		case msgAssistant:
+			debugWrite(a.debugFile, "Assistant Text", msg.content)
+		case msgToolCall:
+			debugWrite(a.debugFile, "Tool Call", msg.content)
+		case msgToolResult:
+			label := "Tool Result"
+			if msg.isError {
+				label = "Tool Result [ERROR]"
+			}
+			debugWrite(a.debugFile, label, msg.content)
+		case msgSystemPrompt:
+			debugWrite(a.debugFile, "System Prompt", msg.content)
+		case msgInfo:
+			debugWrite(a.debugFile, "Info", msg.content)
+		case msgSuccess:
+			debugWrite(a.debugFile, "Success", msg.content)
+		case msgError:
+			debugWrite(a.debugFile, "Error", msg.content)
+		}
+	}
+
+	// Include streaming text if agent is running
+	if a.streamingText != "" {
+		debugWrite(a.debugFile, "Assistant Text [streaming...]", a.streamingText)
+	}
+
+	// Append current session stats
+	var b fmt.Stringer = &sessionSummaryBuilder{a: a}
+	debugWrite(a.debugFile, "Session Summary", b.String())
+}

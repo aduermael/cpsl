@@ -95,11 +95,11 @@ When the terminal window resizes, flush and regenerate the debug file to corresp
 - Regeneration during active streaming → include partial streaming text with a `[streaming...]` marker
 - Large conversation → regeneration could be slow. Debounce already handles rapid resizes (150ms). For very large conversations this is bounded by message count, not terminal size.
 
-- [ ] 4a: **Add `regenerateDebugFile()` method** — Walks `a.messages`, writes each message to the debug file by section type (system prompt, user, assistant, tool call, tool result, info, error, etc.). Includes current session stats at the end. Includes streaming text if agent is running. Does NOT word-wrap any content.
+- [x] 4a: **Add `regenerateDebugFile()` method** — Walks `a.messages`, writes each message to the debug file by section type (system prompt, user, assistant, tool call, tool result, info, error, etc.). Includes current session stats at the end. Includes streaming text if agent is running. Does NOT word-wrap any content.
 
-- [ ] 4b: **Call regenerate on resize** — In the `resizeMsg` handler (`main.go`), after `a.renderFull()`, call `a.regenerateDebugFile()` if debug mode is active.
+- [x] 4b: **Call regenerate on resize** — In the `resizeMsg` handler (`main.go`), after `a.renderFull()`, call `a.regenerateDebugFile()` if debug mode is active.
 
-- [ ] 4c: **Call regenerate on /clear** — In the `/clear` handler (`commands.go`), close the old debug file, create a new one with `initDebugLog()`, and update `a.debugFilePath`. This gives each conversation its own debug file.
+- [x] 4c: **Call regenerate on /clear** — In the `/clear` handler (`commands.go`), close the old debug file, create a new one with `initDebugLog()`, and update `a.debugFilePath`. This gives each conversation its own debug file.
 
 ---
 

@@ -64,6 +64,13 @@ func (a *App) handleCommand(input string) {
 		a.agentElapsed = 0
 		a.shownInitialModel = false
 		a.lastModelID = ""
+		// Close old debug file and create a new one for the new conversation.
+		if a.debugFile != nil {
+			closeDebugLog(a.debugFile)
+			a.debugFile = nil
+			a.debugFilePath = ""
+			a.initAppDebugLog()
+		}
 		a.maybeShowInitialModels()
 		a.render()
 
