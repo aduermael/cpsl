@@ -45,8 +45,8 @@ Qwen 3.5 models (via Ollama) enable thinking by default, producing hidden `<thin
 
 ## Phase 1: langdag — Core types and prompt option
 
-- [ ] 1a: Add `Think *bool` field to `CompletionRequest` in `types/types.go`; add `WithThink(enabled bool)` prompt option in `langdag.go` that wires into promptOptions → CompletionRequest conversion
-- [ ] 1b: Tests — unit test that `WithThink(true)` and `WithThink(false)` set the field correctly on the built CompletionRequest; test that omitting WithThink leaves it nil
+- [x] 1a: Add `Think *bool` field to `CompletionRequest` in `types/types.go`; add `WithThink(enabled bool)` prompt option in `langdag.go` that wires into promptOptions → CompletionRequest conversion
+- [x] 1b: Tests — unit test that `WithThink(true)` and `WithThink(false)` set the field correctly on the built CompletionRequest; test that omitting WithThink leaves it nil
 
 ## Phase 2: langdag — Provider wiring
 
