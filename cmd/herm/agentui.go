@@ -218,12 +218,6 @@ func (a *App) startAgent(userMessage string) {
 	}
 	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage, wtBranch, a.projectSnap)
 
-	if a.debugActive() {
-		a.messages = append(a.messages, chatMessage{kind: msgSystemPrompt, content: "── System Prompt ──\n" + systemPrompt})
-		a.messages = append(a.messages, chatMessage{kind: msgSystemPrompt, content: formatToolDefinitions(tools, serverTools)})
-		a.messages = append(a.messages, chatMessage{kind: msgSystemPrompt, content: "── Session Stats ──\n(appended at runtime: \"Session: N tokens used, N agent calls\" — zero at startup)"})
-	}
-
 	// Debug file: log system prompt, tool definitions, and user message
 	a.debugWriteSection("System Prompt", systemPrompt)
 	a.debugWriteSection("Tool Definitions", formatToolDefinitions(tools, serverTools))
