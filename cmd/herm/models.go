@@ -34,6 +34,7 @@ var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenA
 type ModelDef struct {
 	Provider        string
 	ID              string
+	Label           string   // optional display name override (e.g. "model (offline)")
 	PromptPrice     float64  // USD per million input tokens
 	CompletionPrice float64  // USD per million output tokens
 	ContextWindow   int      // tokens
@@ -284,16 +285,36 @@ func formatContextWindow(tokens int) string {
 // Columns: Model (ID), Provider, Price (prompt), Context Window.
 // Returns a header string and the data lines.
 // The active model is marked with ● at the end.
+// visibleLen returns the visible length of a string, ignoring ANSI escape codes.
+func visibleLen(s string) int {
+	inEscape := false
+	n := 0
+	for _, c := range s {
+		if c == '\033' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if c == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // sortCol (0-3) determines which column header is highlighted.
 func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortAsc bool) (string, []string) {
 	// Column headers
 	headers := [4]string{"Model", "Provider", "Price", "Context"}
 
 	// Compute column widths (at least as wide as headers)
-	maxName := len(headers[0])
-	maxProv := len(headers[1])
-	maxPrice := len(headers[2])
-	maxCtx := len(headers[3])
+	maxName := visibleLen(headers[0])
+	maxProv := visibleLen(headers[1])
+	maxPrice := visibleLen(headers[2])
+	maxCtx := visibleLen(headers[3])
 
 	type entry struct {
 		name, prov, price, ctx string
@@ -301,15 +322,19 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 	}
 	entries := make([]entry, len(models))
 	for i, m := range models {
+		displayName := m.ID
+		if m.Label != "" {
+			displayName = m.Label
+		}
 		e := entry{
-			name:   m.ID,
+			name:   displayName,
 			prov:   m.Provider,
 			price:  formatPricePerM(m.PromptPrice, m.CompletionPrice),
 			ctx:    formatContextWindow(m.ContextWindow),
 			active: m.ID == activeID,
 		}
-		if len(e.name) > maxName {
-			maxName = len(e.name)
+		if visibleLen(e.name) > maxName {
+			maxName = visibleLen(e.name)
 		}
 		if len(e.prov) > maxProv {
 			maxProv = len(e.prov)
@@ -337,10 +362,14 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		if j == sortCol {
 			label = h + arrow
 		}
+		pad := widths[j] - visibleLen(label)
+		if pad < 0 {
+			pad = 0
+		}
 		if rightAlign[j] {
-			hdrParts[j] = fmt.Sprintf("%*s", widths[j], label)
+			hdrParts[j] = strings.Repeat(" ", pad) + label
 		} else {
-			hdrParts[j] = fmt.Sprintf("%-*s", widths[j], label)
+			hdrParts[j] = label + strings.Repeat(" ", pad)
 		}
 	}
 	header := hdrParts[0] + "  " + hdrParts[1] + "  " + hdrParts[2] + "  " + hdrParts[3]
@@ -351,11 +380,22 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		if e.active {
 			marker = "●"
 		}
-		lines[i] = fmt.Sprintf("%-*s  %-*s  %*s  %*s %s",
-			maxName, e.name,
+		// Pad name manually to account for invisible ANSI escape bytes.
+		namePad := maxName - visibleLen(e.name)
+		if namePad < 0 {
+			namePad = 0
+		}
+		// ● is 3 bytes but 1 visible char; adjust ctx width so right-align stays correct.
+		ctxWidth := maxCtx
+		if e.active {
+			ctxWidth -= 2 // compensate for 2 extra bytes in ●
+		}
+		lines[i] = fmt.Sprintf("%s%s  %-*s  %*s  %*s %s",
+			e.name,
+			strings.Repeat(" ", namePad),
 			maxProv, e.prov,
 			maxPrice, e.price,
-			maxCtx, e.ctx,
+			ctxWidth, e.ctx,
 			marker)
 	}
 	return header, lines

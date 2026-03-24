@@ -134,6 +134,15 @@ func preferredDefault(models []ModelDef, provider string, defaults map[string]st
 // is invalid or its provider has no key, it falls back to the first available
 // model, or empty string if no keys are configured.
 func (c Config) resolveActiveModel(models []ModelDef) string {
+	// If the saved model's provider is configured, trust it even if the
+	// provider is offline and not in the live model list (e.g. Ollama down).
+	if c.ActiveModel != "" {
+		providers := c.configuredProviders()
+		if providers[ollamaModelProvider(c.ActiveModel, models, c.OllamaBaseURL)] {
+			return c.ActiveModel
+		}
+	}
+
 	available := c.availableModels(models)
 	if len(available) == 0 {
 		return ""
@@ -151,6 +160,23 @@ func (c Config) resolveActiveModel(models []ModelDef) string {
 	return available[0].ID
 }
 
+// ollamaModelProvider returns the provider for a model ID. If the model is
+// found in the live list, its provider is returned. Otherwise, if an Ollama
+// URL is configured and the model is not in the catalog at all, it is assumed
+// to be an Ollama model.
+func ollamaModelProvider(modelID string, models []ModelDef, ollamaURL string) string {
+	for _, m := range models {
+		if m.ID == modelID {
+			return m.Provider
+		}
+	}
+	// Not in catalog — if Ollama is configured, assume it's an Ollama model.
+	if ollamaURL != "" {
+		return ProviderOllama
+	}
+	return ""
+}
+
 // resolveExplorationModel returns the model ID for sub-agents/exploration.
 // When unset, prefers a cheap/fast provider-specific default (e.g. haiku for
 // Anthropic) before falling back to resolveActiveModel.
@@ -161,6 +187,13 @@ func (c Config) resolveExplorationModel(models []ModelDef) string {
 			return id
 		}
 		return c.resolveActiveModel(models)
+	}
+	// If the saved exploration model's provider is configured, trust it.
+	if c.ExplorationModel != "" {
+		providers := c.configuredProviders()
+		if providers[ollamaModelProvider(c.ExplorationModel, models, c.OllamaBaseURL)] {
+			return c.ExplorationModel
+		}
 	}
 	available := c.availableModels(models)
 	for _, m := range available {

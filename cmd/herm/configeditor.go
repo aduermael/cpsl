@@ -10,6 +10,27 @@ import (
 	"unicode/utf8"
 )
 
+// isOllamaOffline reports whether modelID is an Ollama model that is not
+// present in the current live model list (i.e. Ollama is configured but down).
+func (a *App) isOllamaOffline(modelID string) bool {
+	if modelID == "" {
+		return false
+	}
+	// Check if it's in the live list as an Ollama model.
+	for _, m := range a.models {
+		if m.ID == modelID && m.Provider == ProviderOllama {
+			return false // online and present
+		}
+	}
+	// Not in live list — treat as offline if it's not a known catalog model either.
+	for _, m := range a.models {
+		if m.ID == modelID {
+			return false // it's a different provider's model
+		}
+	}
+	return true // unknown to catalog, Ollama URL set → assume offline Ollama model
+}
+
 func maskKey(key string) string {
 	if key == "" {
 		return "(not set)"
@@ -121,6 +142,32 @@ func (a *App) openConfigModelPicker(getCurrentID func() string, onSelect func(st
 // doOpenConfigModelPicker builds and displays the model picker menu.
 func (a *App) doOpenConfigModelPicker(models []ModelDef, getCurrentID func() string, onSelect func(string)) {
 	available := a.cfgDraft.availableModels(models)
+
+	// If Ollama is configured but offline, inject a stub for the saved model
+	// so the picker still opens and the user can see their current selection.
+	if a.cfgDraft.OllamaBaseURL != "" {
+		ollamaInList := false
+		for _, m := range available {
+			if m.Provider == ProviderOllama {
+				ollamaInList = true
+				break
+			}
+		}
+		if !ollamaInList {
+			savedID := getCurrentID()
+			if savedID == "" {
+				savedID = a.cfgDraft.ActiveModel
+			}
+			if savedID != "" {
+				available = append(available, ModelDef{
+					Provider: ProviderOllama,
+					ID:       savedID,
+					Label:    savedID + " \033[33m(offline)\033[0m",
+				})
+			}
+		}
+	}
+
 	if len(available) == 0 {
 		return
 	}
@@ -307,6 +354,11 @@ func (a *App) buildConfigRows() []string {
 				val = f.display(a.cfgDraft)
 			} else {
 				val = f.get(a.cfgDraft)
+			}
+			// If the value is an Ollama model and Ollama is offline, show indicator.
+			// Only applies to model picker fields, not API key or other fields.
+			if val != "" && f.picker != nil && a.cfgDraft.OllamaBaseURL != "" && a.isOllamaOffline(val) {
+				val = val + " \033[33m(offline)\033[0m"
 			}
 			if val == "" {
 				if f.globalHint != nil {
