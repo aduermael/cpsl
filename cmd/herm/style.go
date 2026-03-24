@@ -204,7 +204,7 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 	// Ensure inner width is wide enough for the duration label if present.
 	// Bottom border: └─── duration ┘ → needs len(duration) + 2 (spaces around it).
 	if durationStr != "" {
-		if minW := len(durationStr) + 2; minW > innerWidth {
+		if minW := visibleWidth(durationStr) + 2; minW > innerWidth {
 			innerWidth = minW
 		}
 	}
@@ -277,7 +277,7 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 	b.WriteString(borderStyle)
 	b.WriteString("└")
 	if durationStr != "" {
-		durPad := innerWidth - len(durationStr) - 2 // " duration "
+		durPad := innerWidth - visibleWidth(durationStr) - 2 // " duration "
 		if durPad < 0 {
 			durPad = 0
 		}
