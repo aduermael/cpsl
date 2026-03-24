@@ -65,13 +65,13 @@ Hook into the event flow to write all significant events to the debug file.
 
 **Contract:** Every user message, system prompt, tool call, tool result, agent event, and usage update is written to the debug file as it happens. Sections are clearly delimited. Content is NOT word-wrapped.
 
-- [ ] 2a: **Log system prompt and tool definitions** — In `submitToAgent()` (`agentui.go`), after building the system prompt and tools, call `debugWrite` with the full system prompt text and formatted tool definitions. This replaces what `displaySystemPrompts` did for the chat panel (though that flag still works independently).
+- [x] 2a: **Log system prompt and tool definitions** — In `submitToAgent()` (`agentui.go`), after building the system prompt and tools, call `debugWrite` with the full system prompt text and formatted tool definitions. This replaces what `displaySystemPrompts` did for the chat panel (though that flag still works independently).
 
-- [ ] 2b: **Log user messages** — In `submitToAgent()`, log the user's message text (and any attachments/pastes metadata) to the debug file before sending to the agent.
+- [x] 2b: **Log user messages** — In `submitToAgent()`, log the user's message text (and any attachments/pastes metadata) to the debug file before sending to the agent.
 
-- [ ] 2c: **Log all agent events** — In `handleAgentEvent()`, after the existing `debugLog()` call, write a structured entry to the debug file for each event type. Include: event type name, timestamp, tool name (if applicable), full content (not truncated — unlike the existing `debugLog` which truncates to 500 chars). For `EventUsage`, include full token breakdown and cost.
+- [x] 2c: **Log all agent events** — In `handleAgentEvent()`, after the existing `debugLog()` call, write a structured entry to the debug file for each event type. Include: event type name, timestamp, tool name (if applicable), full content (not truncated — unlike the existing `debugLog` which truncates to 500 chars). For `EventUsage`, include full token breakdown and cost.
 
-- [ ] 2d: **Log session summary on agent done** — When `EventDone` is received, write a session stats section: total tokens (input/output/cache), cost, LLM calls, tool call count/bytes, elapsed time, per-tool breakdown from `sessionToolStats`.
+- [x] 2d: **Log session summary on agent done** — When `EventDone` is received, write a session stats section: total tokens (input/output/cache), cost, LLM calls, tool call count/bytes, elapsed time, per-tool breakdown from `sessionToolStats`.
 
 ---
 

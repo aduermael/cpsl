@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"time"
 )
 
@@ -75,4 +76,51 @@ func (a *App) initAppDebugLog() {
 	}
 	a.debugFile = f
 	a.debugFilePath = path
+}
+
+// debugWriteSessionSummary writes a session stats section to the debug file.
+func (a *App) debugWriteSessionSummary() {
+	if a.debugFile == nil {
+		return
+	}
+	var b fmt.Stringer = &sessionSummaryBuilder{a: a}
+	a.debugWriteSection("Session Summary", b.String())
+}
+
+type sessionSummaryBuilder struct {
+	a *App
+}
+
+func (s *sessionSummaryBuilder) String() string {
+	a := s.a
+	var out string
+	out += fmt.Sprintf("Elapsed: %s\n", a.agentElapsed.Truncate(time.Second))
+	out += fmt.Sprintf("LLM calls: %d (main: %d, sub-agents: %d)\n",
+		a.sessionLLMCalls, a.mainAgentLLMCalls, a.sessionLLMCalls-a.mainAgentLLMCalls)
+	out += fmt.Sprintf("Input tokens: %s (main: %s)\n",
+		formatTokenCount(a.sessionInputTokens), formatTokenCount(a.mainAgentInputTokens))
+	out += fmt.Sprintf("Output tokens: %s (main: %s)\n",
+		formatTokenCount(a.sessionOutputTokens), formatTokenCount(a.mainAgentOutputTokens))
+	if a.sessionCacheRead > 0 {
+		out += fmt.Sprintf("Cache read: %s\n", formatTokenCount(a.sessionCacheRead))
+	}
+	out += fmt.Sprintf("Cost: %s\n", formatCost(a.sessionCostUSD))
+	out += fmt.Sprintf("Tool calls: %d (%s result data)\n", a.sessionToolResults, formatBytes(a.sessionToolBytes))
+
+	if len(a.sessionToolStats) > 0 {
+		type toolStat struct {
+			name         string
+			count, bytes int
+		}
+		var stats []toolStat
+		for name, s := range a.sessionToolStats {
+			stats = append(stats, toolStat{name, s[0], s[1]})
+		}
+		sort.Slice(stats, func(i, j int) bool { return stats[i].bytes > stats[j].bytes })
+		out += "\nPer tool:\n"
+		for _, s := range stats {
+			out += fmt.Sprintf("  %-12s %3d calls  %6s\n", s.name, s.count, formatBytes(s.bytes))
+		}
+	}
+	return out
 }
