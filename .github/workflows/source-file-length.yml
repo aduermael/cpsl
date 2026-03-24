@@ -1,0 +1,25 @@
+name: Source File Length
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  go-file-length:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check Go files are at most 1500 lines
+        run: |
+          failed=0
+          while IFS= read -r f; do
+            lines=$(wc -l < "$f")
+            if [ "$lines" -gt 1500 ]; then
+              echo "ERROR: $f has $lines lines (max 1500)"
+              failed=1
+            fi
+          done < <(find . -name '*.go' -not -name '*_test.go' -not -path './vendor/*')
+          exit $failed
