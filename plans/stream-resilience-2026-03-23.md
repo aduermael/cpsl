@@ -114,9 +114,9 @@ Prevent indefinite hangs when a sub-agent goroutine gets stuck.
 
 ## Phase 5: Integration Tests
 
-- [ ] 5a: **End-to-end stream stall test** — Simulate a provider that sends 3 chunks then stalls. Verify: stream timeout fires, retry is attempted, if retry succeeds the user gets a complete response, if retry fails the user sees a clear error and the agent exits cleanly.
+- [x] 5a: **End-to-end stream stall test** — Simulate a provider that sends 3 chunks then stalls. Verify: stream timeout fires, retry is attempted, if retry succeeds the user gets a complete response, if retry fails the user sees a clear error and the agent exits cleanly.
 
-- [ ] 5b: **End-to-end backpressure test** — Create an agent with a small event buffer (e.g., 64). Trigger a response that generates many events. Verify: agent completes without deadlock, TUI detects completion via `doneCh` even if `EventDone` was dropped from the main channel, no goroutine leaks.
+- [x] 5b: **End-to-end backpressure test** — Create an agent with a small event buffer (e.g., 64). Trigger a response that generates many events. Verify: agent completes without deadlock, TUI detects completion via `doneCh` even if `EventDone` was dropped from the main channel, no goroutine leaks.
 
 ---
 

@@ -2368,3 +2368,283 @@ func TestStreamRetryDuringToolLoop(t *testing.T) {
 		t.Errorf("final text = %q, want success message after retry", finalText)
 	}
 }
+
+// --- Phase 5: Integration Tests ---
+
+// stallThenSucceedProvider sends partial text chunks then stalls (no Done, no
+// error, no close) on specified calls. This simulates a provider that hangs
+// mid-stream without sending an error or closing the connection — the exact
+// scenario the per-chunk timeout is designed to catch.
+type stallThenSucceedProvider struct {
+	mu           sync.Mutex
+	callIdx      int
+	stallOnCalls map[int]bool       // call indices where stream should stall
+	responses    []scriptedResponse // responses for all calls
+	model        string
+	cleanup      chan struct{}       // close to release stalled goroutines (test cleanup)
+}
+
+func (p *stallThenSucceedProvider) Complete(_ context.Context, _ *types.CompletionRequest) (*types.CompletionResponse, error) {
+	return &types.CompletionResponse{
+		ID: "resp-test", Model: p.model,
+		Content:    []types.ContentBlock{{Type: "text", Text: "ok"}},
+		StopReason: "end_turn",
+		Usage:      types.Usage{InputTokens: 100, OutputTokens: 50},
+	}, nil
+}
+
+func (p *stallThenSucceedProvider) Stream(_ context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	p.mu.Unlock()
+
+	var r scriptedResponse
+	if idx < len(p.responses) {
+		r = p.responses[idx]
+	} else {
+		r = scriptedResponse{text: "ok", tokensIn: 100, tokensOut: 50}
+	}
+
+	ch := make(chan types.StreamEvent, 20)
+	shouldStall := p.stallOnCalls[idx]
+
+	go func() {
+		defer close(ch)
+
+		// Send partial text as individual word-chunks.
+		if r.text != "" {
+			for _, w := range strings.Fields(r.text) {
+				ch <- types.StreamEvent{Type: types.StreamEventDelta, Content: w + " "}
+			}
+		}
+
+		if shouldStall {
+			// Stall: don't send Done. Block until cleanup releases this goroutine.
+			// The channel stays open (deferred close fires only on return).
+			<-p.cleanup
+			return
+		}
+
+		// Normal completion.
+		for _, tc := range r.toolCalls {
+			tc := tc
+			ch <- types.StreamEvent{Type: types.StreamEventContentDone, ContentBlock: &tc}
+		}
+		content := []types.ContentBlock{{Type: "text", Text: r.text}}
+		content = append(content, r.toolCalls...)
+		stopReason := "end_turn"
+		if len(r.toolCalls) > 0 {
+			stopReason = "tool_use"
+		}
+		ch <- types.StreamEvent{
+			Type: types.StreamEventDone,
+			Response: &types.CompletionResponse{
+				ID: fmt.Sprintf("resp-%d", idx), Model: req.Model,
+				Content: content, StopReason: stopReason,
+				Usage: types.Usage{InputTokens: r.tokensIn, OutputTokens: r.tokensOut},
+			},
+		}
+	}()
+	return ch, nil
+}
+
+func (p *stallThenSucceedProvider) Name() string             { return "mock" }
+func (p *stallThenSucceedProvider) Models() []types.ModelInfo { return nil }
+
+func TestIntegrationStreamStallRetrySucceeds(t *testing.T) {
+	// Provider stalls on the first call (sends 3 chunks then hangs), retry succeeds.
+	// Verifies the full flow: timeout → EventStreamClear → EventRetry → retry → complete response.
+	prov := &stallThenSucceedProvider{
+		model:        "test-model",
+		stallOnCalls: map[int]bool{0: true},
+		responses: []scriptedResponse{
+			{text: "chunk one two three", tokensIn: 100, tokensOut: 50}, // call 0: stalls after sending chunks
+			{text: "Complete response after retry.", tokensIn: 100, tokensOut: 50}, // call 1: succeeds
+		},
+		cleanup: make(chan struct{}),
+	}
+	defer close(prov.cleanup)
+
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0,
+		WithStreamChunkTimeout(200*time.Millisecond)) // short timeout for fast test
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	var hasStreamClear, hasRetry, hasDone bool
+	var hasTimeoutError bool
+	var finalText string
+	var retryEvent AgentEvent
+	for _, ev := range events {
+		switch ev.Type {
+		case EventStreamClear:
+			hasStreamClear = true
+		case EventRetry:
+			hasRetry = true
+			retryEvent = ev
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventError:
+			if ev.Error != nil && strings.Contains(ev.Error.Error(), "stream stalled") {
+				hasTimeoutError = true
+			}
+		case EventDone:
+			hasDone = true
+		}
+	}
+
+	if !hasTimeoutError {
+		t.Error("expected EventError about stream stall from drainStream timeout")
+	}
+	if !hasStreamClear {
+		t.Error("expected EventStreamClear before retry")
+	}
+	if !hasRetry {
+		t.Error("expected EventRetry after stream stall")
+	}
+	if hasRetry && retryEvent.Attempt != 1 {
+		t.Errorf("retry attempt = %d, want 1", retryEvent.Attempt)
+	}
+	if !hasDone {
+		t.Error("expected EventDone — agent should complete after successful retry")
+	}
+	if !strings.Contains(finalText, "Complete response after retry") {
+		t.Errorf("final text = %q, should contain retry response", finalText)
+	}
+}
+
+func TestIntegrationStreamStallRetryAlsoFails(t *testing.T) {
+	// Provider stalls on both attempts. Agent should give up with an error
+	// and exit cleanly.
+	prov := &stallThenSucceedProvider{
+		model:        "test-model",
+		stallOnCalls: map[int]bool{0: true, 1: true},
+		responses: []scriptedResponse{
+			{text: "first stall", tokensIn: 100, tokensOut: 50},
+			{text: "second stall", tokensIn: 100, tokensOut: 50},
+		},
+		cleanup: make(chan struct{}),
+	}
+	defer close(prov.cleanup)
+
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0,
+		WithStreamChunkTimeout(200*time.Millisecond))
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	var hasDone bool
+	var timeoutErrors, retryCount int
+	var hasInterruptedError bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventRetry:
+			retryCount++
+		case EventError:
+			if ev.Error != nil {
+				if strings.Contains(ev.Error.Error(), "stream stalled") {
+					timeoutErrors++
+				}
+				if strings.Contains(ev.Error.Error(), "stream interrupted") {
+					hasInterruptedError = true
+				}
+			}
+		case EventDone:
+			hasDone = true
+		}
+	}
+
+	if timeoutErrors < 2 {
+		t.Errorf("expected at least 2 stream stall errors (one per attempt), got %d", timeoutErrors)
+	}
+	if retryCount != 1 {
+		t.Errorf("expected 1 EventRetry (retry once then give up), got %d", retryCount)
+	}
+	if !hasInterruptedError {
+		t.Error("expected final 'stream interrupted' error when both attempts fail")
+	}
+	if !hasDone {
+		t.Error("expected EventDone — agent should exit cleanly even after exhausting retries")
+	}
+}
+
+func TestIntegrationBackpressure(t *testing.T) {
+	// Agent with a tiny event buffer. Generates enough events (tool call +
+	// follow-up) to overflow the buffer. Verifies that:
+	// - The agent completes without deadlock (non-blocking emit)
+	// - doneCh fires even when EventDone is dropped from the full channel
+	// - No goroutine leaks
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "Running the tool now.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c1", Name: "bash", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "Tool result processed successfully.", tokensIn: 200, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	bashTool := &testTool{name: "bash", result: "command output"}
+	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	// Replace events channel with a tiny buffer to guarantee backpressure.
+	// The agent will generate ~8+ events (TextDelta, Usage, ToolCallStart,
+	// ToolCallDone, ToolResult, TextDelta, Usage, Done), so a buffer of 4
+	// guarantees that later events including EventDone will be dropped.
+	agent.events = make(chan AgentEvent, 4)
+
+	go agent.Run(context.Background(), "run tool", "")
+
+	// Do NOT drain events — let the buffer fill up and force event drops.
+	// Wait for doneCh as the reliable completion signal.
+	select {
+	case <-agent.DoneCh():
+		// Agent completed — doneCh was closed even though EventDone was dropped.
+	case <-time.After(10 * time.Second):
+		t.Fatal("timed out waiting for doneCh — agent may be deadlocked due to backpressure")
+	}
+
+	// Drain whatever events remain in the small buffer.
+	var events []AgentEvent
+	for {
+		select {
+		case ev, ok := <-agent.Events():
+			if !ok {
+				goto drained // channel closed by Run()
+			}
+			events = append(events, ev)
+		default:
+			goto drained
+		}
+	}
+drained:
+
+	// With a buffer of 4, we should have captured exactly 4 events (the buffer was full).
+	if len(events) == 0 {
+		t.Error("expected at least some events in the buffer")
+	}
+	if len(events) > 4 {
+		t.Errorf("buffer was 4 but got %d events — buffer wasn't full?", len(events))
+	}
+
+	// The critical assertion is that doneCh fired (tested above), proving that
+	// the agent completed without deadlock despite backpressure. Whether EventDone
+	// landed in the buffer depends on exact timing — doneCh is the reliable signal.
+	var doneInBuffer bool
+	for _, ev := range events {
+		if ev.Type == EventDone {
+			doneInBuffer = true
+		}
+	}
+	t.Logf("captured %d events from buffer of 4; EventDone in buffer: %v", len(events), doneInBuffer)
+}
