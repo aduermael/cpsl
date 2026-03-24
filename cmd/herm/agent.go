@@ -185,6 +185,7 @@ type Agent struct {
 	contextWindow     int    // model's context window in tokens; 0 = unknown (no clearing)
 	explorationModel  string // cheap model for compaction summaries; empty = use main model
 	maxToolIterations int    // tool-call loop cap; 0 = use defaultMaxToolIterations
+	thinking          *bool  // nil = provider default, true/false = explicit
 
 	events   chan AgentEvent
 	approval chan ApprovalResponse
@@ -224,6 +225,11 @@ func WithMaxToolIterations(n int) AgentOption {
 // WithStreamChunkTimeout sets the per-chunk inactivity timeout for streaming.
 func WithStreamChunkTimeout(d time.Duration) AgentOption {
 	return func(a *Agent) { a.streamChunkTimeout = d }
+}
+
+// WithThinking controls extended thinking for LLM calls.
+func WithThinking(think *bool) AgentOption {
+	return func(a *Agent) { a.thinking = think }
 }
 
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
@@ -525,6 +531,9 @@ func (a *Agent) buildPromptOpts() []langdag.PromptOption {
 	}
 	if a.model != "" {
 		opts = append(opts, langdag.WithModel(a.model))
+	}
+	if a.thinking != nil {
+		opts = append(opts, langdag.WithThink(*a.thinking))
 	}
 	return opts
 }

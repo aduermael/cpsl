@@ -58,7 +58,7 @@ Qwen 3.5 models (via Ollama) enable thinking by default, producing hidden `<thin
 
 ## Phase 3: herm — Config and integration
 
-- [ ] 3a: Add `Thinking *bool` to `Config` and `ProjectConfig` structs in `config.go`. Default to `false` (disabled) for new configs. Add to `mergeConfigs()`.
-- [ ] 3b: Add "Thinking" toggle to the config editor — Global tab and Project tab (with globalHint). Follow the same pattern as DebugMode toggle.
-- [ ] 3c: Wire into `buildPromptOpts()` in `agent.go` — pass `langdag.WithThink(value)` based on resolved config. Since herm defaults to false, this means thinking is off by default for all providers.
-- [ ] 3d: Tests — verify config loading/saving round-trips the Thinking field; verify buildPromptOpts includes WithThink.
+- [x] 3a: Add `Thinking *bool` to `Config` and `ProjectConfig` structs in `config.go`. Default to `false` (disabled) for new configs. Add to `mergeConfigs()`.
+- [x] 3b: Add "Thinking" toggle to the config editor — Global tab and Project tab (with globalHint). Follow the same pattern as DebugMode toggle.
+- [x] 3c: Wire into `buildPromptOpts()` in `agent.go` — pass `langdag.WithThink(value)` based on resolved config. Since herm defaults to false, this means thinking is off by default for all providers.
+- [x] 3d: Tests — verify config loading/saving round-trips the Thinking field; verify buildPromptOpts includes WithThink.

@@ -250,6 +250,7 @@ func (a *App) settingsTabFields() []cfgField {
 		{label: "Exploration Model", get: func(c Config) string { return c.ExplorationModel }, set: func(c *Config, v string) { c.ExplorationModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ExplorationModel }, func(id string) { a.cfgDraft.ExplorationModel = id }) }},
 		{label: "Paste Collapse", get: func(c Config) string { return strconv.Itoa(c.PasteCollapseMinChars) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil { c.PasteCollapseMinChars = n } }},
 		{label: "Debug Mode", get: func(c Config) string { if c.DebugMode { return "on" }; return "off" }, toggle: func(c *Config) { c.DebugMode = !c.DebugMode }},
+		{label: "Thinking", get: func(c Config) string { if c.effectiveThinking() { return "on" }; return "off" }, toggle: func(c *Config) { if c.Thinking == nil { t := true; c.Thinking = &t } else { v := !*c.Thinking; c.Thinking = &v } }},
 		{label: "Sub-Agent Max Turns", get: func(c Config) string { n := c.SubAgentMaxTurns; if n <= 0 { n = 15 }; return strconv.Itoa(n) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil && n > 0 { c.SubAgentMaxTurns = n } }},
 		{label: "Personality", get: func(c Config) string { return c.Personality }, set: func(c *Config, v string) { c.Personality = v }},
 		{label: "Git Co-Author", get: func(c Config) string { if c.effectiveGitCoAuthor() { return "on" }; return "off" }, toggle: func(c *Config) { if c.GitCoAuthor == nil { f := false; c.GitCoAuthor = &f } else { v := !*c.GitCoAuthor; c.GitCoAuthor = &v } }},
@@ -299,6 +300,33 @@ func (a *App) projectTabFields() []cfgField {
 					n = 15
 				}
 				return strconv.Itoa(n)
+			},
+		},
+		{
+			label: "Thinking",
+			get: func(_ Config) string {
+				if a.cfgProjectDraft.Thinking == nil {
+					return ""
+				}
+				if *a.cfgProjectDraft.Thinking {
+					return "on"
+				}
+				return "off"
+			},
+			toggle: func(_ *Config) {
+				if a.cfgProjectDraft.Thinking == nil {
+					t := true
+					a.cfgProjectDraft.Thinking = &t
+				} else {
+					v := !*a.cfgProjectDraft.Thinking
+					a.cfgProjectDraft.Thinking = &v
+				}
+			},
+			globalHint: func(c Config) string {
+				if c.effectiveThinking() {
+					return "on"
+				}
+				return "off"
 			},
 		},
 	}

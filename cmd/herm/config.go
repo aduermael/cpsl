@@ -30,6 +30,7 @@ type Config struct {
 	HistoryMaxEntries     int             `json:"history_max_entries,omitempty"`
 	GitCoAuthor           *bool           `json:"git_co_author,omitempty"` // nil (default) or explicit true/false
 	DebugMode             bool            `json:"debug_mode,omitempty"`
+	Thinking              *bool           `json:"thinking,omitempty"` // nil/false = disabled (default), true = enable extended thinking
 }
 
 func (c Config) effectiveGitCoAuthor() bool {
@@ -37,6 +38,13 @@ func (c Config) effectiveGitCoAuthor() bool {
 		return true
 	}
 	return *c.GitCoAuthor
+}
+
+func (c Config) effectiveThinking() bool {
+	if c.Thinking == nil {
+		return false
+	}
+	return *c.Thinking
 }
 
 func (c Config) effectiveMaxHistory() int {
@@ -215,6 +223,7 @@ type ProjectConfig struct {
 	MaxToolIterations int    `json:"max_tool_iterations,omitempty"`
 	MaxAgentDepth     int    `json:"max_agent_depth,omitempty"`
 	DebugMode         *bool  `json:"debug_mode,omitempty"` // nil = not overridden
+	Thinking          *bool  `json:"thinking,omitempty"`   // nil = not overridden
 }
 
 // mergeConfigs overlays non-zero ProjectConfig fields onto a global Config.
@@ -240,6 +249,9 @@ func mergeConfigs(global Config, project ProjectConfig) Config {
 	}
 	if project.DebugMode != nil {
 		merged.DebugMode = *project.DebugMode
+	}
+	if project.Thinking != nil {
+		merged.Thinking = project.Thinking
 	}
 	return merged
 }

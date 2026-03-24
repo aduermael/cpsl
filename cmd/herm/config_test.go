@@ -369,7 +369,7 @@ func TestCfgTabNamesStructure(t *testing.T) {
 func TestProjectTabFieldLabels(t *testing.T) {
 	a := &App{}
 	fields := a.projectTabFields()
-	wantLabels := []string{"Active Model", "Exploration Model", "Personality", "Sub-Agent Max Turns"}
+	wantLabels := []string{"Active Model", "Exploration Model", "Personality", "Sub-Agent Max Turns", "Thinking"}
 	if len(fields) != len(wantLabels) {
 		t.Fatalf("projectTabFields returned %d fields, want %d", len(fields), len(wantLabels))
 	}
@@ -926,5 +926,81 @@ func TestOllamaURLNormalization(t *testing.T) {
 		if cfg.OllamaBaseURL != tc.want {
 			t.Errorf("set(%q): OllamaBaseURL = %q, want %q", tc.input, cfg.OllamaBaseURL, tc.want)
 		}
+	}
+}
+
+func TestMergeConfigsThinking(t *testing.T) {
+	// nil → no override
+	global := Config{}
+	project := ProjectConfig{}
+	merged := mergeConfigs(global, project)
+	if merged.Thinking != nil {
+		t.Error("nil project Thinking should not override global")
+	}
+
+	// Explicit true overrides nil global
+	trueVal := true
+	project.Thinking = &trueVal
+	merged = mergeConfigs(global, project)
+	if merged.Thinking == nil || !*merged.Thinking {
+		t.Error("project Thinking=true should override global nil")
+	}
+
+	// Explicit false overrides global true
+	global.Thinking = &trueVal
+	falseVal := false
+	project.Thinking = &falseVal
+	merged = mergeConfigs(global, project)
+	if merged.Thinking == nil || *merged.Thinking {
+		t.Error("project Thinking=false should override global true")
+	}
+}
+
+func TestEffectiveThinking(t *testing.T) {
+	c := Config{}
+	if c.effectiveThinking() {
+		t.Error("nil Thinking should default to false")
+	}
+
+	trueVal := true
+	c.Thinking = &trueVal
+	if !c.effectiveThinking() {
+		t.Error("Thinking=true should return true")
+	}
+
+	falseVal := false
+	c.Thinking = &falseVal
+	if c.effectiveThinking() {
+		t.Error("Thinking=false should return false")
+	}
+}
+
+func TestConfigThinkingRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+
+	// Save config with Thinking=true
+	trueVal := true
+	cfg := Config{Thinking: &trueVal}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+
+	// Load it back
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read: %v", err)
+	}
+	var loaded Config
+	if err := json.Unmarshal(raw, &loaded); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if loaded.Thinking == nil || !*loaded.Thinking {
+		t.Errorf("round-trip: Thinking = %v, want true", loaded.Thinking)
 	}
 }

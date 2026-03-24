@@ -1299,6 +1299,29 @@ func TestBuildPromptOptsNoModel(t *testing.T) {
 	}
 }
 
+func TestBuildPromptOptsWithThinking(t *testing.T) {
+	client := newTestClient("ok")
+	thinkTrue := true
+	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0, WithThinking(&thinkTrue))
+
+	opts := agent.buildPromptOpts()
+	// Should have 5 options: system prompt, max tokens, tools, model, think.
+	if len(opts) != 5 {
+		t.Errorf("buildPromptOpts returned %d options, want 5", len(opts))
+	}
+}
+
+func TestBuildPromptOptsThinkingNil(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0)
+
+	opts := agent.buildPromptOpts()
+	// No thinking → 4 options: system prompt, max tokens, tools, model.
+	if len(opts) != 4 {
+		t.Errorf("buildPromptOpts returned %d options, want 4", len(opts))
+	}
+}
+
 // --- Phase: Fix agent silent stops ---
 
 // panicTool is a tool that panics during Execute to test panic recovery.

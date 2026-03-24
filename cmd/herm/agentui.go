@@ -235,7 +235,8 @@ func (a *App) startAgent(userMessage string) {
 	}
 	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow,
 		WithExplorationModel(explorationModelID),
-		WithMaxToolIterations(mainMaxIter))
+		WithMaxToolIterations(mainMaxIter),
+		WithThinking(a.config.Thinking))
 	subAgentTool.parentEvents = agent.events
 	a.agent = agent
 	a.agentRunning = true
