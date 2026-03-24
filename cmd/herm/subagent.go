@@ -25,6 +25,12 @@ const defaultSubAgentMaxTurns = 20
 // spawn their own sub-agents — matching Claude Code's behavior.
 const defaultMaxAgentDepth = 1
 
+// subAgentDoneTimeout is the maximum time to wait for a sub-agent goroutine
+// to finish after the event stream has ended. This is a safety net — the
+// goroutine should finish quickly once the stream is done, but tool execution
+// or other paths could hang.
+const subAgentDoneTimeout = 5 * time.Minute
+
 // SubAgentTool spawns a sub-agent to handle complex subtasks autonomously.
 // Communication is output-only: the sub-agent returns a result string and
 // that is the sole information passed back to the caller.
@@ -40,6 +46,7 @@ type SubAgentTool struct {
 	workDir        string
 	personality    string
 	containerImage string
+	doneTimeout    time.Duration    // max time to wait for goroutine after stream ends
 	parentEvents   chan<- AgentEvent // set after construction; forwards live events to TUI
 
 	mu         sync.Mutex
@@ -65,6 +72,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		workDir:          workDir,
 		personality:      personality,
 		containerImage:   containerImage,
+		doneTimeout:      subAgentDoneTimeout,
 		agentNodes:       make(map[string]string),
 	}
 }
@@ -286,8 +294,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				if event.NodeID != "" {
 					t.saveNodeID(agentID, event.NodeID)
 				}
-				// Wait for the goroutine to finish.
-				<-done
+				// Wait for the goroutine to finish with a timeout safety net.
+				select {
+				case <-done:
+				case <-time.After(t.doneTimeout):
+					debugLog("sub-agent %s goroutine hung after EventDone, proceeding after %v timeout", agentID, t.doneTimeout)
+					agentErrors = append(agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", t.doneTimeout))
+				}
 				return t.buildResult(ctx, agentID, textParts, agentErrors, totalInputTokens, totalOutputTokens, turns), nil
 			case EventError:
 				if event.Error != nil && event.Error.Error() != "context canceled" {
@@ -343,7 +356,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		},
 		Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
 	})
-	<-done
+	// Wait for the goroutine to finish with a timeout safety net.
+	select {
+	case <-done:
+	case <-time.After(t.doneTimeout):
+		debugLog("sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
+		agentErrors = append(agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
+	}
 	return t.buildResult(ctx, agentID, textParts, agentErrors, totalInputTokens, totalOutputTokens, turns), nil
 }
 

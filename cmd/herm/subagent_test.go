@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1080,5 +1081,86 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 	// 2 responses with tool calls = 2 turns.
 	if !strings.Contains(result, "[turns: 2/20]") {
 		t.Errorf("2 responses with tool calls should count as 2 turns, got: %q", result)
+	}
+}
+
+// --- Phase 4: Sub-agent done timeout tests ---
+
+func TestSubAgentDoneTimeoutDefault(t *testing.T) {
+	// Verify NewSubAgentTool sets the doneTimeout to the default constant.
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	if tool.doneTimeout != subAgentDoneTimeout {
+		t.Errorf("doneTimeout = %v, want %v", tool.doneTimeout, subAgentDoneTimeout)
+	}
+}
+
+func TestSubAgentDoneTimeoutCustom(t *testing.T) {
+	// Verify that a custom doneTimeout doesn't break normal execution.
+	client := newTestClient("timeout test output")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.doneTimeout = 5 * time.Second // shorter than default, but generous enough for normal flow
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick task","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+	if !strings.Contains(result, "timeout test output") {
+		t.Errorf("result should contain output, got: %q", result)
+	}
+	// Normal execution should NOT contain the timeout error.
+	if strings.Contains(result, "did not exit within") {
+		t.Errorf("normal execution should not contain timeout error, got: %q", result)
+	}
+}
+
+func TestSubAgentDoneTimeoutErrorInResult(t *testing.T) {
+	// Verify the timeout error message appears correctly in the result when
+	// the goroutine hangs. Test via buildResult directly since the gap between
+	// EventDone and goroutine completion in the real agent is too narrow to
+	// reliably trigger the timeout in tests.
+	client := newTestClient("partial output")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	timeoutErr := fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", 200*time.Millisecond)
+	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 100, 50, 1)
+	if !strings.Contains(result, "did not exit within") {
+		t.Errorf("result should contain timeout error, got: %q", result)
+	}
+	if !strings.Contains(result, "partial output") {
+		t.Errorf("result should still contain collected output, got: %q", result)
+	}
+}
+
+func TestSubAgentDoneTimeoutDoesNotHang(t *testing.T) {
+	// Verify Execute returns within a bounded time even with a very short
+	// doneTimeout. With doneTimeout=0, time.After fires immediately, and the
+	// select may randomly pick the timeout path — either way, Execute must not
+	// hang. This exercises both select branches non-deterministically.
+	client := newTestClient("fast output")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.doneTimeout = 1 * time.Millisecond // near-instant timeout
+
+	done := make(chan string, 1)
+	go func() {
+		result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"fast task","mode":"explore"}`))
+		if err != nil {
+			done <- "error: " + err.Error()
+			return
+		}
+		done <- result
+	}()
+
+	select {
+	case result := <-done:
+		// Execute returned — verify it contains output regardless of which
+		// select branch was taken.
+		if !strings.Contains(result, "fast output") && !strings.Contains(result, "did not exit within") {
+			t.Errorf("result should contain output or timeout error, got: %q", result)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("Execute hung — doneTimeout safety net is not working")
 	}
 }

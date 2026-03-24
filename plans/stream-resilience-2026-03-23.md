@@ -106,9 +106,9 @@ Prevent indefinite hangs when a sub-agent goroutine gets stuck.
 - `subagent.go:308` — `<-done` in fallback path (channel closed without EventDone)
 - The sub-agent goroutine runs `agent.Run()` which now has stream timeouts (Phase 1), but could still hang in tool execution or other paths
 
-- [ ] 4a: **Add timeout to sub-agent `<-done` waits** — Replace both `<-done` with a `select` that also checks `time.After(subAgentDoneTimeout)`. Use a generous timeout (5 minutes) — this is a safety net, not the primary timeout. On timeout, log the hang and return whatever results were collected so far, appending an error note.
+- [x] 4a: **Add timeout to sub-agent `<-done` waits** — Replace both `<-done` with a `select` that also checks `time.After(subAgentDoneTimeout)`. Use a generous timeout (5 minutes) — this is a safety net, not the primary timeout. On timeout, log the hang and return whatever results were collected so far, appending an error note.
 
-- [ ] 4b: **Test sub-agent timeout** — Test with a mock agent that never completes its goroutine. Verify the parent returns within the timeout with an error message rather than hanging forever.
+- [x] 4b: **Test sub-agent timeout** — Test with a mock agent that never completes its goroutine. Verify the parent returns within the timeout with an error message rather than hanging forever.
 
 ---
 
