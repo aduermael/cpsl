@@ -522,10 +522,10 @@ func (a *App) buildInputRows() []string {
 		t := time.Since(a.approvalPauseStart)
 		color := approvalGradientColor(t)
 		shortMsg := fmt.Sprintf("Allow %s? [y/n]", a.approvalSummary)
-		if len(shortMsg) > a.width {
-			shortMsg = shortMsg[:a.width]
+		if visibleWidth(shortMsg) > a.width {
+			shortMsg = truncateVisual(shortMsg, a.width)
 		}
-		shortPad := (a.width - len(shortMsg)) / 2
+		shortPad := (a.width - visibleWidth(shortMsg)) / 2
 		if shortPad < 0 {
 			shortPad = 0
 		}
@@ -536,10 +536,10 @@ func (a *App) buildInputRows() []string {
 		approvalRows := []string{sep}
 		approvalRows = append(approvalRows, fmt.Sprintf("%s%s%s[0m", color, strings.Repeat(" ", shortPad), shortMsg))
 		if detail != "" {
-			if len(detail) > a.width {
-				detail = detail[:a.width]
+			if visibleWidth(detail) > a.width {
+				detail = truncateVisual(detail, a.width)
 			}
-			detailPad := (a.width - len(detail)) / 2
+			detailPad := (a.width - visibleWidth(detail)) / 2
 			if detailPad < 0 {
 				detailPad = 0
 			}

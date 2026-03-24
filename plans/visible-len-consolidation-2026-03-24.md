@@ -54,7 +54,7 @@ Move `ansiEscRe` and `visibleWidth()` from `render.go` to `helpers.go`. Remove `
 Replace `len()` with `visibleWidth()` and byte-level truncation with `truncateVisual()` in display-context code.
 
 - [x] 2a: `style.go` — replace `len(durationStr)` with `visibleWidth(durationStr)` on lines 207 and 280
-- [ ] 2b: `render.go` — replace `len(shortMsg)` / `len(detail)` with `visibleWidth()` and `shortMsg[:a.width]` / `detail[:a.width]` with `truncateVisual()` in the approval prompt section (lines 534-551)
+- [x] 2b: `render.go` — replace `len(shortMsg)` / `len(detail)` with `visibleWidth()` and `shortMsg[:a.width]` / `detail[:a.width]` with `truncateVisual()` in the approval prompt section (lines 534-551)
 
 ## Phase 3: Verify
 
