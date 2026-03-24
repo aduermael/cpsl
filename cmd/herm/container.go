@@ -17,11 +17,12 @@ import (
 
 // Container error codes.
 const (
-	ErrDockerNotFound = "DockerNotFound"
-	ErrStartFailed    = "StartFailed"
-	ErrExecFailed     = "ExecFailed"
-	ErrStopFailed     = "StopFailed"
-	ErrNotRunning     = "NotRunning"
+	ErrDockerNotFound    = "DockerNotFound"
+	ErrDockerNotRunning  = "DockerNotRunning"
+	ErrStartFailed       = "StartFailed"
+	ErrExecFailed        = "ExecFailed"
+	ErrStopFailed        = "StopFailed"
+	ErrNotRunning        = "NotRunning"
 )
 
 // ContainerError is a typed error from the container client.
@@ -31,7 +32,7 @@ type ContainerError struct {
 }
 
 func (e *ContainerError) Error() string {
-	return fmt.Sprintf("container %s: %s", e.Code, e.Message)
+	return e.Message
 }
 
 // ContainerConfig holds configuration for the Docker container.
@@ -61,6 +62,9 @@ type ContainerStatus struct {
 // dockerCommand is a function variable for exec.CommandContext, replaceable in tests.
 var dockerCommand = exec.CommandContext
 
+// lookPath is a function variable for exec.LookPath, replaceable in tests.
+var lookPath = exec.LookPath
+
 // ContainerClient manages a Docker container lifecycle.
 type ContainerClient struct {
 	config      ContainerConfig
@@ -74,12 +78,26 @@ func NewContainerClient(config ContainerConfig) *ContainerClient {
 	return &ContainerClient{config: config}
 }
 
-// IsAvailable returns true if Docker is installed and running.
-func (c *ContainerClient) IsAvailable() bool {
+// CheckDocker verifies that the Docker CLI is installed and the daemon is
+// reachable. It returns nil when everything is fine, or a *ContainerError
+// with code ErrDockerNotFound / ErrDockerNotRunning.
+func (c *ContainerClient) CheckDocker() error {
+	if _, err := lookPath("docker"); err != nil {
+		return &ContainerError{
+			Code:    ErrDockerNotFound,
+			Message: "Docker is not installed. Install Docker and try again.",
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	cmd := dockerCommand(ctx, "docker", "info")
-	return cmd.Run() == nil
+	if err := cmd.Run(); err != nil {
+		return &ContainerError{
+			Code:    ErrDockerNotRunning,
+			Message: "Docker is not running. Start Docker and try again.",
+		}
+	}
+	return nil
 }
 
 // Start runs a Docker container with the given workspace and mounts.

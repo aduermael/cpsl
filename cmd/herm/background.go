@@ -147,10 +147,13 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 
 	client := NewContainerClient(ContainerConfig{Image: defaultContainerImage})
 
-	if !client.IsAvailable() {
-		ch <- containerStatusMsg{text: "docker not running"}
-		ch <- containerErrMsg{err: fmt.Errorf(
-			"Docker is not running. Please start Docker Desktop and try again.")}
+	if err := client.CheckDocker(); err != nil {
+		if cerr, ok := err.(*ContainerError); ok && cerr.Code == ErrDockerNotFound {
+			ch <- containerStatusMsg{text: "docker not installed"}
+		} else {
+			ch <- containerStatusMsg{text: "docker not running"}
+		}
+		ch <- containerErrMsg{err: err}
 		return
 	}
 
