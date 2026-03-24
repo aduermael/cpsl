@@ -131,6 +131,17 @@ type updateCompleteMsg struct {
 	err error
 }
 
+type ollamaModelsMsg struct {
+	models []ModelDef
+}
+
+// openPickerMsg is sent after an async Ollama fetch completes to open the
+// model picker in the config editor with the freshly fetched model list.
+type openPickerMsg struct {
+	getCurrentID func() string
+	onSelect     func(string)
+}
+
 // ─── Async init commands ───
 
 func resolveWorkspaceCmd(cfg Config) workspaceMsg {
@@ -602,6 +613,10 @@ func fetchProjectSnapshot(worktreePath string) projectSnapshotMsg {
 func fetchSWEScoresCmd() sweScoresMsg {
 	scores, err := fetchSWEScores()
 	return sweScoresMsg{scores: scores, err: err}
+}
+
+func fetchOllamaModelsCmd(baseURL string) ollamaModelsMsg {
+	return ollamaModelsMsg{models: fetchOllamaModels(baseURL)}
 }
 
 // checkForUpdate queries the GitHub API for the latest release and compares

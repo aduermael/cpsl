@@ -54,6 +54,24 @@ func TestLoadConfigRoundTrip(t *testing.T) {
 	}
 }
 
+func TestLoadConfigRoundTripWithOllamaURL(t *testing.T) {
+	dir := t.TempDir()
+
+	original := Config{OllamaBaseURL: "http://localhost:11434"}
+	if err := saveConfigTo(dir, original); err != nil {
+		t.Fatalf("saveConfigTo: %v", err)
+	}
+
+	loaded, err := loadConfigFrom(dir)
+	if err != nil {
+		t.Fatalf("loadConfigFrom: %v", err)
+	}
+
+	if loaded.OllamaBaseURL != original.OllamaBaseURL {
+		t.Errorf("OllamaBaseURL = %q, want %q", loaded.OllamaBaseURL, original.OllamaBaseURL)
+	}
+}
+
 func TestLoadConfigMissingFileFallback(t *testing.T) {
 	dir := t.TempDir()
 
@@ -688,5 +706,225 @@ func TestResolveExplorationModel_OpenAIDefaults(t *testing.T) {
 	got := cfg.resolveExplorationModel(defaultTestModels())
 	if got != "gpt-4.1-mini-2025-04-14" {
 		t.Errorf("resolveExplorationModel = %q, want %q", got, "gpt-4.1-mini-2025-04-14")
+	}
+}
+
+// --- Ollama offline model persistence tests ---
+
+// Arbitrary Ollama model IDs used across offline tests.
+// The actual names don't matter — they just need to look like Ollama model IDs.
+const (
+	testOllamaActiveModel  = "test-active:latest"
+	testOllamaExploreModel = "test-explore:latest"
+	testOllamaOtherModel   = "test-other:latest"
+	testOllamaURL          = "http://localhost:11434"
+)
+
+func TestResolveActiveModel_OllamaOfflineTrustsSaved(t *testing.T) {
+	// Ollama URL configured, but no Ollama models in the live list (offline).
+	// The saved model should be returned as-is.
+	cfg := Config{
+		OllamaBaseURL: testOllamaURL,
+		ActiveModel:   testOllamaActiveModel,
+	}
+	got := cfg.resolveActiveModel(nil) // no live models
+	if got != testOllamaActiveModel {
+		t.Errorf("resolveActiveModel = %q, want %q (Ollama offline should trust saved model)", got, testOllamaActiveModel)
+	}
+}
+
+func TestResolveActiveModel_OllamaOfflineWithOtherProviders(t *testing.T) {
+	// Ollama offline but another provider is online — saved Ollama model should still win.
+	cfg := Config{
+		AnthropicAPIKey: "key",
+		OllamaBaseURL:   testOllamaURL,
+		ActiveModel:     testOllamaActiveModel,
+	}
+	got := cfg.resolveActiveModel(nil) // Ollama offline, no live models
+	if got != testOllamaActiveModel {
+		t.Errorf("resolveActiveModel = %q, want %q (saved Ollama model should persist when offline)", got, testOllamaActiveModel)
+	}
+}
+
+func TestResolveActiveModel_OllamaOnlineUsesLiveModel(t *testing.T) {
+	// Ollama is online — live model list includes the saved model.
+	cfg := Config{
+		OllamaBaseURL: testOllamaURL,
+		ActiveModel:   testOllamaActiveModel,
+	}
+	models := []ModelDef{
+		{Provider: ProviderOllama, ID: testOllamaActiveModel},
+		{Provider: ProviderOllama, ID: testOllamaOtherModel},
+	}
+	got := cfg.resolveActiveModel(models)
+	if got != testOllamaActiveModel {
+		t.Errorf("resolveActiveModel = %q, want %q", got, testOllamaActiveModel)
+	}
+}
+
+func TestResolveActiveModel_NoOllamaURLNoFallback(t *testing.T) {
+	// No Ollama URL — unknown model should NOT be trusted, falls back to available.
+	cfg := Config{
+		AnthropicAPIKey: "key",
+		ActiveModel:     testOllamaActiveModel, // not in catalog, no Ollama URL
+	}
+	got := cfg.resolveActiveModel(nil)
+	if got == testOllamaActiveModel {
+		t.Errorf("resolveActiveModel = %q, should not trust unknown model when no Ollama URL configured", got)
+	}
+}
+
+func TestResolveExplorationModel_OllamaOfflineTrustsSaved(t *testing.T) {
+	cfg := Config{
+		OllamaBaseURL:    testOllamaURL,
+		ActiveModel:      testOllamaActiveModel,
+		ExplorationModel: testOllamaExploreModel,
+	}
+	got := cfg.resolveExplorationModel(nil)
+	if got != testOllamaExploreModel {
+		t.Errorf("resolveExplorationModel = %q, want %q (Ollama offline should trust saved exploration model)", got, testOllamaExploreModel)
+	}
+}
+
+func TestOllamaModelProvider_InLiveList(t *testing.T) {
+	models := []ModelDef{
+		{Provider: ProviderOllama, ID: testOllamaActiveModel},
+		{Provider: ProviderOllama, ID: testOllamaOtherModel},
+	}
+	got := ollamaModelProvider(testOllamaActiveModel, models, testOllamaURL)
+	if got != ProviderOllama {
+		t.Errorf("ollamaModelProvider = %q, want %q", got, ProviderOllama)
+	}
+}
+
+func TestOllamaModelProvider_NotInListWithURL(t *testing.T) {
+	// Model not in live list but Ollama URL is set — assume Ollama.
+	got := ollamaModelProvider(testOllamaActiveModel, nil, testOllamaURL)
+	if got != ProviderOllama {
+		t.Errorf("ollamaModelProvider = %q, want %q", got, ProviderOllama)
+	}
+}
+
+func TestOllamaModelProvider_NotInListNoURL(t *testing.T) {
+	// No Ollama URL — unknown model returns empty provider.
+	got := ollamaModelProvider(testOllamaActiveModel, nil, "")
+	if got != "" {
+		t.Errorf("ollamaModelProvider = %q, want empty string", got)
+	}
+}
+
+// --- isOllamaOffline tests ---
+
+func TestIsOllamaOffline_ModelInLiveList(t *testing.T) {
+	a := &App{
+		models: []ModelDef{
+			{Provider: ProviderOllama, ID: testOllamaActiveModel},
+		},
+		cfgDraft: Config{OllamaBaseURL: testOllamaURL},
+	}
+	if a.isOllamaOffline(testOllamaActiveModel) {
+		t.Error("isOllamaOffline = true, want false (model is in live list)")
+	}
+}
+
+func TestIsOllamaOffline_ModelNotInLiveList(t *testing.T) {
+	a := &App{
+		models:   []ModelDef{}, // Ollama offline — empty live list
+		cfgDraft: Config{OllamaBaseURL: testOllamaURL},
+	}
+	if !a.isOllamaOffline(testOllamaActiveModel) {
+		t.Error("isOllamaOffline = false, want true (model not in live list)")
+	}
+}
+
+func TestIsOllamaOffline_KnownCatalogModel(t *testing.T) {
+	// A model that exists in the catalog under a different provider is not offline Ollama.
+	a := &App{
+		models: []ModelDef{
+			{Provider: ProviderAnthropic, ID: "claude-sonnet"},
+		},
+		cfgDraft: Config{OllamaBaseURL: testOllamaURL},
+	}
+	if a.isOllamaOffline("claude-sonnet") {
+		t.Error("isOllamaOffline = true, want false (model is a known catalog model)")
+	}
+}
+
+func TestIsOllamaOffline_EmptyModelID(t *testing.T) {
+	a := &App{cfgDraft: Config{OllamaBaseURL: testOllamaURL}}
+	if a.isOllamaOffline("") {
+		t.Error("isOllamaOffline = true, want false for empty model ID")
+	}
+}
+
+// --- Picker stub tests ---
+
+func TestPickerStubHasCleanID(t *testing.T) {
+	// When Ollama is offline, the stub injected into the picker must have
+	// the original model ID (not mangled with "(offline)") so selection works.
+	a := &App{
+		models: []ModelDef{},
+		cfgDraft: Config{
+			OllamaBaseURL: testOllamaURL,
+			ActiveModel:   testOllamaActiveModel,
+		},
+		resultCh: make(chan any, 16),
+	}
+
+	var selected string
+	a.doOpenConfigModelPicker(
+		[]ModelDef{},
+		func() string { return testOllamaActiveModel },
+		func(id string) { selected = id },
+	)
+
+	// Find the stub in menuModels
+	var stub *ModelDef
+	for i, m := range a.menuModels {
+		if m.Provider == ProviderOllama {
+			stub = &a.menuModels[i]
+			break
+		}
+	}
+	if stub == nil {
+		t.Fatal("expected an Ollama stub in menuModels, got none")
+	}
+	if stub.ID != testOllamaActiveModel {
+		t.Errorf("stub.ID = %q, want %q (ID must be clean, not mangled)", stub.ID, testOllamaActiveModel)
+	}
+	if stub.Label == "" || stub.Label == testOllamaActiveModel {
+		t.Errorf("stub.Label = %q, want label with '(offline)' suffix", stub.Label)
+	}
+
+	// Simulate selecting the stub — onSelect should receive the clean ID
+	a.menuAction(a.menuCursor)
+	if selected != testOllamaActiveModel {
+		t.Errorf("onSelect received %q, want %q (clean ID)", selected, testOllamaActiveModel)
+	}
+}
+
+// --- Ollama URL normalization tests ---
+
+func TestOllamaURLNormalization(t *testing.T) {
+	field := cfgAPIKeyFields[len(cfgAPIKeyFields)-1] // Ollama URL is the last field
+
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"http://localhost:11434", "http://localhost:11434"},   // already correct
+		{"https://ollama.example.com", "https://ollama.example.com"}, // https preserved
+		{"localhost:11434", "http://localhost:11434"},          // bare host gets http://
+		{"  localhost:11434  ", "http://localhost:11434"},      // whitespace trimmed
+		{"", ""},                                               // empty cleared
+		{"  ", ""},                                             // whitespace-only cleared
+	}
+
+	for _, tc := range cases {
+		var cfg Config
+		field.set(&cfg, tc.input)
+		if cfg.OllamaBaseURL != tc.want {
+			t.Errorf("set(%q): OllamaBaseURL = %q, want %q", tc.input, cfg.OllamaBaseURL, tc.want)
+		}
 	}
 }

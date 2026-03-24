@@ -737,6 +737,25 @@ func (a *App) handleResult(result any) {
 				matchSWEScores(a.models, a.sweScores)
 			}
 			a.maybeShowInitialModels()
+			// Fetch Ollama models asynchronously if configured
+			if a.config.OllamaBaseURL != "" {
+				go func() { a.resultCh <- fetchOllamaModelsCmd(a.config.OllamaBaseURL) }()
+			}
+		}
+
+	case ollamaModelsMsg:
+		if len(msg.models) > 0 {
+			base := modelsFromCatalog(a.modelCatalog)
+			a.models = append(base, msg.models...)
+			if a.sweLoaded && a.sweScores != nil {
+				matchSWEScores(a.models, a.sweScores)
+			}
+			a.maybeShowInitialModels()
+		}
+
+	case openPickerMsg:
+		if a.cfgActive {
+			a.doOpenConfigModelPicker(a.models, msg.getCurrentID, msg.onSelect)
 		}
 
 	case langdagReadyMsg:

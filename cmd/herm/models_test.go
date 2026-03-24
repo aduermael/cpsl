@@ -733,7 +733,7 @@ func TestSupportsServerToolsWithCapability(t *testing.T) {
 		{ID: "grok-4-1-fast-reasoning", Provider: ProviderGrok, ServerTools: []string{"web_search"}},
 	}
 	for _, m := range models {
-		if !supportsServerTools(models, m.ID) {
+		if !supportsServerTools(m.Provider, m.ID, models) {
 			t.Errorf("%s should support server tools", m.ID)
 		}
 	}
@@ -745,7 +745,7 @@ func TestSupportsServerToolsWithoutCapability(t *testing.T) {
 		{ID: "grok-code-fast-1", Provider: ProviderGrok},
 	}
 	for _, m := range models {
-		if supportsServerTools(models, m.ID) {
+		if supportsServerTools(m.Provider, m.ID, models) {
 			t.Errorf("%s should not support server tools", m.ID)
 		}
 	}
@@ -755,7 +755,7 @@ func TestSupportsServerToolsUnknownModel(t *testing.T) {
 	models := []ModelDef{
 		{ID: "claude-sonnet-4-6", Provider: ProviderAnthropic, ServerTools: []string{"web_search"}},
 	}
-	if supportsServerTools(models, "nonexistent-model") {
+	if supportsServerTools(ProviderOpenAI, "nonexistent-model", models) {
 		t.Error("unknown model should not support server tools")
 	}
 }

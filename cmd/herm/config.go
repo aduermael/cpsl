@@ -18,6 +18,7 @@ type Config struct {
 	GrokAPIKey            string          `json:"grok_api_key,omitempty"`
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
 	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
+	OllamaBaseURL         string          `json:"ollama_base_url,omitempty"` // e.g., "http://localhost:11434"
 	ActiveModel           string          `json:"active_model,omitempty"`
 	ExplorationModel      string          `json:"exploration_model,omitempty"` // model for sub-agents; falls back to ActiveModel
 	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
@@ -60,6 +61,9 @@ func (c Config) configuredProviders() map[string]bool {
 	if c.GeminiAPIKey != "" {
 		providers[ProviderGemini] = true
 	}
+	if c.OllamaBaseURL != "" {
+		providers[ProviderOllama] = true
+	}
 	return providers
 }
 
@@ -77,6 +81,9 @@ func (c Config) defaultLangdagProvider() string {
 	if c.GeminiAPIKey != "" {
 		return ProviderGemini
 	}
+	if c.OllamaBaseURL != "" {
+		return ProviderOllama
+	}
 	return ""
 }
 
@@ -88,6 +95,8 @@ func (c Config) availableModels(models []ModelDef) []ModelDef {
 // defaultActiveModels maps provider to the preferred default active model ID.
 // These are checked against the runtime catalog — if the ID isn't present, we
 // fall back to the first available model.
+// Ollama is intentionally omitted: locally installed models are user-specific
+// and there is no canonical default to suggest.
 var defaultActiveModels = map[string]string{
 	ProviderAnthropic: "claude-sonnet-4-6",
 	ProviderOpenAI:    "gpt-4.1-2025-04-14",
@@ -97,6 +106,8 @@ var defaultActiveModels = map[string]string{
 
 // defaultExplorationModels maps provider to the preferred cheap/fast model
 // for sub-agents and exploration tasks.
+// Ollama is intentionally omitted: locally installed models are user-specific
+// and there is no canonical cheap/fast default to suggest.
 var defaultExplorationModels = map[string]string{
 	ProviderAnthropic: "claude-haiku-4-5",
 	ProviderOpenAI:    "gpt-4.1-mini-2025-04-14",
@@ -123,6 +134,15 @@ func preferredDefault(models []ModelDef, provider string, defaults map[string]st
 // is invalid or its provider has no key, it falls back to the first available
 // model, or empty string if no keys are configured.
 func (c Config) resolveActiveModel(models []ModelDef) string {
+	// If the saved model's provider is configured, trust it even if the
+	// provider is offline and not in the live model list (e.g. Ollama down).
+	if c.ActiveModel != "" {
+		providers := c.configuredProviders()
+		if providers[ollamaModelProvider(c.ActiveModel, models, c.OllamaBaseURL)] {
+			return c.ActiveModel
+		}
+	}
+
 	available := c.availableModels(models)
 	if len(available) == 0 {
 		return ""
@@ -140,6 +160,23 @@ func (c Config) resolveActiveModel(models []ModelDef) string {
 	return available[0].ID
 }
 
+// ollamaModelProvider returns the provider for a model ID. If the model is
+// found in the live list, its provider is returned. Otherwise, if an Ollama
+// URL is configured and the model is not in the catalog at all, it is assumed
+// to be an Ollama model.
+func ollamaModelProvider(modelID string, models []ModelDef, ollamaURL string) string {
+	for _, m := range models {
+		if m.ID == modelID {
+			return m.Provider
+		}
+	}
+	// Not in catalog — if Ollama is configured, assume it's an Ollama model.
+	if ollamaURL != "" {
+		return ProviderOllama
+	}
+	return ""
+}
+
 // resolveExplorationModel returns the model ID for sub-agents/exploration.
 // When unset, prefers a cheap/fast provider-specific default (e.g. haiku for
 // Anthropic) before falling back to resolveActiveModel.
@@ -150,6 +187,13 @@ func (c Config) resolveExplorationModel(models []ModelDef) string {
 			return id
 		}
 		return c.resolveActiveModel(models)
+	}
+	// If the saved exploration model's provider is configured, trust it.
+	if c.ExplorationModel != "" {
+		providers := c.configuredProviders()
+		if providers[ollamaModelProvider(c.ExplorationModel, models, c.OllamaBaseURL)] {
+			return c.ExplorationModel
+		}
 	}
 	available := c.availableModels(models)
 	for _, m := range available {

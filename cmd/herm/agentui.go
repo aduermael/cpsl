@@ -62,10 +62,23 @@ func (a *App) showModelChange(modelID string) {
 	}
 	explorationID := a.config.resolveExplorationModel(a.models)
 	line := "Using " + modelID
+	offline := a.config.OllamaBaseURL != "" && a.isOllamaOffline(modelID)
+	if offline {
+		line += " \033[33m(offline)\033[34;3m"
+	}
 	if explorationID != "" && explorationID != modelID {
 		line += "  exploration: " + explorationID
 	}
 	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: line})
+	if offline {
+		msg := fmt.Sprintf("\033[33m⚠\033[34;3m Ollama unreachable at \033[36m%s\033[34;3m — run '\033[32;3mollama serve\033[34;3m' to continue", a.config.OllamaBaseURL)
+		providers := a.config.configuredProviders()
+		delete(providers, ProviderOllama)
+		if len(providers) > 0 {
+			msg = fmt.Sprintf("\033[33m⚠\033[34;3m Ollama unreachable at \033[36m%s\033[34;3m — run '\033[32;3mollama serve\033[34;3m' or switch to another provider (/config)", a.config.OllamaBaseURL)
+		}
+		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: msg})
+	}
 	a.lastModelID = modelID
 }
 
@@ -148,7 +161,7 @@ func (a *App) startAgent(userMessage string) {
 	// Server-side tools (e.g. web search) are handled by the LLM provider.
 	// Some models don't support them, so we check before including them.
 	var serverTools []types.ToolDefinition
-	if supportsServerTools(a.models, modelID) {
+	if supportsServerTools(modelProvider, modelID, a.models) {
 		serverTools = []types.ToolDefinition{WebSearchToolDef()}
 	}
 
@@ -193,7 +206,7 @@ func (a *App) startAgent(userMessage string) {
 	}
 	explorationModelID := a.config.resolveExplorationModel(a.models)
 	subAgentServerTools := serverTools
-	if !supportsServerTools(a.models, explorationModelID) {
+	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
 		subAgentServerTools = nil
 	}
 	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)

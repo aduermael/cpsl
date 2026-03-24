@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -22,21 +23,23 @@ const (
 	ProviderGrok      = "grok"
 	ProviderOpenAI    = "openai"
 	ProviderGemini    = "gemini"
+	ProviderOllama    = "ollama"
 )
 
 // supportedProviders lists providers in display order.
-var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini}
+var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini, ProviderOllama}
 
 // ModelDef describes a model available for selection.
 // Models are derived from the langdag model catalog at runtime.
 type ModelDef struct {
 	Provider        string
 	ID              string
+	Label           string   // optional display name override (e.g. "model (offline)")
 	PromptPrice     float64  // USD per million input tokens
 	CompletionPrice float64  // USD per million output tokens
 	ContextWindow   int      // tokens
 	SWEScore        float64  // SWE-bench Verified score (0 = no data)
-	ServerTools     []string // server-side tool capabilities (e.g. "web_search")
+	ServerTools     []string // server-side tools supported by this model (e.g. "web_search")
 }
 
 // modelsFromCatalog builds the model list from the langdag catalog.
@@ -47,6 +50,10 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 	}
 	var models []ModelDef
 	for _, provider := range supportedProviders {
+		// Ollama models are fetched separately via fetchOllamaModels
+		if provider == ProviderOllama {
+			continue
+		}
 		for _, p := range catalog.ForProvider(provider) {
 			models = append(models, ModelDef{
 				Provider:        provider,
@@ -62,10 +69,103 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 }
 
 // supportsServerTools reports whether a model supports server-side tools
-// (e.g. web search) based on catalog metadata from langdag.
-func supportsServerTools(models []ModelDef, modelID string) bool {
-	m := findModelByID(models, modelID)
-	return m != nil && len(m.ServerTools) > 0
+// (e.g. web search). Uses catalog metadata when available; falls back to
+// provider-level heuristics for models not in the catalog (e.g. Ollama).
+func supportsServerTools(provider, modelID string, models []ModelDef) bool {
+	// Check catalog metadata first.
+	if m := findModelByID(models, modelID); m != nil {
+		for _, st := range m.ServerTools {
+			if st == "web_search" {
+				return true
+			}
+		}
+		// Model found in catalog but no web_search — not supported.
+		return false
+	}
+	// Model not in catalog (e.g. Ollama local models) — no server tools.
+	return false
+}
+
+// fetchOllamaModels fetches available models from an Ollama instance.
+// Returns nil if the Ollama server is unreachable or no baseURL is configured.
+func fetchOllamaModels(baseURL string) []ModelDef {
+	if baseURL == "" {
+		return nil
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	base := strings.TrimRight(baseURL, "/")
+
+	resp, err := client.Get(base + "/api/tags")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var tagsResp struct {
+		Models []struct {
+			Name string `json:"name"`
+		} `json:"models"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&tagsResp); err != nil {
+		return nil
+	}
+
+	type result struct {
+		idx   int
+		model ModelDef
+	}
+	ch := make(chan result, len(tagsResp.Models))
+	for i, m := range tagsResp.Models {
+		i, m := i, m
+		go func() {
+			ch <- result{i, ModelDef{
+				Provider:        ProviderOllama,
+				ID:              m.Name,
+				PromptPrice:     0,
+				CompletionPrice: 0,
+				ContextWindow:   ollamaContextWindow(client, base, m.Name),
+			}}
+		}()
+	}
+	models := make([]ModelDef, len(tagsResp.Models))
+	for range tagsResp.Models {
+		r := <-ch
+		models[r.idx] = r.model
+	}
+	return models
+}
+
+// ollamaContextWindow queries /api/show for the model's actual context length.
+// Returns 0 if the server doesn't provide it.
+func ollamaContextWindow(client *http.Client, baseURL, modelName string) int {
+	body, _ := json.Marshal(map[string]string{"model": modelName})
+	resp, err := client.Post(baseURL+"/api/show", "application/json", bytes.NewReader(body))
+	if err != nil || resp.StatusCode != http.StatusOK {
+		return 0
+	}
+	defer resp.Body.Close()
+
+	// model_info contains keys like "llama.context_length", "gemma3.context_length", etc.
+	var showResp struct {
+		ModelInfo map[string]json.RawMessage `json:"model_info"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&showResp); err != nil {
+		return 0
+	}
+	for key, val := range showResp.ModelInfo {
+		if strings.HasSuffix(key, ".context_length") {
+			var n int
+			if err := json.Unmarshal(val, &n); err == nil && n > 0 {
+				return n
+			}
+		}
+	}
+	return 0
 }
 
 // filterModelsByProviders returns models whose provider is in the given set.
@@ -185,16 +285,36 @@ func formatContextWindow(tokens int) string {
 // Columns: Model (ID), Provider, Price (prompt), Context Window.
 // Returns a header string and the data lines.
 // The active model is marked with ● at the end.
+// visibleLen returns the visible length of a string, ignoring ANSI escape codes.
+func visibleLen(s string) int {
+	inEscape := false
+	n := 0
+	for _, c := range s {
+		if c == '\033' {
+			inEscape = true
+			continue
+		}
+		if inEscape {
+			if c == 'm' {
+				inEscape = false
+			}
+			continue
+		}
+		n++
+	}
+	return n
+}
+
 // sortCol (0-3) determines which column header is highlighted.
 func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortAsc bool) (string, []string) {
 	// Column headers
 	headers := [4]string{"Model", "Provider", "Price", "Context"}
 
 	// Compute column widths (at least as wide as headers)
-	maxName := len(headers[0])
-	maxProv := len(headers[1])
-	maxPrice := len(headers[2])
-	maxCtx := len(headers[3])
+	maxName := visibleLen(headers[0])
+	maxProv := visibleLen(headers[1])
+	maxPrice := visibleLen(headers[2])
+	maxCtx := visibleLen(headers[3])
 
 	type entry struct {
 		name, prov, price, ctx string
@@ -202,15 +322,19 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 	}
 	entries := make([]entry, len(models))
 	for i, m := range models {
+		displayName := m.ID
+		if m.Label != "" {
+			displayName = m.Label
+		}
 		e := entry{
-			name:   m.ID,
+			name:   displayName,
 			prov:   m.Provider,
 			price:  formatPricePerM(m.PromptPrice, m.CompletionPrice),
 			ctx:    formatContextWindow(m.ContextWindow),
 			active: m.ID == activeID,
 		}
-		if len(e.name) > maxName {
-			maxName = len(e.name)
+		if visibleLen(e.name) > maxName {
+			maxName = visibleLen(e.name)
 		}
 		if len(e.prov) > maxProv {
 			maxProv = len(e.prov)
@@ -238,10 +362,14 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		if j == sortCol {
 			label = h + arrow
 		}
+		pad := widths[j] - visibleLen(label)
+		if pad < 0 {
+			pad = 0
+		}
 		if rightAlign[j] {
-			hdrParts[j] = fmt.Sprintf("%*s", widths[j], label)
+			hdrParts[j] = strings.Repeat(" ", pad) + label
 		} else {
-			hdrParts[j] = fmt.Sprintf("%-*s", widths[j], label)
+			hdrParts[j] = label + strings.Repeat(" ", pad)
 		}
 	}
 	header := hdrParts[0] + "  " + hdrParts[1] + "  " + hdrParts[2] + "  " + hdrParts[3]
@@ -252,11 +380,22 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		if e.active {
 			marker = "●"
 		}
-		lines[i] = fmt.Sprintf("%-*s  %-*s  %*s  %*s %s",
-			maxName, e.name,
+		// Pad name manually to account for invisible ANSI escape bytes.
+		namePad := maxName - visibleLen(e.name)
+		if namePad < 0 {
+			namePad = 0
+		}
+		// ● is 3 bytes but 1 visible char; adjust ctx width so right-align stays correct.
+		ctxWidth := maxCtx
+		if e.active {
+			ctxWidth -= 2 // compensate for 2 extra bytes in ●
+		}
+		lines[i] = fmt.Sprintf("%s%s  %-*s  %*s  %*s %s",
+			e.name,
+			strings.Repeat(" ", namePad),
 			maxProv, e.prov,
 			maxPrice, e.price,
-			maxCtx, e.ctx,
+			ctxWidth, e.ctx,
 			marker)
 	}
 	return header, lines

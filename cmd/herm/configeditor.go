@@ -10,6 +10,28 @@ import (
 	"unicode/utf8"
 )
 
+// isOllamaOffline reports whether modelID is an Ollama model that is not
+// present in the current live model list (i.e. Ollama is configured but down).
+// Returns false if no Ollama URL is configured.
+func (a *App) isOllamaOffline(modelID string) bool {
+	if modelID == "" {
+		return false
+	}
+	// Check if it's in the live list as an Ollama model.
+	for _, m := range a.models {
+		if m.ID == modelID && m.Provider == ProviderOllama {
+			return false // online and present
+		}
+	}
+	// Not in live list — treat as offline if it's not a known catalog model either.
+	for _, m := range a.models {
+		if m.ID == modelID {
+			return false // it's a different provider's model
+		}
+	}
+	return true // unknown to catalog → assume offline Ollama model
+}
+
 func maskKey(key string) string {
 	if key == "" {
 		return "(not set)"
@@ -39,6 +61,13 @@ var cfgAPIKeyFields = []cfgField{
 	{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
 	{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
 	{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
+	{label: "Ollama URL", get: func(c Config) string { return c.OllamaBaseURL }, set: func(c *Config, v string) {
+		v = strings.TrimSpace(v)
+		if v != "" && !strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
+			v = "http://" + v
+		}
+		c.OllamaBaseURL = v
+	}},
 }
 
 func (a *App) enterConfigMode() {
@@ -73,6 +102,10 @@ func (a *App) exitConfigMode(save bool) {
 		if !saveErr {
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Config saved."})
 		}
+		// Refresh models including Ollama if configured
+		if a.config.OllamaBaseURL != "" {
+			go func() { a.resultCh <- fetchOllamaModelsCmd(a.config.OllamaBaseURL) }()
+		}
 		// Show updated model if it changed
 		if a.models != nil {
 			a.showModelChange(a.config.resolveActiveModel(a.models))
@@ -92,11 +125,56 @@ func (a *App) exitConfigMode(save bool) {
 // openConfigModelPicker opens an inline model menu within the config editor.
 // getCurrentID returns the currently selected model ID (for highlighting).
 // onSelect is called with the chosen model ID when the user makes a selection.
+// If the draft Ollama URL differs from the saved URL, models are fetched
+// asynchronously and the picker opens once results arrive.
 func (a *App) openConfigModelPicker(getCurrentID func() string, onSelect func(string)) {
 	if a.models == nil {
 		return
 	}
-	available := a.cfgDraft.availableModels(a.models)
+	// If the draft URL differs from the saved URL, fetch Ollama models async
+	// before opening the picker so we don't block the UI.
+	if a.cfgDraft.OllamaBaseURL != "" && a.config.OllamaBaseURL != a.cfgDraft.OllamaBaseURL {
+		go func() {
+			msg := fetchOllamaModelsCmd(a.cfgDraft.OllamaBaseURL)
+			a.resultCh <- msg
+			// Open the picker after the result is handled; send a follow-up
+			// signal via a dedicated picker-open message.
+			a.resultCh <- openPickerMsg{getCurrentID: getCurrentID, onSelect: onSelect}
+		}()
+		return
+	}
+	a.doOpenConfigModelPicker(a.models, getCurrentID, onSelect)
+}
+
+// doOpenConfigModelPicker builds and displays the model picker menu.
+func (a *App) doOpenConfigModelPicker(models []ModelDef, getCurrentID func() string, onSelect func(string)) {
+	available := a.cfgDraft.availableModels(models)
+
+	// If Ollama is configured but offline, inject a stub for the saved model
+	// so the picker still opens and the user can see their current selection.
+	if a.cfgDraft.OllamaBaseURL != "" {
+		ollamaInList := false
+		for _, m := range available {
+			if m.Provider == ProviderOllama {
+				ollamaInList = true
+				break
+			}
+		}
+		if !ollamaInList {
+			savedID := getCurrentID()
+			if savedID == "" {
+				savedID = a.cfgDraft.ActiveModel
+			}
+			if savedID != "" {
+				available = append(available, ModelDef{
+					Provider: ProviderOllama,
+					ID:       savedID,
+					Label:    savedID + " \033[33m(offline)\033[0m",
+				})
+			}
+		}
+	}
+
 	if len(available) == 0 {
 		return
 	}
@@ -283,6 +361,11 @@ func (a *App) buildConfigRows() []string {
 				val = f.display(a.cfgDraft)
 			} else {
 				val = f.get(a.cfgDraft)
+			}
+			// If the value is an Ollama model and Ollama is offline, show indicator.
+			// Only applies to model picker fields, not API key or other fields.
+			if val != "" && f.picker != nil && a.cfgDraft.OllamaBaseURL != "" && a.isOllamaOffline(val) {
+				val = val + " \033[33m(offline)\033[0m"
 			}
 			if val == "" {
 				if f.globalHint != nil {
