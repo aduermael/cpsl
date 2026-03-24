@@ -476,7 +476,34 @@ ready:
 		}
 	}
 
+	// Collect assistant text and print to stdout.
+	var out strings.Builder
+	for _, msg := range a.messages {
+		if msg.kind == msgAssistant {
+			if out.Len() > 0 {
+				out.WriteString("\n")
+			}
+			out.WriteString(msg.content)
+		}
+	}
+	if out.Len() > 0 {
+		fmt.Println(out.String())
+	}
+
+	// Print any agent errors to stderr.
+	var hasError bool
+	for _, msg := range a.messages {
+		if msg.kind == msgError {
+			fmt.Fprintln(os.Stderr, "error: "+msg.content)
+			hasError = true
+		}
+	}
+
 	a.cleanup()
+
+	if hasError {
+		return fmt.Errorf("agent encountered errors")
+	}
 	return nil
 }
 

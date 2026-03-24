@@ -116,7 +116,7 @@ Enable headless operation for agent-driven workflows.
 
 - [x] 5a: **Add headless mode to App** — Add `headless bool` field. When `cliPrompt` is set, skip terminal raw mode, skip TUI rendering, skip stdin goroutine. After config/container initialization completes, call `submitToAgent()` with the prompt text.
 
-- [ ] 5b: **Headless event loop** — Replace the interactive `Run()` select loop with a simplified loop that only drains agent events (no stdin, no resize, no tick rendering). On `EventDone`, print final assistant text to stdout. On `EventError`, print error to stderr. Exit after agent completes.
+- [x] 5b: **Headless event loop** — Replace the interactive `Run()` select loop with a simplified loop that only drains agent events (no stdin, no resize, no tick rendering). On `EventDone`, print final assistant text to stdout. On `EventError`, print error to stderr. Exit after agent completes.
 
 - [ ] 5c: **Print debug file path to stderr** — At startup in headless mode, `fmt.Fprintf(os.Stderr, "debug: %s\n", debugFilePath)` so the calling process can locate and read the debug file.
 
