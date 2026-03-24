@@ -6,8 +6,8 @@ cloud.google.com/go/auth/oauth2adapt v0.2.3/go.mod h1:tMQXOfZzFuNuUxOypHlQEXgdfX
 cloud.google.com/go/compute/metadata v0.5.0 h1:Zr0eK8JbFv6+Wi4ilXAR8FJ3wyNdpxHKJNPos6LTZOY=
 cloud.google.com/go/compute/metadata v0.5.0/go.mod h1:aHnloV2TPI38yx4s9+wAZhHykWvVCfu7hQbF+9CWoiY=
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/aduermael/langdag v0.6.3 h1:FBAG0RWUg7hsE+QkgfRB3AV+DeFCymg6JWcwGsSzxog=
-github.com/aduermael/langdag v0.6.3/go.mod h1:ssI+s82B1hMYfoo9+iQrt4MXcoyXYCYm9GVnnrdgWSU=
+github.com/aduermael/langdag v0.6.4 h1:Q7xCoTyAsKdqGV5dU4zlXJ1jt1rbCK8hhGehK7V+5F8=
+github.com/aduermael/langdag v0.6.4/go.mod h1:ssI+s82B1hMYfoo9+iQrt4MXcoyXYCYm9GVnnrdgWSU=
 github.com/anthropics/anthropic-sdk-go v1.20.0 h1:KE6gQiAT1aBHMh3Dmp1WgqnyZZLJNo2oX3ka004oDLE=
 github.com/anthropics/anthropic-sdk-go v1.20.0/go.mod h1:WTz31rIUHUHqai2UslPpw5CwXrQP3geYBioRV4WOLvE=
 github.com/aws/aws-sdk-go-v2 v1.30.3 h1:jUeBtG0Ih+ZIFH0F4UkmL9w3cSpaMv9tYYDbzILP8dY=
