@@ -52,9 +52,9 @@ Qwen 3.5 models (via Ollama) enable thinking by default, producing hidden `<thin
 
 **Parallel Tasks: 2a, 2b, 2c**
 
-- [ ] 2a: **Ollama / OpenAI protocol** — Add `Think *bool` json field to `chatCompletionRequest` in `protocol.go`; set it in `buildRequest()` from `CompletionRequest.Think`. Use `*bool` + `omitempty` so it's omitted when nil. Applies to both Ollama and OpenAI direct (OpenAI ignores unknown fields). Add test in `openai_test.go` / `ollama_test.go` verifying the field appears in serialized JSON when set and is absent when nil.
-- [ ] 2b: **Anthropic** — In `buildParams()`, when `req.Think != nil && *req.Think == true`, enable extended thinking with a default budget. Handle the constraints (temperature must be default, max_tokens must accommodate budget). When false or nil, don't send thinking params. Add test in `anthropic_test.go` / `protocol_test.go`.
-- [ ] 2c: **Gemini** — In `buildRequest()`, when `req.Think != nil && *req.Think == true`, add `thinkingConfig` to generationConfig with a sensible default budget. When `*req.Think == false`, set budget to 0 to explicitly disable. When nil, omit. Add test in `gemini_test.go`.
+- [x] 2a: **Ollama / OpenAI protocol** — Add `Think *bool` json field to `chatCompletionRequest` in `protocol.go`; set it in `buildRequest()` from `CompletionRequest.Think`. Use `*bool` + `omitempty` so it's omitted when nil. Applies to both Ollama and OpenAI direct (OpenAI ignores unknown fields). Add test in `openai_test.go` / `ollama_test.go` verifying the field appears in serialized JSON when set and is absent when nil.
+- [x] 2b: **Anthropic** — In `buildParams()`, when `req.Think != nil && *req.Think == true`, enable extended thinking with a default budget. Handle the constraints (temperature must be default, max_tokens must accommodate budget). When false or nil, don't send thinking params. Add test in `anthropic_test.go` / `protocol_test.go`.
+- [x] 2c: **Gemini** — In `buildRequest()`, when `req.Think != nil && *req.Think == true`, add `thinkingConfig` to generationConfig with a sensible default budget. When `*req.Think == false`, set budget to 0 to explicitly disable. When nil, omit. Add test in `gemini_test.go`.
 
 ## Phase 3: herm — Config and integration
 
