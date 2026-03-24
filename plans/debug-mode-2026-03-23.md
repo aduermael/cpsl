@@ -124,10 +124,10 @@ Enable headless operation for agent-driven workflows.
 
 ## Phase 6: Tests
 
-- [ ] 6a: **Test debug file creation and writing** — Unit test `initDebugLog` creates the directory and file. Test `debugWrite` produces correctly delimited sections. Test that debug mode off → no file created.
+- [x] 6a: **Test debug file creation and writing** — Unit test `initDebugLog` creates the directory and file. Test `debugWrite` produces correctly delimited sections. Test that debug mode off → no file created.
 
-- [ ] 6b: **Test debug file regeneration** — Create an App with messages, call `regenerateDebugFile()`, verify the file contains all messages without word-wrapping.
+- [x] 6b: **Test debug file regeneration** — Create an App with messages, call `regenerateDebugFile()`, verify the file contains all messages without word-wrapping.
 
-- [ ] 6c: **Test /clear creates new debug file** — Simulate `/clear`, verify old file is closed and new file is opened with a different name.
+- [x] 6c: **Test /clear creates new debug file** — Simulate `/clear`, verify old file is closed and new file is opened with a different name.
 
-- [ ] 6d: **Test headless mode end-to-end** — Use a mock agent/LLM to verify `--prompt --debug` produces debug output file and prints assistant response to stdout.
+- [x] 6d: **Test headless mode end-to-end** — Use a mock agent/LLM to verify `--prompt --debug` produces debug output file and prints assistant response to stdout.
