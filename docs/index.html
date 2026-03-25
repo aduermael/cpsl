@@ -220,10 +220,6 @@
             left: 0;
             right: 0;
             z-index: 100;
-            padding: 18px 0;
-            transition: all 0.15s ease;
-        }
-        .header.scrolled {
             padding: 12px 0;
             background: rgba(12, 14, 24, 0.88);
             backdrop-filter: blur(14px);
@@ -1156,12 +1152,6 @@
 </footer>
 
 <script>
-    // Header scroll effect
-    const header = document.getElementById('header');
-    window.addEventListener('scroll', () => {
-        header.classList.toggle('scrolled', window.scrollY > 40);
-    }, { passive: true });
-
     // Mobile menu
     const mobileToggle = document.getElementById('mobileToggle');
     const mobileMenu = document.getElementById('mobileMenu');
