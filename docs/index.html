@@ -310,7 +310,7 @@
             transition: all 0.3s;
         }
         .mobile-menu {
-            display: none;
+            display: flex;
             position: fixed;
             inset: 0;
             top: 0;
@@ -321,8 +321,16 @@
             padding: 100px 32px 40px;
             flex-direction: column;
             gap: 24px;
+            transform: translateY(-100%);
+            opacity: 0;
+            transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+            pointer-events: none;
         }
-        .mobile-menu.open { display: flex; }
+        .mobile-menu.open {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
         .mobile-menu a {
             font-size: 1.3rem;
             font-weight: 600;
@@ -335,7 +343,6 @@
         .hero {
             position: relative;
             padding: 160px 0 100px;
-            overflow: hidden;
         }
         .hero-glow-1 {
             position: absolute;
@@ -411,9 +418,7 @@
                 hsl(360, 65%, 78%)
             );
             animation: spin-border 4s linear infinite;
-            box-shadow:
-                0 0 60px hsla(270, 65%, 78%, 0.12),
-                0 0 120px hsla(180, 65%, 78%, 0.06);
+            box-shadow: none;
             max-width: 840px;
             width: 100%;
         }
@@ -810,12 +815,63 @@
         }
         @media (max-width: 700px) {
             .nav-links, .nav-right .btn { display: none; }
-            .mobile-toggle { display: flex; }
-            .hero { padding: 130px 0 72px; }
+            .mobile-toggle { display: flex; margin-left: auto; }
+            .hero { padding: 130px 0 48px; }
             h1 { font-size: 2rem; }
             .demo-wrapper { margin-top: 40px; }
             .features, .install, .compare, .faq { padding: 60px 0; }
             .footer-inner { flex-direction: column; align-items: flex-start; }
+
+            /* ── Mobile menu: dropdown instead of full-screen ── */
+            .mobile-menu {
+                inset: unset;
+                top: 0;
+                left: 0;
+                right: 0;
+                padding: 72px 24px 24px;
+                gap: 16px;
+                border-bottom: 1px solid var(--border);
+                border-radius: 0 0 var(--r-lg) var(--r-lg);
+            }
+            .mobile-menu a {
+                font-size: 1rem;
+            }
+
+            /* ── Comparison table: angled headers ── */
+            .compare-table {
+                min-width: 0;
+            }
+            .compare-table thead th:not(:first-child) {
+                position: relative;
+                padding: 0;
+                height: 120px;
+                width: 70px;
+                min-width: 70px;
+                vertical-align: bottom;
+                text-align: left;
+                overflow: visible;
+            }
+            .compare-table thead th:not(:first-child) > span {
+                display: block;
+                transform: rotate(-75deg);
+                transform-origin: left bottom;
+                white-space: nowrap;
+                font-size: 0.78rem;
+                position: absolute;
+                bottom: 14px;
+                left: 50%;
+            }
+            .compare-table thead th:first-child {
+                padding: 16px 12px;
+            }
+            .compare-table tbody td:not(:first-child) {
+                text-align: center;
+                padding: 14px 8px;
+            }
+            .compare-table tbody td:first-child {
+                padding: 14px 12px;
+                font-size: 0.82rem;
+            }
         }
         /* ===== REDUCED MOTION ===== */
         @media (prefers-reduced-motion: reduce) {
@@ -988,10 +1044,10 @@
                 <thead>
                     <tr>
                         <th></th>
-                        <th class="herm-col">herm</th>
-                        <th>Claude Code</th>
-                        <th>OpenCode</th>
-                        <th>Pi</th>
+                        <th class="herm-col"><span>herm</span></th>
+                        <th><span>Claude Code</span></th>
+                        <th><span>OpenCode</span></th>
+                        <th><span>Pi</span></th>
                     </tr>
                 </thead>
                 <tbody>
