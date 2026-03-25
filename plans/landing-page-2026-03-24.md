@@ -36,7 +36,7 @@ This is a **product landing page**, not a library docs page. It should feel conf
 
 - [x] 1a: Create `docs/` directory with `index.html` containing the full landing page (HTML + inline CSS + inline JS). Include all sections: header/nav, hero with demo, features, install, comparison, FAQ, footer. Use `__VERSION__` placeholder for version injection. Use `__STARS__` as a fallback that gets replaced by JS at runtime via the GitHub API.
 - [x] 1b: Add `docs/CNAME` file with `hermagent.com` for custom domain configuration
-- [ ] 1c: Create `.github/workflows/pages.yml` — GitHub Action that deploys `docs/` to GitHub Pages on push to main and version tags. Inject latest git tag version via `sed`. Follow the same pattern as LangDag's workflow (checkout with tags → sed version → configure-pages → upload artifact → deploy).
+- [x] 1c: Create `.github/workflows/pages.yml` — GitHub Action that deploys `docs/` to GitHub Pages on push to main and version tags. Inject latest git tag version via `sed`. Follow the same pattern as LangDag's workflow (checkout with tags → sed version → configure-pages → upload artifact → deploy).
 
 ## Phase 2: Assets & Polish
 
