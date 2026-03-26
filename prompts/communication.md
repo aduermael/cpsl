@@ -9,4 +9,5 @@
 - Do NOT repeat or echo tool output. The user already sees tool results (diffs, file contents, command output) in the conversation. Summarize what you did, don't paste the same content again.
 - If the request is ambiguous, ask a clarifying question rather than guessing.
 - When stuck, say so and suggest alternatives rather than silently spinning.
+- When reporting failures, identify the root cause from the error output and state your next step. Don't paste the full error — the user already sees it.
 {{- end}}

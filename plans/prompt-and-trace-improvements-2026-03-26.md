@@ -63,10 +63,10 @@ The grep tool has no `-i` flag. Case-insensitive search is common (searching for
 
 `practices.md` duplicates items from `role.md`'s workflow and `bash.md`'s description. Each duplicate is ~10-15 tokens.
 
-- [ ] 6a: Remove "Read before writing — understand existing code, patterns, and conventions first." from `practices.md` — this is step 1 of the workflow in `role.md`.
-- [ ] 6b: Remove "Keep changes minimal and focused. Don't refactor unrelated code or over-engineer." from `practices.md` — this is step 3 of the workflow ("Implement — make focused, minimal changes") plus priority item 4 ("Keep changes minimal").
-- [ ] 6c: Remove "Run tests after changes." from `bash.md` — this is step 4 of the workflow ("Verify — run tests or the build to confirm changes work").
-- [ ] 6d: Add failure-reporting guidance to `communication.md` — "When reporting failures, identify the root cause from the error output and state your next step. Don't paste the full error — the user already sees it."
+- [x] 6a: Remove "Read before writing — understand existing code, patterns, and conventions first." from `practices.md` — this is step 1 of the workflow in `role.md`.
+- [x] 6b: Remove "Keep changes minimal and focused. Don't refactor unrelated code or over-engineer." from `practices.md` — this is step 3 of the workflow ("Implement — make focused, minimal changes") plus priority item 4 ("Keep changes minimal").
+- [x] 6c: Remove "Run tests after changes." from `bash.md` — this is step 4 of the workflow ("Verify — run tests or the build to confirm changes work").
+- [x] 6d: Add failure-reporting guidance to `communication.md` — "When reporting failures, identify the root cause from the error output and state your next step. Don't paste the full error — the user already sees it."
 
 ## Phase 7: Pass Real stop_reason and Fix API Timing
 
