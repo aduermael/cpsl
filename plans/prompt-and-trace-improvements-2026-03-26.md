@@ -33,8 +33,8 @@ The `traceUsageSeen` pattern in `agentui.go` triggers `FinalizeTurn` on `EventTo
 
 `role.md` says "Do not ask for permission. Act freely." while `practices.md` says "If a requested action is destructive and irreversible, confirm with the user." The priority stack doesn't mention the destructive-action rule. A model may weigh "act freely" against the guardrail.
 
-- [ ] 2a: Remove "Do not ask for permission. Act freely." from `role.md` line ~5. The sandbox framing ("You have full control — run any commands, modify any files. Nothing affects the host.") already conveys freedom without creating a competing directive.
-- [ ] 2b: Expand the priority stack in `role.md` line ~18 — add destructive-action rule as item 2: "(1) Don't break things — verify before and after changes. (2) Confirm with the user before destructive, irreversible actions. (3) Do what was asked, nothing more. (4) Keep changes minimal. (5) Keep communication brief." Format as a numbered list instead of inline bold.
+- [x] 2a: Remove "Do not ask for permission. Act freely." from `role.md` line ~5. The sandbox framing ("You have full control — run any commands, modify any files. Nothing affects the host.") already conveys freedom without creating a competing directive.
+- [x] 2b: Expand the priority stack in `role.md` line ~18 — add destructive-action rule as item 2: "(1) Don't break things — verify before and after changes. (2) Confirm with the user before destructive, irreversible actions. (3) Do what was asked, nothing more. (4) Keep changes minimal. (5) Keep communication brief." Format as a numbered list instead of inline bold.
 
 ## Phase 3: Deduplicate Tool Description Boilerplate
 
