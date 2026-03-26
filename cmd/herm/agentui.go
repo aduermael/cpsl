@@ -336,6 +336,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 
 	switch event.Type {
 	case EventTextDelta:
+		if a.traceCollector != nil {
+			a.traceCollector.AddTextDelta(event.AgentID, event.Text)
+		}
 		a.streamingText += event.Text
 		if idx := strings.LastIndex(a.streamingText, "\n"); idx >= 0 {
 			a.messages = append(a.messages, chatMessage{
@@ -351,7 +354,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 	case EventToolCallStart:
 		debugLog("tool_call_start: %s input=%s", event.ToolName, string(event.ToolInput))
 		if a.streamingText != "" {
-			a.debugWriteSection("Assistant Text", a.streamingText)
 			a.messages = append(a.messages, chatMessage{
 				kind:      msgAssistant,
 				content:   a.streamingText,
@@ -360,9 +362,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.needsTextSep = false
 			a.streamingText = ""
 		}
+		if a.traceCollector != nil {
+			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
+		}
 		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true})
-		a.debugWriteSection("Tool Call", fmt.Sprintf("[%s] %s\n%s",
-			time.Now().Format("15:04:05"), event.ToolName, string(event.ToolInput)))
 		a.toolStartTime = time.Now()
 		if a.toolTimer != nil {
 			a.toolTimer.Stop()
@@ -399,19 +402,16 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			s[1] += len(event.ToolResult)
 			a.sessionToolStats[event.ToolName] = s
 		}
-		errLabel := ""
-		if event.IsError {
-			errLabel = " [ERROR]"
+		if a.traceCollector != nil {
+			a.traceCollector.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
 		}
-		a.debugWriteSection("Tool Result", fmt.Sprintf("[%s] %s%s (%s)\n%s",
-			time.Now().Format("15:04:05"), event.ToolName, errLabel,
-			formatDuration(event.Duration), event.ToolResult))
 		a.messages = append(a.messages, chatMessage{kind: msgToolResult, content: result, isError: event.IsError, duration: event.Duration})
 		a.render()
 
 	case EventUsage:
 		if event.Usage != nil {
-			a.sessionCostUSD += computeCost(a.models, event.Model, *event.Usage)
+			cost := computeCost(a.models, event.Model, *event.Usage)
+			a.sessionCostUSD += cost
 			a.lastInputTokens = event.Usage.InputTokens + event.Usage.CacheReadInputTokens + event.Usage.CacheCreationInputTokens
 			a.sessionInputTokens += event.Usage.InputTokens
 			a.sessionOutputTokens += event.Usage.OutputTokens
@@ -423,11 +423,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				a.mainAgentOutputTokens += event.Usage.OutputTokens
 				a.mainAgentLLMCalls++
 			}
-			a.debugWriteSection("Usage", fmt.Sprintf("[%s] model=%s input=%d output=%d cache_read=%d cache_create=%d cost=%s",
-				time.Now().Format("15:04:05"), event.Model,
-				event.Usage.InputTokens, event.Usage.OutputTokens,
-				event.Usage.CacheReadInputTokens, event.Usage.CacheCreationInputTokens,
-				formatCost(computeCost(a.models, event.Model, *event.Usage))))
+			if a.traceCollector != nil {
+				a.traceCollector.SetUsage(event.AgentID, event.Model, event.NodeID,
+					traceUsageFromTypes(event.Usage), cost)
+			}
 			a.renderInput()
 		}
 
@@ -438,10 +437,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		debugLog("approval_req: %s", event.ApprovalDesc)
 		a.awaitingApproval = true
 		a.approvalPauseStart = time.Now()
+		a.approvalToolID = event.ToolID
 		a.approvalSummary = approvalShortDesc(event.ToolName, event.ToolInput)
 		a.approvalDesc = event.ApprovalDesc
-		a.debugWriteSection("Approval Request", fmt.Sprintf("[%s] %s: %s",
-			time.Now().Format("15:04:05"), event.ToolName, event.ApprovalDesc))
 		// Stop tool timer ticker so the tool box timer freezes during approval.
 		if a.toolTimer != nil {
 			a.toolTimer.Stop()
@@ -454,8 +452,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		if event.NodeID != "" {
 			a.agentNodeID = event.NodeID
 		}
-		a.debugWriteSection("Compacted", fmt.Sprintf("[%s] nodeID=%s %s",
-			time.Now().Format("15:04:05"), event.NodeID, event.Text))
+		if a.traceCollector != nil {
+			a.traceCollector.AddCompaction(event.NodeID, event.Text)
+		}
 		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: event.Text})
 		a.render()
 
@@ -480,7 +479,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			}
 		}
 		if a.streamingText != "" {
-			a.debugWriteSection("Assistant Text", a.streamingText)
 			a.messages = append(a.messages, chatMessage{
 				kind:      msgAssistant,
 				content:   a.streamingText,
@@ -488,14 +486,18 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			})
 			a.streamingText = ""
 		}
-		a.debugWriteSessionSummary()
+		if a.traceCollector != nil {
+			a.traceCollector.FinalizeTurn(event.AgentID)
+			a.traceCollector.Finalize()
+			if err := a.traceCollector.FlushToFile(a.traceFilePath); err != nil {
+				fmt.Fprintf(os.Stderr, "debug: failed to write trace: %v\n", err)
+			}
+		}
 		a.render()
 
 	case EventSubAgentStart:
 		sa := a.getOrCreateSubAgent(event.AgentID)
 		sa.task = truncateTaskLabel(event.Task)
-		a.debugWriteSection("Sub-Agent Start", fmt.Sprintf("[%s] agent=%s task=%s",
-			time.Now().Format("15:04:05"), shortID(event.AgentID), event.Task))
 		a.render()
 
 	case EventSubAgentDelta:
@@ -525,8 +527,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				}
 				completionMsg += ")"
 			}
-			a.debugWriteSection("Sub-Agent Done", fmt.Sprintf("[%s] agent=%s %s",
-				time.Now().Format("15:04:05"), shortID(event.AgentID), completionMsg))
+			if a.traceCollector != nil && event.SubTrace != nil {
+				a.traceCollector.AddSubAgent(event.SubTrace)
+			}
 			a.messages = append(a.messages, chatMessage{
 				kind:    msgInfo,
 				content: completionMsg,
@@ -540,8 +543,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		// Discard in-progress streaming text before a stream retry so the
 		// user doesn't see duplicate partial content.
 		a.streamingText = ""
-		a.debugWriteSection("Stream Clear", fmt.Sprintf("[%s] discarded partial streaming text",
-			time.Now().Format("15:04:05")))
+		if a.traceCollector != nil {
+			a.traceCollector.AddStreamClear()
+		}
 		a.render()
 
 	case EventRetry:
@@ -552,7 +556,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		retryMsg := fmt.Sprintf("API error, retrying in %s (attempt %d/%d): %s",
 			event.Duration.Truncate(time.Second), event.Attempt, event.MaxRetry, errMsg)
 		debugLog("retry: %s", retryMsg)
-		a.debugWriteSection("Retry", fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), retryMsg))
+		if a.traceCollector != nil {
+			a.traceCollector.AddRetry(event.Attempt, event.MaxRetry, event.Duration, errMsg)
+		}
 		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: retryMsg})
 		a.render()
 
@@ -562,7 +568,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			errMsg = event.Error.Error()
 		}
 		debugLog("error: %s", errMsg)
-		a.debugWriteSection("Error", fmt.Sprintf("[%s] %s", time.Now().Format("15:04:05"), errMsg))
+		if a.traceCollector != nil {
+			a.traceCollector.AddError(errMsg)
+		}
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: errMsg})
 		a.render()
 	}

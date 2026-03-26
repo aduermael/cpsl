@@ -168,6 +168,7 @@ type App struct {
 	// Approval timer pause
 	approvalPauseStart  time.Time     // when approval wait started
 	approvalPausedTotal time.Duration // total time spent waiting for approvals
+	approvalToolID      string        // tool ID of pending approval (for trace)
 
 	// Periodic commit info refresh
 	commitInfoTicker *time.Ticker
@@ -637,9 +638,14 @@ func (a *App) handleApprovalByte(ch byte) {
 	switch ch {
 	case 'y', 'Y':
 		a.awaitingApproval = false
+		var waitDur time.Duration
 		if !a.approvalPauseStart.IsZero() {
-			a.approvalPausedTotal += time.Since(a.approvalPauseStart)
+			waitDur = time.Since(a.approvalPauseStart)
+			a.approvalPausedTotal += waitDur
 			a.approvalPauseStart = time.Time{}
+		}
+		if a.traceCollector != nil && a.approvalToolID != "" {
+			a.traceCollector.AddApproval(a.approvalToolID, a.approvalDesc, true, waitDur)
 		}
 		// Restart tool timer ticker (frozen during approval).
 		if !a.toolStartTime.IsZero() && a.toolTimer == nil {
@@ -660,9 +666,14 @@ func (a *App) handleApprovalByte(ch byte) {
 		a.render()
 	case 'n', 'N':
 		a.awaitingApproval = false
+		var waitDur time.Duration
 		if !a.approvalPauseStart.IsZero() {
-			a.approvalPausedTotal += time.Since(a.approvalPauseStart)
+			waitDur = time.Since(a.approvalPauseStart)
+			a.approvalPausedTotal += waitDur
 			a.approvalPauseStart = time.Time{}
+		}
+		if a.traceCollector != nil && a.approvalToolID != "" {
+			a.traceCollector.AddApproval(a.approvalToolID, a.approvalDesc, false, waitDur)
 		}
 		if a.agent != nil {
 			a.agent.Approve(ApprovalResponse{Approved: false})
