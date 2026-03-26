@@ -259,7 +259,7 @@ Wire the trace collector into the App lifecycle and event handlers, replacing al
 
 - [x] 3e: **Remove regenerateDebugFile and resize trigger** — Delete `regenerateDebugFile()` from `debuglog.go`. Remove the `regenerateDebugFile()` call from the `resizeMsg` handler in `main.go`. The JSON trace is written on events, not on display changes.
 
-- [ ] 3f: **Update /clear and headless mode** — In `/clear` handler: finalize current trace, start new collector with new `.json` file path. In headless mode: same lifecycle, print `.json` path to stderr.
+- [x] 3f: **Update /clear and headless mode** — In `/clear` handler: finalize current trace, start new collector with new `.json` file path. In headless mode: same lifecycle, print `.json` path to stderr.
 
 - [ ] 3g: **Update footer display** — In `render.go`, update the debug path display to show the `.json` file path (minimal change — just the extension will naturally change).
 
