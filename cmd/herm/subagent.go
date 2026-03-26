@@ -31,6 +31,17 @@ const defaultMaxAgentDepth = 1
 // or other paths could hang.
 const subAgentDoneTimeout = 5 * time.Minute
 
+// bgAgentState tracks a background sub-agent's lifecycle.
+type bgAgentState struct {
+	mu      sync.Mutex
+	task    string
+	model   string
+	done    bool
+	result  string
+	cancel  context.CancelFunc
+	started time.Time
+}
+
 // SubAgentTool spawns a sub-agent to handle complex subtasks autonomously.
 // Communication is output-only: the sub-agent returns a result string and
 // that is the sole information passed back to the caller.
@@ -50,7 +61,8 @@ type SubAgentTool struct {
 	parentEvents   chan<- AgentEvent // set after construction; forwards live events to TUI
 
 	mu         sync.Mutex
-	agentNodes map[string]string // agentID → last nodeID (for resume)
+	agentNodes map[string]string        // agentID → last nodeID (for resume)
+	bgAgents   map[string]*bgAgentState // background sub-agents
 }
 
 func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
@@ -74,6 +86,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		containerImage:   containerImage,
 		doneTimeout:      subAgentDoneTimeout,
 		agentNodes:       make(map[string]string),
+		bgAgents:         make(map[string]*bgAgentState),
 	}
 }
 
@@ -96,6 +109,10 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 				"agent_id": {
 					"type": "string",
 					"description": "Optional: ID of a previous sub-agent to resume. The sub-agent continues from where it left off with its full context preserved."
+				},
+				"background": {
+					"type": "boolean",
+					"description": "If true, the sub-agent runs in the background and returns immediately. You will be notified when it completes."
 				}
 			},
 			"required": ["task", "mode"]
@@ -110,16 +127,24 @@ func (t *SubAgentTool) RequiresApproval(_ json.RawMessage) bool {
 func (t *SubAgentTool) HostTool() bool { return false }
 
 type subAgentInput struct {
-	Task    string `json:"task"`
-	Mode    string `json:"mode"`
-	AgentID string `json:"agent_id,omitempty"`
+	Task       string `json:"task"`
+	Mode       string `json:"mode"`
+	AgentID    string `json:"agent_id,omitempty"`
+	Background bool   `json:"background,omitempty"`
 }
 
 // forward sends a sub-agent event to the parent's event channel if set.
+// The recover handles the case where the parent channel is closed (e.g.,
+// main agent finished while a background sub-agent is still running).
 func (t *SubAgentTool) forward(e AgentEvent) {
 	if t.parentEvents == nil {
 		return
 	}
+	defer func() {
+		if r := recover(); r != nil {
+			debugLog("sub-agent event dropped: parent channel closed (type=%d)", e.Type)
+		}
+	}()
 	select {
 	case t.parentEvents <- e:
 	default:
@@ -189,6 +214,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	}
 	if in.Mode != "explore" && in.Mode != "implement" {
 		return "", fmt.Errorf("mode must be \"explore\" or \"implement\", got %q", in.Mode)
+	}
+	if in.Background && in.AgentID != "" {
+		return "", fmt.Errorf("background mode cannot be used with agent_id (resume)")
+	}
+
+	if in.Background {
+		return t.executeBackground(ctx, in)
 	}
 
 	// Select model based on mode: explore uses the cheap model, implement uses the full model.
@@ -391,6 +423,206 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		agentErrors = append(agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
 	return t.buildResult(ctx, agentID, textParts, agentErrors, totalInputTokens, totalOutputTokens, turns), nil
+}
+
+// executeBackground sets up and launches a background sub-agent, returning immediately.
+func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (string, error) {
+	model := t.explorationModel
+	if in.Mode == "implement" {
+		model = t.mainModel
+	}
+
+	subTools := t.buildSubAgentTools(in.Mode)
+	snap := fetchProjectSnapshot(t.workDir)
+	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
+
+	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, model, 0)
+	agentID := agent.ID()
+
+	subTC := NewTraceCollector("")
+	subTC.SetMainAgentID(agentID)
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	state := &bgAgentState{
+		task:    in.Task,
+		model:   model,
+		cancel:  bgCancel,
+		started: time.Now(),
+	}
+
+	t.mu.Lock()
+	t.bgAgents[agentID] = state
+	t.mu.Unlock()
+
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task})
+
+	go t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
+
+	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes.", agentID, in.Task), nil
+}
+
+// runBackground runs a background sub-agent to completion, draining events
+// and storing the result in bgAgentState. The event drain mirrors Execute's
+// foreground logic but stores the result instead of returning it.
+func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID string, in subAgentInput, model string, subTC *TraceCollector, state *bgAgentState) {
+	defer state.cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		agent.Run(ctx, in.Task, "")
+	}()
+
+	var textParts []string
+	var totalInputTokens, totalOutputTokens int
+	var agentErrors []string
+	var currentTool string
+	turns := 0
+	responseCounted := false
+	usageSeen := false
+
+	doneCh := agent.DoneCh()
+	eventCh := agent.Events()
+
+drainLoop:
+	for {
+		select {
+		case event, ok := <-eventCh:
+			if !ok {
+				break drainLoop
+			}
+			switch event.Type {
+			case EventTextDelta:
+				if usageSeen {
+					subTC.FinalizeTurn(agentID)
+					usageSeen = false
+				}
+				textParts = append(textParts, event.Text)
+				subTC.AddTextDelta(agentID, event.Text)
+				t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: event.Text})
+			case EventToolCallStart:
+				if !responseCounted {
+					turns++
+					responseCounted = true
+				}
+				currentTool = event.ToolName
+				if turns > t.maxTurns {
+					agent.Cancel()
+				}
+				subTC.StartToolCall(agentID, event.ToolID, event.ToolName, event.ToolInput)
+				t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: agentID, Text: fmt.Sprintf("tool: %s", event.ToolName)})
+			case EventToolCallDone:
+				currentTool = ""
+			case EventToolResult:
+				subTC.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
+			case EventUsage:
+				responseCounted = false
+				if event.Usage != nil {
+					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
+					totalOutputTokens += event.Usage.OutputTokens
+				}
+				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+				usageSeen = true
+				t.forward(event)
+			case EventDone:
+				subTC.Finalize()
+				subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
+				t.forward(AgentEvent{
+					Type:     EventSubAgentStatus,
+					AgentID:  agentID,
+					Text:     "done",
+					SubTrace: subTrace,
+					Usage: &types.Usage{
+						InputTokens:  totalInputTokens,
+						OutputTokens: totalOutputTokens,
+					},
+					Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
+				})
+				if event.NodeID != "" {
+					t.saveNodeID(agentID, event.NodeID)
+				}
+				select {
+				case <-done:
+				case <-time.After(t.doneTimeout):
+					debugLog("bg sub-agent %s goroutine hung after EventDone, proceeding after %v timeout", agentID, t.doneTimeout)
+					agentErrors = append(agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", t.doneTimeout))
+				}
+				result := t.buildResult(ctx, agentID, textParts, agentErrors, totalInputTokens, totalOutputTokens, turns)
+				state.mu.Lock()
+				state.done = true
+				state.result = result
+				state.mu.Unlock()
+				return
+			case EventError:
+				if event.Error != nil && event.Error.Error() != "context canceled" {
+					errMsg := event.Error.Error()
+					if currentTool != "" {
+						errMsg = fmt.Sprintf("during tool %q (turn %d): %s", currentTool, turns, errMsg)
+					} else {
+						errMsg = fmt.Sprintf("turn %d: %s", turns, errMsg)
+					}
+					agentErrors = append(agentErrors, errMsg)
+				}
+			}
+		case <-doneCh:
+			for {
+				select {
+				case event, ok := <-eventCh:
+					if !ok {
+						break drainLoop
+					}
+					switch event.Type {
+					case EventDone:
+						if event.NodeID != "" {
+							t.saveNodeID(agentID, event.NodeID)
+						}
+					case EventUsage:
+						if event.Usage != nil {
+							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
+							totalOutputTokens += event.Usage.OutputTokens
+						}
+						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+						t.forward(event)
+					case EventTextDelta:
+						textParts = append(textParts, event.Text)
+						subTC.AddTextDelta(agentID, event.Text)
+					case EventToolCallStart:
+						subTC.StartToolCall(agentID, event.ToolID, event.ToolName, event.ToolInput)
+					case EventToolResult:
+						subTC.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
+					}
+				default:
+					break drainLoop
+				}
+			}
+		}
+	}
+
+	// Fallback: channel closed or doneCh fired without EventDone.
+	subTC.Finalize()
+	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
+	t.forward(AgentEvent{
+		Type:     EventSubAgentStatus,
+		AgentID:  agentID,
+		Text:     "done",
+		SubTrace: subTrace,
+		Usage: &types.Usage{
+			InputTokens:  totalInputTokens,
+			OutputTokens: totalOutputTokens,
+		},
+		Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
+	})
+	select {
+	case <-done:
+	case <-time.After(t.doneTimeout):
+		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
+		agentErrors = append(agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
+	}
+	result := t.buildResult(ctx, agentID, textParts, agentErrors, totalInputTokens, totalOutputTokens, turns)
+	state.mu.Lock()
+	state.done = true
+	state.result = result
+	state.mu.Unlock()
 }
 
 // buildResult constructs the final tool result from collected sub-agent state.

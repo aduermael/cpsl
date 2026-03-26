@@ -90,7 +90,7 @@ Currently sub-agents block the parent until completion. For long-running tasks (
 
 **CLI scheduling:** The CLI doesn't need a polling loop. The sub-agent's goroutine sends `EventSubAgentStatus{Text: "done", SubTrace: ...}` when finished (already implemented). The bridge in `agentui.go` receives this asynchronously. The change is in how this event is surfaced: instead of being part of a blocking tool result, it becomes an injected message in the conversation.
 
-- [ ] 5a: Add `background` parameter to agent tool schema and input parsing. When true, `Execute()` launches the sub-agent goroutine and returns immediately with the agent_id and a brief status message.
+- [x] 5a: Add `background` parameter to agent tool schema and input parsing. When true, `Execute()` launches the sub-agent goroutine and returns immediately with the agent_id and a brief status message.
 - [ ] 5b: Background sub-agent lifecycle — store running background agents in a map on `SubAgentTool` (agent_id → goroutine channel). The goroutine collects events as usual. When done, it stores the final result and signals completion.
 - [ ] 5c: Result surfacing — when a background sub-agent completes, forward the completion event to the parent's event channel. In `agentui.go`, handle this as an injected tool result that gets included in the next LLM call's context. Design the injection so it appears as a natural "background agent completed" message.
 - [ ] 5d: Status checking — when `agent(agent_id: "<id>", task: "status")` is called, return the current state: "running" with turns/tools so far, or "completed" with the full result. Reuse the existing resume infrastructure (`agentNodes` map).
