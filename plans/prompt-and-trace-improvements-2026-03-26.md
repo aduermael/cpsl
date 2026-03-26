@@ -26,8 +26,8 @@ The `traceUsageSeen` pattern in `agentui.go` triggers `FinalizeTurn` on `EventTo
 
 **Fix:** Remove the `traceUsageSeen` check from `EventToolCallStart`. Add it to `EventUsage` instead (if `traceUsageSeen` is already true when a new `EventUsage` arrives, finalize the previous turn). Keep the check on `EventTextDelta` (text from a new call arrives before its usage). This ensures tool calls attach to the same turn as their originating LLM call.
 
-- [ ] 1a: Move turn finalization trigger — in `handleAgentEvent`, remove the `traceUsageSeen` check from `EventToolCallStart` (lines ~371-374). Add a `traceUsageSeen` check to `EventUsage` (lines ~421-445): if true, finalize previous turn before setting new usage. Keep the existing check on `EventTextDelta` (lines ~341-343).
-- [ ] 1b: Update trace tests — verify a 2-LLM-call run (write_file then bash) produces exactly 2 `llm_response` events, not 3. First event should have `stop_reason: "tool_use"` with the tool call attached. Verify the phantom 0-tool "end_turn" event no longer appears.
+- [x] 1a: Move turn finalization trigger — in `handleAgentEvent`, remove the `traceUsageSeen` check from `EventToolCallStart` (lines ~371-374). Add a `traceUsageSeen` check to `EventUsage` (lines ~421-445): if true, finalize previous turn before setting new usage. Keep the existing check on `EventTextDelta` (lines ~341-343).
+- [x] 1b: Update trace tests — verify a 2-LLM-call run (write_file then bash) produces exactly 2 `llm_response` events, not 3. First event should have `stop_reason: "tool_use"` with the tool call attached. Verify the phantom 0-tool "end_turn" event no longer appears.
 
 ## Phase 2: Resolve "Act Freely" vs "Confirm Destructive" Contradiction
 

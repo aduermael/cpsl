@@ -1495,6 +1495,109 @@ func TestTraceCollector_SystemPromptHash_DifferentPrompts(t *testing.T) {
 	}
 }
 
+// ── 1b: Turn-attribution fix regression test ──
+
+// TestTraceCollector_TurnAttribution_NoPhantomEvent verifies that a 2-LLM-call
+// session (write_file then bash) produces exactly 2 llm_response events, not 3.
+// Before the fix, EventToolCallStart triggered FinalizeTurn when traceUsageSeen
+// was true, creating a phantom "end_turn" event with no tool calls — then a
+// second event with the tool call but no usage. The fix moves the turn boundary
+// trigger from EventToolCallStart to EventUsage, so tool calls from the same
+// LLM call stay in the same turn as their usage.
+func TestTraceCollector_TurnAttribution_NoPhantomEvent(t *testing.T) {
+	tc := NewTraceCollector("sess-phantom")
+	tc.SetMainAgentID("main")
+
+	tc.AddUserMessage("write a file then run it")
+
+	// ── LLM call 1 ──
+	// Event order as emitted by runLoop: TextDelta*, Usage, ToolCallStart*.
+	// The turn boundary does NOT happen at ToolCallStart — it belongs to this call.
+	tc.AddTextDelta("main", "I'll write the file.")
+	tc.SetUsage("main", "model", "n1", &TraceUsage{InputTokens: 1000, OutputTokens: 100}, 0.01)
+	// Tool call starts AFTER usage (this is the order that caused the bug).
+	tc.StartToolCall("main", "t1", "write_file", json.RawMessage(`{"path":"hello.py","content":"print('hi')"}`))
+	tc.EndToolCall("t1", "File written.", false, 50*time.Millisecond)
+
+	// ── Turn boundary ──
+	// In handleAgentEvent, this happens when the next call's TextDelta or Usage
+	// arrives and traceUsageSeen is true. Simulate by finalizing explicitly.
+	tc.FinalizeTurn("main")
+
+	// ── LLM call 2 ──
+	tc.AddTextDelta("main", "Now running it.")
+	tc.SetUsage("main", "model", "n2", &TraceUsage{InputTokens: 2000, OutputTokens: 150}, 0.02)
+	tc.StartToolCall("main", "t2", "bash", json.RawMessage(`{"command":"python hello.py"}`))
+	tc.EndToolCall("t2", "hi", false, 100*time.Millisecond)
+
+	tc.FinalizeTurn("main")
+	tc.Finalize()
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	// Should have exactly 3 events: 1 user_message + 2 llm_response (NOT 4 with phantom).
+	if len(trace.Events) != 3 {
+		t.Fatalf("events len = %d, want 3 (1 user_message + 2 llm_response)", len(trace.Events))
+	}
+
+	// Parse LLM response events.
+	var ev1, ev2 TraceLLMResponse
+	if err := json.Unmarshal(trace.Events[1], &ev1); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(trace.Events[2], &ev2); err != nil {
+		t.Fatal(err)
+	}
+
+	// LLM call 1: should have the write_file tool call AND usage on same event.
+	if ev1.StopReason != "tool_use" {
+		t.Errorf("ev1 stop_reason = %q, want tool_use", ev1.StopReason)
+	}
+	if len(ev1.ToolCalls) != 1 {
+		t.Fatalf("ev1 tool_calls len = %d, want 1", len(ev1.ToolCalls))
+	}
+	if ev1.ToolCalls[0].Name != "write_file" {
+		t.Errorf("ev1 tool_calls[0].name = %q, want write_file", ev1.ToolCalls[0].Name)
+	}
+	if ev1.Usage == nil || ev1.Usage.InputTokens != 1000 {
+		t.Errorf("ev1 usage = %+v, want InputTokens=1000", ev1.Usage)
+	}
+	if ev1.Content != "I'll write the file." {
+		t.Errorf("ev1 content = %q", ev1.Content)
+	}
+
+	// LLM call 2: should have the bash tool call.
+	if ev2.StopReason != "tool_use" {
+		t.Errorf("ev2 stop_reason = %q, want tool_use", ev2.StopReason)
+	}
+	if len(ev2.ToolCalls) != 1 {
+		t.Fatalf("ev2 tool_calls len = %d, want 1", len(ev2.ToolCalls))
+	}
+	if ev2.ToolCalls[0].Name != "bash" {
+		t.Errorf("ev2 tool_calls[0].name = %q, want bash", ev2.ToolCalls[0].Name)
+	}
+	if ev2.Usage == nil || ev2.Usage.InputTokens != 2000 {
+		t.Errorf("ev2 usage = %+v, want InputTokens=2000", ev2.Usage)
+	}
+
+	// No phantom event: verify no event has 0 tool calls with stop_reason "end_turn"
+	// when it should have been "tool_use".
+	for i, raw := range trace.Events {
+		var generic struct {
+			Type       string `json:"type"`
+			StopReason string `json:"stop_reason"`
+			ToolCalls  []any  `json:"tool_calls"`
+		}
+		json.Unmarshal(raw, &generic)
+		if generic.Type == "llm_response" && generic.StopReason == "end_turn" && len(generic.ToolCalls) == 0 {
+			// This would be the phantom event — it should NOT appear in this scenario.
+			t.Errorf("event[%d] is a phantom end_turn with no tool calls", i)
+		}
+	}
+}
+
 func TestTraceCollector_SystemPromptHash_EmptyWithoutPrompt(t *testing.T) {
 	tc := NewTraceCollector("sess-no-prompt")
 

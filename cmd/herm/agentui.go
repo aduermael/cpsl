@@ -368,10 +368,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.streamingText = ""
 		}
 		if a.traceCollector != nil {
-			if a.traceUsageSeen {
-				a.traceCollector.FinalizeTurn(event.AgentID)
-				a.traceUsageSeen = false
-			}
 			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
 		}
 		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true})
@@ -419,6 +415,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		a.render()
 
 	case EventUsage:
+		if a.traceCollector != nil && a.traceUsageSeen {
+			a.traceCollector.FinalizeTurn(event.AgentID)
+			a.traceUsageSeen = false
+		}
 		if event.Usage != nil {
 			cost := computeCost(a.models, event.Model, *event.Usage)
 			a.sessionCostUSD += cost
