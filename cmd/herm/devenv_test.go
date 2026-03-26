@@ -39,6 +39,9 @@ func TestDevEnvTool_ReadNoDockerfile(t *testing.T) {
 	if !strings.Contains(result, "No .herm/Dockerfile exists yet") {
 		t.Errorf("expected 'no Dockerfile' message, got: %s", result)
 	}
+	if !strings.Contains(result, "## Dockerfile guidelines") {
+		t.Error("read output should include Dockerfile guidelines even when no Dockerfile exists")
+	}
 }
 
 func TestDevEnvTool_ReadExistingDockerfile(t *testing.T) {
@@ -58,6 +61,9 @@ func TestDevEnvTool_ReadExistingDockerfile(t *testing.T) {
 	}
 	if !strings.Contains(result, content) {
 		t.Errorf("got %q, want it to contain %q", result, content)
+	}
+	if !strings.Contains(result, "## Dockerfile guidelines") {
+		t.Error("read output should include Dockerfile guidelines")
 	}
 }
 
