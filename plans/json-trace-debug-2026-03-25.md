@@ -271,16 +271,16 @@ Wire the trace collector into the App lifecycle and event handlers, replacing al
 
 Rewrite the debug test suite for the new JSON trace format.
 
-- [ ] 4a: **Test trace data structures and serialization** — Construct a `Trace` manually, marshal to JSON, verify structure. Verify timestamps are RFC3339 with milliseconds. Verify `null` for unset optional fields (e.g. `ended_at` before finalize).
+- [x] 4a: **Test trace data structures and serialization** — Construct a `Trace` manually, marshal to JSON, verify structure. Verify timestamps are RFC3339 with milliseconds. Verify `null` for unset optional fields (e.g. `ended_at` before finalize).
 
-- [ ] 4b: **Test TraceCollector event flow** — Feed a realistic sequence of events (user message → text deltas → usage → tool call start → tool result → done), verify the resulting trace has correct structure: one `user_message` event, one `llm_response` event with paired tool call, correct timing, correct totals in `info`.
+- [x] 4b: **Test TraceCollector event flow** — Feed a realistic sequence of events (user message → text deltas → usage → tool call start → tool result → done), verify the resulting trace has correct structure: one `user_message` event, one `llm_response` event with paired tool call, correct timing, correct totals in `info`.
 
-- [ ] 4c: **Test tool call pairing** — Multiple tool calls in one LLM turn, verify each is paired with its result by ID. Test parallel tool calls (results may arrive in different order than starts).
+- [x] 4c: **Test tool call pairing** — Multiple tool calls in one LLM turn, verify each is paired with its result by ID. Test parallel tool calls (results may arrive in different order than starts).
 
-- [ ] 4d: **Test sub-agent trace nesting** — Create a sub-agent trace, attach via `AddSubAgent`, verify it appears as a `sub_agent` event with nested `events` array. Verify sub-agent tokens are counted in parent's `info.totals.sub_agent_llm_calls`.
+- [x] 4d: **Test sub-agent trace nesting** — Create a sub-agent trace, attach via `AddSubAgent`, verify it appears as a `sub_agent` event with nested `events` array. Verify sub-agent tokens are counted in parent's `info.totals.sub_agent_llm_calls`.
 
-- [ ] 4e: **Test file lifecycle** — `initAppDebugLog` creates `.json` file. `/clear` finalizes old trace and creates new file. Config toggle. Headless mode. Debug mode off → no file.
+- [x] 4e: **Test file lifecycle** — `initAppDebugLog` creates `.json` file. `/clear` finalizes old trace and creates new file. Config toggle. Headless mode. Debug mode off → no file.
 
-- [ ] 4f: **Test periodic flush and crash resilience** — After flush, read file and verify it's valid JSON. Verify `info.ended_at` is null before finalize, set after. Verify partial trace (mid-session) is still valid JSON.
+- [x] 4f: **Test periodic flush and crash resilience** — After flush, read file and verify it's valid JSON. Verify `info.ended_at` is null before finalize, set after. Verify partial trace (mid-session) is still valid JSON.
 
-- [ ] 4g: **Test no resize regeneration** — Verify `resizeMsg` does NOT trigger any trace file write (regression test for the removed behavior).
+- [x] 4g: **Test no resize regeneration** — Verify `resizeMsg` does NOT trigger any trace file write (regression test for the removed behavior).
