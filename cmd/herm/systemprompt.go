@@ -41,7 +41,7 @@ type PromptData struct {
 // buildSystemPrompt constructs the system prompt for the coding agent.
 // Tool-specific guidelines are included only when the corresponding tool is available.
 // serverTools are provider-side tools (e.g. web search) declared but not executed by the client.
-// Structured into: Role, Tools, Practices, Communication, Skills, Environment.
+// Structured into: Environment, Role, Tools, Practices, Communication, Personality, Skills.
 func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string, containerImage string, worktreeBranch string, snap *projectSnapshot) string {
 	toolNames := make(map[string]bool)
 	var hostTools []string

@@ -46,7 +46,7 @@ The current prompt has environment buried at the bottom, redundancy between task
 
 **Design:** Reorder sections so the agent has grounding context first. Deduplicate the task flow and practices. Add a priority stack. Improve personality to behavioral language. Add missing guidance for secrets, destructive actions, and failure recovery.
 
-- [ ] 2a: Reorder `system.md` template chain to: environment → role → tools → practices → communication → personality → skills. The agent needs to know where it is before reading how to behave.
+- [x] 2a: Reorder `system.md` template chain to: environment → role → tools → practices → communication → personality → skills. The agent needs to know where it is before reading how to behave.
 - [ ] 2b: Deduplicate `practices.md` — remove items already covered by the task flow in `role.md`: "break complex tasks into steps" (= step 3), "verify your work" (= step 5). Keep items that add genuinely new constraints: "read before writing", "don't refactor unrelated code", "API errors retried automatically".
 - [ ] 2c: Revise the 5-step task flow in `role.md` — fold environment setup into step 1 as a conditional ("if tools are missing, use devenv first"). Add failure recovery to verify step ("if verification fails after two attempts, explain and ask"). Add preamble: "For simple questions or small edits, act directly."
 - [ ] 2d: Add a priority stack to `role.md` or `practices.md` — when instructions conflict: (1) Don't break things — verify before and after changes, (2) Do what was asked, nothing more, (3) Keep changes minimal, (4) Keep communication brief.
