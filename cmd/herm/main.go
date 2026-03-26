@@ -923,7 +923,7 @@ func (a *App) handleResult(result any) {
 		wtPath := msg.worktreePath
 		go func() { a.resultCh <- fetchStatusCmd(wtPath) }()
 		go func() { a.resultCh <- fetchProjectSnapshot(wtPath) }()
-		go func() { bootContainerCmd(wtPath, a.sessionID, a.resultCh) }()
+		go func() { bootContainerCmd(wtPath, a.sessionID, a.resultCh, a.stopCh) }()
 		go cleanupTmpDir(wtPath)
 		go cleanupAgentOutputDir(wtPath)
 		// Start periodic commit info refresh (only if git is available)
@@ -959,7 +959,9 @@ func (a *App) handleResult(result any) {
 
 	case containerErrMsg:
 		a.containerErr = msg.err
-		a.messages = append(a.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		if !msg.retrying {
+			a.messages = append(a.messages, chatMessage{kind: msgError, content: msg.err.Error()})
+		}
 
 	case worktreeListMsg:
 		if msg.err != nil {
