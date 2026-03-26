@@ -58,7 +58,7 @@ The current prompt has environment buried at the bottom, redundancy between task
 Several tool descriptions have factual errors, unclear guidance, or are heavier than needed.
 
 - [x] 3a: Fix `read_file` schema — change limit description from "default: 2000" to "default: 500" to match `readFileDefaultLimit` in `filetools.go`.
-- [ ] 3b: Refine bash tool guidance — replace blanket "Do NOT use bash for file operations" with: "Prefer dedicated tools for reading, searching, and editing files. Use bash for commands without a dedicated tool equivalent (mkdir, mv, cp, chmod, running builds and tests)."
+- [x] 3b: Refine bash tool guidance — replace blanket "Do NOT use bash for file operations" with: "Prefer dedicated tools for reading, searching, and editing files. Use bash for commands without a dedicated tool equivalent (mkdir, mv, cp, chmod, running builds and tests)."
 - [ ] 3c: Strengthen `edit_file` description — move "Always read_file before editing" to the first sentence. Currently buried at the end.
 - [ ] 3d: Improve `agent.md` description — rename display to "sub-agent" in the brief description (e.g., "Spawn a sub-agent with its own context window"). Add note about parallel edit risk: "When spawning multiple implement-mode sub-agents, ensure they work on separate files — parallel edits to the same file will conflict. Partition work by file or directory."
 - [ ] 3e: Enforce bash timeout cap — the description says "max: 600" but code doesn't enforce it. Add `if in.Timeout > 600 { in.Timeout = 600 }` in BashTool.Execute.
