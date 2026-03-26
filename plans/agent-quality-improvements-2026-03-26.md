@@ -51,7 +51,7 @@ The current prompt has environment buried at the bottom, redundancy between task
 - [x] 2c: Revise the 5-step task flow in `role.md` — fold environment setup into step 1 as a conditional ("if tools are missing, use devenv first"). Add failure recovery to verify step ("if verification fails after two attempts, explain and ask"). Add preamble: "For simple questions or small edits, act directly."
 - [x] 2d: Add a priority stack to `role.md` or `practices.md` — when instructions conflict: (1) Don't break things — verify before and after changes, (2) Do what was asked, nothing more, (3) Keep changes minimal, (4) Keep communication brief.
 - [x] 2e: Improve `personality.md` template — the personality is user-configured and injected verbatim (e.g., "Concise, a bit grumpy yet very helpful"). The model may interpret creative words too literally. Frame it as a user preference: "The user has requested the following personality/tone: {{.Personality}}. Interpret this as communication style guidance — be helpful and accurate first, personality second." This keeps the user's words intact but adds guardrails.
-- [ ] 2f: Add missing guidance — secrets handling ("never echo, log, or commit secrets; use them in-place"), destructive action safety valve ("if a requested action is destructive and irreversible, confirm with the user"), large file handling ("for large files, read only the relevant section").
+- [x] 2f: Add missing guidance — secrets handling ("never echo, log, or commit secrets; use them in-place"), destructive action safety valve ("if a requested action is destructive and irreversible, confirm with the user"), large file handling ("for large files, read only the relevant section").
 
 ## Phase 3: Tool Description Polish
 
