@@ -3,10 +3,12 @@
 package main
 
 import (
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 const configDir = ".herm"
@@ -256,8 +258,11 @@ func mergeConfigs(global Config, project ProjectConfig) Config {
 	return merged
 }
 
-const hermImageTag = "0.3"
-const defaultContainerImage = "aduermael/herm:" + hermImageTag
+//go:embed container_version
+var rawHermImageTag string
+
+var hermImageTag = strings.TrimSpace(rawHermImageTag)
+var defaultContainerImage = "aduermael/herm:" + hermImageTag
 
 func defaultConfig() Config {
 	return Config{
