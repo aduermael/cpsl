@@ -222,6 +222,10 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, model, 0)
 	agentID := agent.ID()
 
+	// Create a local trace collector for this sub-agent's events.
+	subTC := NewTraceCollector("", nil)
+	subTC.SetMainAgentID(agentID)
+
 	// Notify the TUI that a sub-agent is starting, with its task label.
 	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task})
 
@@ -243,6 +247,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	turns := 0
 	responseCounted := false // tracks whether the current LLM response has been counted as a turn
+	usageSeen := false       // tracks whether usage was received for current turn (for trace turn boundaries)
 	doneCh := agent.DoneCh()
 	eventCh := agent.Events()
 	drainLoop:
@@ -255,7 +260,12 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 			}
 			switch event.Type {
 			case EventTextDelta:
+				if usageSeen {
+					subTC.FinalizeTurn(agentID)
+					usageSeen = false
+				}
 				textParts = append(textParts, event.Text)
+				subTC.AddTextDelta(agentID, event.Text)
 				t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: event.Text})
 			case EventToolCallStart:
 				if !responseCounted {
@@ -277,13 +287,18 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 					totalOutputTokens += event.Usage.OutputTokens
 				}
+				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+				usageSeen = true
 				// Forward usage events so sub-agent costs are tracked.
 				t.forward(event)
 			case EventDone:
+				subTC.Finalize()
+				subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
 				t.forward(AgentEvent{
-					Type:    EventSubAgentStatus,
-					AgentID: agentID,
-					Text:    "done",
+					Type:     EventSubAgentStatus,
+					AgentID:  agentID,
+					Text:     "done",
+					SubTrace: subTrace,
 					Usage: &types.Usage{
 						InputTokens:  totalInputTokens,
 						OutputTokens: totalOutputTokens,
@@ -333,9 +348,11 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 							totalOutputTokens += event.Usage.OutputTokens
 						}
+						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
 						t.forward(event)
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)
+						subTC.AddTextDelta(agentID, event.Text)
 					}
 				default:
 					break drainLoop
@@ -346,10 +363,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	// Channel closed or doneCh fired without EventDone in the events channel.
 	// Handle gracefully.
+	subTC.Finalize()
+	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
 	t.forward(AgentEvent{
-		Type:    EventSubAgentStatus,
-		AgentID: agentID,
-		Text:    "done",
+		Type:     EventSubAgentStatus,
+		AgentID:  agentID,
+		Text:     "done",
+		SubTrace: subTrace,
 		Usage: &types.Usage{
 			InputTokens:  totalInputTokens,
 			OutputTokens: totalOutputTokens,

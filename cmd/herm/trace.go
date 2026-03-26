@@ -12,6 +12,8 @@ import (
 	"runtime"
 	"sync"
 	"time"
+
+	"langdag.com/langdag/types"
 )
 
 // ── JSON trace schema structs ──
@@ -551,6 +553,60 @@ func (tc *TraceCollector) buildTraceLocked() *Trace {
 		Tools:        tc.tools,
 		Events:       events,
 	}
+}
+
+// traceUsageFromTypes converts a langdag types.Usage to a TraceUsage.
+func traceUsageFromTypes(u *types.Usage) *TraceUsage {
+	if u == nil {
+		return nil
+	}
+	return &TraceUsage{
+		InputTokens:       u.InputTokens,
+		OutputTokens:      u.OutputTokens,
+		CacheReadTokens:   u.CacheReadInputTokens,
+		CacheCreateTokens: u.CacheCreationInputTokens,
+		ReasoningTokens:   u.ReasoningTokens,
+	}
+}
+
+// BuildSubAgentEvent constructs a TraceSubAgent from the collector's accumulated state.
+// Call Finalize() before calling this to ensure timing and in-progress turns are captured.
+func (tc *TraceCollector) BuildSubAgentEvent(agentID, task, model string, turns, maxTurns int) *TraceSubAgent {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+
+	ev := &TraceSubAgent{
+		Type:     "sub_agent",
+		AgentID:  agentID,
+		Task:     task,
+		Model:    model,
+		Turns:    turns,
+		MaxTurns: maxTurns,
+	}
+
+	// Copy events.
+	ev.Events = make([]json.RawMessage, len(tc.events))
+	copy(ev.Events, tc.events)
+
+	// Copy timing from info.
+	ev.StartedAt = tc.info.StartedAt
+	ev.EndedAt = tc.info.EndedAt
+	if tc.info.DurationMS != nil {
+		d := *tc.info.DurationMS
+		ev.DurationMS = &d
+	}
+
+	// Aggregate usage from totals.
+	ev.Usage = &TraceUsage{
+		InputTokens:       tc.info.Totals.InputTokens,
+		OutputTokens:      tc.info.Totals.OutputTokens,
+		CacheReadTokens:   tc.info.Totals.CacheReadTokens,
+		CacheCreateTokens: tc.info.Totals.CacheCreateTokens,
+		ReasoningTokens:   tc.info.Totals.ReasoningTokens,
+	}
+	ev.CostUSD = tc.info.Totals.CostUSD
+
+	return ev
 }
 
 // writeTraceFile atomically writes a Trace to a JSON file.
