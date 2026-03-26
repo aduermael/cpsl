@@ -336,6 +336,11 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 	debugLog("event=%d text=%q tool=%s err=%v", event.Type, event.Text, event.ToolName, event.Error)
 
 	switch event.Type {
+	case EventLLMStart:
+		if a.traceCollector != nil {
+			a.traceCollector.StartLLMResponse(event.AgentID)
+		}
+
 	case EventTextDelta:
 		if a.traceCollector != nil {
 			if a.traceUsageSeen {
@@ -435,7 +440,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			}
 			if a.traceCollector != nil {
 				a.traceCollector.SetUsage(event.AgentID, event.Model, event.NodeID,
-					traceUsageFromTypes(event.Usage), cost)
+					traceUsageFromTypes(event.Usage), cost, event.StopReason)
 				a.traceCollector.FlushToFile(a.traceFilePath)
 			}
 			if a.agent != nil && event.AgentID == a.agent.ID() {

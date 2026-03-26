@@ -124,6 +124,7 @@ const (
 	EventSubAgentDelta                         // sub-agent streaming text
 	EventSubAgentStatus                        // sub-agent status (tool calls, completion)
 	EventSubAgentStart                         // sub-agent started (carries task label)
+	EventLLMStart                              // LLM API call starting (for trace timing)
 	EventRetry                                 // API call being retried
 	EventStreamClear                           // TUI should discard in-progress streaming text (before stream retry)
 )
@@ -152,14 +153,15 @@ type AgentEvent struct {
 	Error error
 
 	// EventUsage
-	Usage *types.Usage
-	Model string
+	Usage      *types.Usage
+	Model      string
+	StopReason string // API stop_reason (e.g. "end_turn", "tool_use")
 
 	// EventToolCallDone / EventToolResult
 	Duration time.Duration
 
-	// EventDone
-	NodeID string // final assistant node ID
+	// EventUsage / EventDone
+	NodeID string // assistant node ID
 
 	// EventSubAgentStart
 	Task string // sub-agent task description
@@ -387,7 +389,7 @@ func (a *Agent) emit(e AgentEvent) {
 // emitUsage fetches the node by ID, emits an EventUsage with token counts,
 // accumulates session stats, and returns the input token count (for context
 // management decisions).
-func (a *Agent) emitUsage(ctx context.Context, nodeID string) int {
+func (a *Agent) emitUsage(ctx context.Context, nodeID, stopReason string) int {
 	if nodeID == "" {
 		return 0
 	}
@@ -396,8 +398,10 @@ func (a *Agent) emitUsage(ctx context.Context, nodeID string) int {
 		return 0
 	}
 	a.emit(AgentEvent{
-		Type:  EventUsage,
-		Model: node.Model,
+		Type:       EventUsage,
+		Model:      node.Model,
+		NodeID:     nodeID,
+		StopReason: stopReason,
 		Usage: &types.Usage{
 			InputTokens:              node.TokensIn,
 			OutputTokens:             node.TokensOut,
@@ -658,21 +662,21 @@ const maxStreamRetries = 1
 // partial text) and EventRetry, then re-calls the prompt. Returns the tool
 // calls, assistant node ID, and any error. A nil error with a non-empty nodeID
 // means the stream completed successfully.
-func (a *Agent) retryableStream(ctx context.Context, cfg retryConfig, promptFn func() (*langdag.PromptResult, error)) ([]types.ContentBlock, string, error) {
+func (a *Agent) retryableStream(ctx context.Context, cfg retryConfig, promptFn func() (*langdag.PromptResult, error)) ([]types.ContentBlock, string, string, error) {
 	for streamAttempt := 0; streamAttempt <= maxStreamRetries; streamAttempt++ {
 		result, err := a.retryablePrompt(ctx, cfg, promptFn)
 		if err != nil {
-			return nil, "", err
+			return nil, "", "", err
 		}
 
-		toolCalls, nodeID, streamOK := a.drainStream(ctx, result)
+		toolCalls, nodeID, stopReason, streamOK := a.drainStream(ctx, result)
 		if streamOK {
-			return toolCalls, nodeID, nil
+			return toolCalls, nodeID, stopReason, nil
 		}
 
 		// Stream failed. Don't retry if the context was canceled.
 		if ctx.Err() != nil {
-			return nil, "", ctx.Err()
+			return nil, "", "", ctx.Err()
 		}
 
 		if streamAttempt < maxStreamRetries {
@@ -686,7 +690,7 @@ func (a *Agent) retryableStream(ctx context.Context, cfg retryConfig, promptFn f
 			continue
 		}
 	}
-	return nil, "", fmt.Errorf("stream interrupted: closed without completion")
+	return nil, "", "", fmt.Errorf("stream interrupted: closed without completion")
 }
 
 // drainStream reads all chunks from a prompt result's stream, emitting text
@@ -699,7 +703,7 @@ func (a *Agent) retryableStream(ctx context.Context, cfg retryConfig, promptFn f
 //
 // The NodeID is extracted from the Done chunk rather than from result.NodeID
 // to avoid a race with the background goroutine that sets result.NodeID.
-func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) ([]types.ContentBlock, string, bool) {
+func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) ([]types.ContentBlock, string, string, bool) {
 	timeout := a.streamChunkTimeout
 	if timeout <= 0 {
 		timeout = defaultStreamChunkTimeout
@@ -711,7 +715,7 @@ func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) (
 	for {
 		select {
 		case <-ctx.Done():
-			return nil, "", false
+			return nil, "", "", false
 		case <-timer.C:
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("stream stalled: no chunk received for %s", timeout)})
 			// Drain any remaining buffered chunks (non-blocking).
@@ -719,15 +723,15 @@ func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) (
 				select {
 				case _, ok := <-result.Stream:
 					if !ok {
-						return nil, "", false
+						return nil, "", "", false
 					}
 				default:
-					return nil, "", false
+					return nil, "", "", false
 				}
 			}
 		case chunk, ok := <-result.Stream:
 			if !ok {
-				return toolCalls, "", false // channel closed without Done
+				return toolCalls, "", "", false // channel closed without Done
 			}
 			// Reset the inactivity timer on every chunk.
 			if !timer.Stop() {
@@ -740,10 +744,10 @@ func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) (
 
 			if chunk.Error != nil {
 				a.emit(AgentEvent{Type: EventError, Error: chunk.Error})
-				return nil, "", false
+				return nil, "", "", false
 			}
 			if chunk.Done {
-				return toolCalls, chunk.NodeID, true
+				return toolCalls, chunk.NodeID, chunk.StopReason, true
 			}
 			if chunk.Content != "" {
 				a.emit(AgentEvent{Type: EventTextDelta, Text: chunk.Content})
@@ -760,7 +764,8 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	opts := a.buildPromptOpts()
 
 	// Initial LLM call with connection-level and stream-level retry.
-	toolCalls, nodeID, err := a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+	a.emit(AgentEvent{Type: EventLLMStart})
+	toolCalls, nodeID, stopReason, err := a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
 		if parentNodeID == "" {
 			return a.client.Prompt(ctx, userMessage, opts...)
 		}
@@ -776,7 +781,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		a.emit(AgentEvent{Type: EventDone})
 		return
 	}
-	a.emitUsage(ctx, nodeID)
+	a.emitUsage(ctx, nodeID, stopReason)
 
 	// Tool loop
 	maxIter := a.maxToolIterations
@@ -992,7 +997,8 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			break
 		}
 		toolResultStr := string(toolResultJSON)
-		toolCalls, nodeID, err = a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+		a.emit(AgentEvent{Type: EventLLMStart})
+		toolCalls, nodeID, stopReason, err = a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
 			return a.client.PromptFrom(ctx, nodeID, toolResultStr, opts...)
 		})
 		if err != nil {
@@ -1003,7 +1009,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		if nodeID == "" {
 			break
 		}
-		inputTokens := a.emitUsage(ctx, nodeID)
+		inputTokens := a.emitUsage(ctx, nodeID, stopReason)
 		a.clearOldToolResults(ctx, nodeID, inputTokens)
 		nodeID = a.maybeCompact(ctx, nodeID, inputTokens)
 	}

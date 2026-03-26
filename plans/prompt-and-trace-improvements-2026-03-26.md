@@ -72,9 +72,9 @@ The grep tool has no `-i` flag. Case-insensitive search is common (searching for
 
 `finalizeTurnLocked` infers `stop_reason` from whether tool calls are attached. This is fragile — it produced a wrong "end_turn" in the phantom event bug. The actual stop_reason from the API stream should be used. Also, `StartedAt` on a turn is set when `ensureTurn` creates the turn object, not when the API call actually starts.
 
-- [ ] 7a: Capture stop_reason from API stream — in `drainStream`, the `chunk.Done` branch (line ~746) returns but discards any stop_reason from the API. Check if `langdag.PromptResult` or the Done chunk carries the stop_reason. If so, return it from `drainStream` and propagate through `EventUsage` or a new event field. If the langdag client doesn't expose it, add a `StopReason` field to the chunk/result type.
-- [ ] 7b: Propagate stop_reason to trace — add a `StopReason` field to `AgentEvent` (or to `EventUsage`). In `SetUsage` on the trace collector, store the real stop_reason on the turn. Remove the inference logic in `finalizeTurnLocked` (lines ~514-520) and use the API-provided value.
-- [ ] 7c: Fix turn timing — emit a `StartLLMResponse` call from `runLoop` at the beginning of each `retryableStream` invocation (before the stream starts). This sets the turn's `StartedAt` to the actual API call start time, not whenever the first event happens to create the turn.
+- [x] 7a: Capture stop_reason from API stream — in `drainStream`, the `chunk.Done` branch (line ~746) returns but discards any stop_reason from the API. Check if `langdag.PromptResult` or the Done chunk carries the stop_reason. If so, return it from `drainStream` and propagate through `EventUsage` or a new event field. If the langdag client doesn't expose it, add a `StopReason` field to the chunk/result type.
+- [x] 7b: Propagate stop_reason to trace — add a `StopReason` field to `AgentEvent` (or to `EventUsage`). In `SetUsage` on the trace collector, store the real stop_reason on the turn. Remove the inference logic in `finalizeTurnLocked` (lines ~514-520) and use the API-provided value.
+- [x] 7c: Fix turn timing — emit a `StartLLMResponse` call from `runLoop` at the beginning of each `retryableStream` invocation (before the stream starts). This sets the turn's `StartedAt` to the actual API call start time, not whenever the first event happens to create the turn.
 
 ## Phase 8: Trim Project Context
 

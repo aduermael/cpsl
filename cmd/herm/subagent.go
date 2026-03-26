@@ -356,7 +356,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 					totalOutputTokens += event.Usage.OutputTokens
 				}
-				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true
 				// Forward usage events so sub-agent costs are tracked.
 				t.forward(event)
@@ -417,7 +417,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 							totalOutputTokens += event.Usage.OutputTokens
 						}
-						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 						t.forward(event)
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)
@@ -555,7 +555,7 @@ drainLoop:
 					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 					totalOutputTokens += event.Usage.OutputTokens
 				}
-				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true
 				t.forward(event)
 			case EventDone:
@@ -618,7 +618,7 @@ drainLoop:
 							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 							totalOutputTokens += event.Usage.OutputTokens
 						}
-						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0)
+						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 						t.forward(event)
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)

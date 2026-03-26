@@ -285,7 +285,7 @@ func (tc *TraceCollector) AddTextDelta(agentID, text string) {
 
 // SetUsage finalizes the current LLM response with usage metadata.
 // This also updates the info totals.
-func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUsage, costUSD float64) {
+func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUsage, costUSD float64, stopReason string) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	turn := tc.ensureTurn(agentID)
@@ -293,6 +293,7 @@ func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUs
 	turn.NodeID = nodeID
 	turn.Usage = usage
 	turn.CostUSD = costUSD
+	turn.StopReason = stopReason
 
 	if tc.info.Model == "" {
 		tc.info.Model = model
@@ -510,13 +511,6 @@ func (tc *TraceCollector) finalizeTurnLocked(agentID string) {
 	turn, ok := tc.currentTurn[agentID]
 	if !ok {
 		return
-	}
-	// Set stop_reason based on final tool_calls state (deferred from SetUsage
-	// so that tool results attached via EndToolCall are included).
-	if len(turn.ToolCalls) > 0 {
-		turn.StopReason = "tool_use"
-	} else if turn.Usage != nil {
-		turn.StopReason = "end_turn"
 	}
 	now := time.Now()
 	turn.EndedAt = &now

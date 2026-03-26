@@ -857,7 +857,7 @@ func TestEmitUsageReturnsInputTokens(t *testing.T) {
 	})
 
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
-	inputTokens := agent.emitUsage(context.Background(), "node-1")
+	inputTokens := agent.emitUsage(context.Background(), "node-1", "end_turn")
 
 	// Input tokens = TokensIn + TokensCacheRead = 5000 + 1000 = 6000.
 	if inputTokens != 6000 {
@@ -897,7 +897,7 @@ func TestEmitUsageEmptyNodeID(t *testing.T) {
 	client := newTestClient("ok")
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
 
-	inputTokens := agent.emitUsage(context.Background(), "")
+	inputTokens := agent.emitUsage(context.Background(), "", "")
 	if inputTokens != 0 {
 		t.Errorf("inputTokens = %d, want 0 for empty nodeID", inputTokens)
 	}
@@ -910,7 +910,7 @@ func TestEmitUsageMissingNode(t *testing.T) {
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
 
 	// Node doesn't exist in storage.
-	inputTokens := agent.emitUsage(context.Background(), "nonexistent")
+	inputTokens := agent.emitUsage(context.Background(), "nonexistent", "")
 	if inputTokens != 0 {
 		t.Errorf("inputTokens = %d, want 0 for missing node", inputTokens)
 	}
@@ -1231,10 +1231,10 @@ func TestSessionStatsAccumulateFromEmitUsage(t *testing.T) {
 	})
 
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
-	agent.emitUsage(context.Background(), "node-1")
+	agent.emitUsage(context.Background(), "node-1", "tool_use")
 	// Drain the event.
 	<-agent.Events()
-	agent.emitUsage(context.Background(), "node-2")
+	agent.emitUsage(context.Background(), "node-2", "end_turn")
 	<-agent.Events()
 
 	// Input: (5000+1000) + (3000+500) = 9500
@@ -1917,7 +1917,7 @@ func TestDrainStreamTimeout(t *testing.T) {
 	result := &langdag.PromptResult{Stream: stream}
 	ctx := context.Background()
 
-	toolCalls, nodeID, streamOK := agent.drainStream(ctx, result)
+	toolCalls, nodeID, _, streamOK := agent.drainStream(ctx, result)
 	if streamOK {
 		t.Error("drainStream should return streamOK=false on timeout")
 	}
@@ -1964,7 +1964,7 @@ func TestDrainStreamSlowButSteady(t *testing.T) {
 	result := &langdag.PromptResult{Stream: stream}
 	ctx := context.Background()
 
-	_, nodeID, streamOK := agent.drainStream(ctx, result)
+	_, nodeID, _, streamOK := agent.drainStream(ctx, result)
 	if !streamOK {
 		t.Error("drainStream should return streamOK=true for slow-but-steady stream")
 	}
@@ -1988,7 +1988,7 @@ func TestDrainStreamContextCancellation(t *testing.T) {
 	}()
 
 	start := time.Now()
-	_, _, streamOK := agent.drainStream(ctx, result)
+	_, _, _, streamOK := agent.drainStream(ctx, result)
 	elapsed := time.Since(start)
 
 	if streamOK {
@@ -2012,7 +2012,7 @@ func TestDrainStreamErrorChunk(t *testing.T) {
 	result := &langdag.PromptResult{Stream: stream}
 	ctx := context.Background()
 
-	_, _, streamOK := agent.drainStream(ctx, result)
+	_, _, _, streamOK := agent.drainStream(ctx, result)
 	if streamOK {
 		t.Error("drainStream should return streamOK=false on error chunk")
 	}
@@ -2308,7 +2308,7 @@ func TestStreamRetryNoRetryOnContextCancel(t *testing.T) {
 		return &langdag.PromptResult{Stream: stream}, nil
 	}
 
-	_, _, err := agent.retryableStream(ctx, retryConfig{maxAttempts: 1, baseDelay: time.Millisecond}, promptFn)
+	_, _, _, err := agent.retryableStream(ctx, retryConfig{maxAttempts: 1, baseDelay: time.Millisecond}, promptFn)
 	if err == nil {
 		t.Error("expected error from retryableStream")
 	}
