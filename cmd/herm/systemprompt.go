@@ -102,7 +102,7 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 // the base image manifest. Returns each line prefixed by "- " for bullet
 // rendering in the environment template.
 func readContainerEnv(workDir string) string {
-	raw := baseManifest // default to base image description
+	raw := strings.TrimSpace(prompts.BaseEnvironment) // default to base image description
 	if data, err := os.ReadFile(filepath.Join(workDir, ".herm", manifestFile)); err == nil {
 		if trimmed := strings.TrimSpace(string(data)); trimmed != "" {
 			raw = trimmed

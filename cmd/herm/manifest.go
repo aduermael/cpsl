@@ -3,7 +3,7 @@
 // knows available runtimes and tools without running discovery commands.
 //
 // Two modes:
-//   - Base image (no .herm/Dockerfile): use the pre-defined baseManifest.
+//   - Base image (no .herm/Dockerfile): use prompts.BaseEnvironment.
 //   - Custom image (after devenv build): parse the Dockerfile to describe
 //     what was added on top of the base image.
 package main
@@ -13,15 +13,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+
+	"herm/prompts"
 )
 
 const manifestFile = "environment.md"
-
-// baseManifest describes the unextended herm base image (aduermael/herm).
-// Used when no .herm/Dockerfile exists. Keep in sync with the project Dockerfile.
-const baseManifest = `Pre-installed: git, ripgrep (rg), tree, python3
-Herm tools: edit-file, write-file, outline
-Base: debian bookworm-slim`
 
 // manifestPath returns the path to .herm/environment.md.
 func (t *DevEnvTool) manifestPath() string {
@@ -39,7 +35,7 @@ func (t *DevEnvTool) generateManifest() error {
 	dockerfile, err := os.ReadFile(t.dockerfilePath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return os.WriteFile(t.manifestPath(), []byte(baseManifest+"\n"), 0o644)
+			return os.WriteFile(t.manifestPath(), []byte(strings.TrimSpace(prompts.BaseEnvironment)+"\n"), 0o644)
 		}
 		return err
 	}
@@ -68,7 +64,7 @@ func (t *DevEnvTool) manifestStale() bool {
 // description. Extracts ENV variables (especially *_VERSION), apt-get packages,
 // and PATH additions — everything the agent needs to know what's available.
 //
-// The output format mirrors baseManifest so the system prompt reads consistently.
+// The output format mirrors prompts.BaseEnvironment so the system prompt reads consistently.
 func manifestFromDockerfile(dockerfile string) string {
 	var sections []string
 

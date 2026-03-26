@@ -29,3 +29,12 @@ var Templates = template.Must(template.New("").Funcs(funcMap).ParseFS(templateFS
 
 //go:embed tools/*.md
 var ToolDescFS embed.FS
+
+// Standalone content files embedded as strings — used by tool implementations
+// to return context-specific guidance without inlining large text blocks in Go.
+
+//go:embed content/devenv_guidelines.md
+var DevenvGuidelines string
+
+//go:embed content/base_environment.md
+var BaseEnvironment string
