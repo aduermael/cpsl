@@ -17,3 +17,4 @@ cmd/simple-chat/simple-chat
 external-deps-workspace/
 go.work
 go.work.sum
+.claude/worktrees/
