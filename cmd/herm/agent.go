@@ -164,6 +164,9 @@ type AgentEvent struct {
 	// EventSubAgentStart
 	Task string // sub-agent task description
 
+	// EventSubAgentStatus (done)
+	SubTrace *TraceSubAgent // nested trace for the sub-agent
+
 	// EventRetry
 	Attempt  int // current retry attempt (1-based)
 	MaxRetry int // maximum number of retries

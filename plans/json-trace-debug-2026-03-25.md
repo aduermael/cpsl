@@ -235,7 +235,7 @@ Enable full sub-agent traces by having each SubAgentTool collect its sub-agent's
 
 **Contract:** When a sub-agent runs, a local `TraceCollector` captures all its events. On completion, the sub-agent's `Trace` is passed back to the parent via the `EventSubAgentStatus` event (new `SubTrace` field on `AgentEvent`). The parent's collector nests it as a `sub_agent` event.
 
-- [ ] 2a: **Add `SubTrace` field to AgentEvent** — In `agent.go`, add `SubTrace *Trace` to the `AgentEvent` struct. Only populated on `EventSubAgentStatus` when `Text == "done"`.
+- [x] 2a: **Add `SubTrace` field to AgentEvent** — In `agent.go`, add `SubTrace *Trace` to the `AgentEvent` struct. Only populated on `EventSubAgentStatus` when `Text == "done"`.
 
 - [ ] 2b: **Collect sub-agent trace in SubAgentTool** — In `subagent.go`, create a `TraceCollector` when the sub-agent starts. In the event drain loop, feed all events (text deltas, tool calls, results, usage) to this local collector in addition to the existing forwarding logic. On sub-agent completion, call `Finalize()` and attach the trace to the `EventSubAgentStatus` event.
 
