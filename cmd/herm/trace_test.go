@@ -722,6 +722,7 @@ func TestTraceCollector_PartialFlush_ValidJSON(t *testing.T) {
 
 func TestTraceCollector_Finalize_SetsEndedAt(t *testing.T) {
 	tc := NewTraceCollector("sess-finalize")
+	tc.AddUserMessage("hello") // sets StartedAt
 
 	// Before finalize.
 	tc.mu.Lock()
@@ -1061,6 +1062,164 @@ func TestTraceCollector_BuildSubAgentEvent(t *testing.T) {
 	}
 	if len(ev.Events) != 2 {
 		t.Errorf("events len = %d, want 2", len(ev.Events))
+	}
+}
+
+// ── 1c: Turn boundary and started_at tests ──
+
+func TestTraceCollector_ThreeLLMCalls_ProducesThreeEvents(t *testing.T) {
+	tc := NewTraceCollector("sess-3calls")
+	tc.SetMainAgentID("main")
+
+	tc.AddUserMessage("do three things")
+
+	// LLM call 1: text + tool call.
+	// Event order mirrors real agent: TextDelta, ToolCallStart, Usage, ToolResult.
+	tc.AddTextDelta("main", "Let me run a command.")
+	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{"command":"ls"}`))
+	tc.SetUsage("main", "model", "n1", &TraceUsage{InputTokens: 1000, OutputTokens: 100}, 0.01)
+	tc.EndToolCall("t1", "file.txt", false, 200*time.Millisecond)
+
+	// Turn boundary: simulate what handleAgentEvent does when it sees
+	// TextDelta after usage was recorded.
+	tc.FinalizeTurn("main")
+
+	// LLM call 2: text + tool call.
+	tc.AddTextDelta("main", "Now reading the file.")
+	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{"path":"file.txt"}`))
+	tc.SetUsage("main", "model", "n2", &TraceUsage{InputTokens: 2000, OutputTokens: 150}, 0.02)
+	tc.EndToolCall("t2", "contents", false, 100*time.Millisecond)
+
+	// Turn boundary.
+	tc.FinalizeTurn("main")
+
+	// LLM call 3: text only, no tool calls.
+	tc.AddTextDelta("main", "Here are the results.")
+	tc.SetUsage("main", "model", "n3", &TraceUsage{InputTokens: 3000, OutputTokens: 200}, 0.03)
+
+	// Final turn finalized at EventDone.
+	tc.FinalizeTurn("main")
+	tc.Finalize()
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	// 4 events: 1 user_message + 3 llm_response.
+	if len(trace.Events) != 4 {
+		t.Fatalf("events len = %d, want 4", len(trace.Events))
+	}
+
+	var ev1, ev2, ev3 TraceLLMResponse
+	json.Unmarshal(trace.Events[1], &ev1)
+	json.Unmarshal(trace.Events[2], &ev2)
+	json.Unmarshal(trace.Events[3], &ev3)
+
+	// LLM call 1: 1 tool call, stop_reason = "tool_use".
+	if ev1.Content != "Let me run a command." {
+		t.Errorf("ev1 content = %q", ev1.Content)
+	}
+	if len(ev1.ToolCalls) != 1 {
+		t.Errorf("ev1 tool_calls len = %d, want 1", len(ev1.ToolCalls))
+	}
+	if ev1.StopReason != "tool_use" {
+		t.Errorf("ev1 stop_reason = %q, want tool_use", ev1.StopReason)
+	}
+	if ev1.Usage == nil || ev1.Usage.InputTokens != 1000 {
+		t.Errorf("ev1 usage = %+v", ev1.Usage)
+	}
+	if ev1.ToolCalls[0].Name != "bash" {
+		t.Errorf("ev1 tool_calls[0].name = %q", ev1.ToolCalls[0].Name)
+	}
+	if ev1.ToolCalls[0].Result != "file.txt" {
+		t.Errorf("ev1 tool_calls[0].result = %q", ev1.ToolCalls[0].Result)
+	}
+
+	// LLM call 2: 1 tool call, stop_reason = "tool_use".
+	if ev2.Content != "Now reading the file." {
+		t.Errorf("ev2 content = %q", ev2.Content)
+	}
+	if len(ev2.ToolCalls) != 1 {
+		t.Errorf("ev2 tool_calls len = %d, want 1", len(ev2.ToolCalls))
+	}
+	if ev2.StopReason != "tool_use" {
+		t.Errorf("ev2 stop_reason = %q, want tool_use", ev2.StopReason)
+	}
+	if ev2.Usage == nil || ev2.Usage.InputTokens != 2000 {
+		t.Errorf("ev2 usage = %+v", ev2.Usage)
+	}
+
+	// LLM call 3: no tool calls, stop_reason = "end_turn".
+	if ev3.Content != "Here are the results." {
+		t.Errorf("ev3 content = %q", ev3.Content)
+	}
+	if len(ev3.ToolCalls) != 0 {
+		t.Errorf("ev3 tool_calls len = %d, want 0", len(ev3.ToolCalls))
+	}
+	if ev3.StopReason != "end_turn" {
+		t.Errorf("ev3 stop_reason = %q, want end_turn", ev3.StopReason)
+	}
+	if ev3.Usage == nil || ev3.Usage.InputTokens != 3000 {
+		t.Errorf("ev3 usage = %+v", ev3.Usage)
+	}
+
+	// Each turn has distinct timing.
+	if ev1.EndedAt == nil || ev2.EndedAt == nil || ev3.EndedAt == nil {
+		t.Error("all turns should have ended_at set")
+	}
+
+	// Totals.
+	if trace.Info.Totals.LLMCalls != 3 {
+		t.Errorf("totals.llm_calls = %d, want 3", trace.Info.Totals.LLMCalls)
+	}
+	if trace.Info.Totals.ToolCalls != 2 {
+		t.Errorf("totals.tool_calls = %d, want 2", trace.Info.Totals.ToolCalls)
+	}
+}
+
+func TestTraceCollector_StartedAt_DeferredToFirstMessage(t *testing.T) {
+	tc := NewTraceCollector("sess-deferred-start")
+
+	// Before any user message, StartedAt should be nil.
+	tc.mu.Lock()
+	trace1 := tc.buildTraceLocked()
+	tc.mu.Unlock()
+	if trace1.Info.StartedAt != nil {
+		t.Error("started_at should be nil before AddUserMessage")
+	}
+
+	// After first user message.
+	tc.AddUserMessage("hello")
+	tc.mu.Lock()
+	trace2 := tc.buildTraceLocked()
+	tc.mu.Unlock()
+	if trace2.Info.StartedAt == nil {
+		t.Fatal("started_at should be set after AddUserMessage")
+	}
+	first := *trace2.Info.StartedAt
+
+	// Second user message should not change started_at.
+	time.Sleep(time.Millisecond) // ensure different timestamp
+	tc.AddUserMessage("world")
+	tc.mu.Lock()
+	trace3 := tc.buildTraceLocked()
+	tc.mu.Unlock()
+	if !trace3.Info.StartedAt.Equal(first) {
+		t.Errorf("started_at changed on second message: %v != %v", *trace3.Info.StartedAt, first)
+	}
+}
+
+func TestTraceCollector_DurationMS_NilWithoutMessage(t *testing.T) {
+	tc := NewTraceCollector("sess-no-msg")
+	tc.Finalize()
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	// Without a user message, StartedAt is nil, so DurationMS should also be nil.
+	if trace.Info.DurationMS != nil {
+		t.Errorf("duration_ms should be nil without user message, got %d", *trace.Info.DurationMS)
 	}
 }
 

@@ -337,6 +337,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 	switch event.Type {
 	case EventTextDelta:
 		if a.traceCollector != nil {
+			if a.traceUsageSeen {
+				a.traceCollector.FinalizeTurn(event.AgentID)
+				a.traceUsageSeen = false
+			}
 			a.traceCollector.AddTextDelta(event.AgentID, event.Text)
 		}
 		a.streamingText += event.Text
@@ -363,6 +367,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.streamingText = ""
 		}
 		if a.traceCollector != nil {
+			if a.traceUsageSeen {
+				a.traceCollector.FinalizeTurn(event.AgentID)
+				a.traceUsageSeen = false
+			}
 			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
 		}
 		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true})
@@ -429,6 +437,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 					traceUsageFromTypes(event.Usage), cost)
 				a.traceCollector.FlushToFile(a.traceFilePath)
 			}
+			if a.agent != nil && event.AgentID == a.agent.ID() {
+				a.traceUsageSeen = true
+			}
 			a.renderInput()
 		}
 
@@ -464,6 +475,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		debugLog("done: nodeID=%s streamingLen=%d", event.NodeID, len(a.streamingText))
 		a.agentRunning = false
 		a.cancelSent = false
+		a.traceUsageSeen = false
 		if a.agentTicker != nil {
 			a.agentTicker.Stop()
 			a.agentTicker = nil

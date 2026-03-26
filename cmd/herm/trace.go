@@ -204,11 +204,9 @@ type TraceCollector struct {
 
 // NewTraceCollector creates a new trace collector.
 func NewTraceCollector(sessionID string) *TraceCollector {
-	now := time.Now()
 	return &TraceCollector{
 		info: TraceInfo{
 			SessionID:   sessionID,
-			StartedAt:   &now,
 			OS:          runtime.GOOS,
 			ToolSummary: make(map[string]*TraceToolSummary),
 		},
@@ -251,9 +249,13 @@ func (tc *TraceCollector) SetTools(tools []TraceTool) {
 func (tc *TraceCollector) AddUserMessage(content string) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
+	now := time.Now()
+	if tc.info.StartedAt == nil {
+		tc.info.StartedAt = &now
+	}
 	ev := TraceUserMessage{
 		Type:      "user_message",
-		Timestamp: time.Now(),
+		Timestamp: now,
 		Content:   content,
 	}
 	tc.appendEvent(ev)
@@ -284,13 +286,6 @@ func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUs
 	turn.NodeID = nodeID
 	turn.Usage = usage
 	turn.CostUSD = costUSD
-
-	// Set stop_reason based on whether tool calls exist.
-	if len(turn.ToolCalls) > 0 {
-		turn.StopReason = "tool_use"
-	} else {
-		turn.StopReason = "end_turn"
-	}
 
 	if tc.info.Model == "" {
 		tc.info.Model = model
@@ -506,6 +501,13 @@ func (tc *TraceCollector) finalizeTurnLocked(agentID string) {
 	turn, ok := tc.currentTurn[agentID]
 	if !ok {
 		return
+	}
+	// Set stop_reason based on final tool_calls state (deferred from SetUsage
+	// so that tool results attached via EndToolCall are included).
+	if len(turn.ToolCalls) > 0 {
+		turn.StopReason = "tool_use"
+	} else if turn.Usage != nil {
+		turn.StopReason = "end_turn"
 	}
 	now := time.Now()
 	turn.EndedAt = &now

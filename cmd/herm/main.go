@@ -219,6 +219,7 @@ type App struct {
 	// JSON trace debug file
 	traceCollector *TraceCollector
 	traceFilePath  string
+	traceUsageSeen bool // true after EventUsage, reset on turn boundary or EventDone
 }
 
 func newApp() *App {

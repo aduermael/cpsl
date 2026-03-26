@@ -36,9 +36,9 @@ The signal chain: each LLM call ends with `EventUsage` → tools execute → nex
 
 Also fix `started_at` to reflect first user interaction rather than TraceCollector creation time.
 
-- [ ] 1a: Add turn boundary detection in `handleAgentEvent` — when `EventTextDelta` or `EventToolCallStart` arrives and the current turn already has usage set, call `FinalizeTurn` before processing the new event. Mirror the pattern already used in `subagent.go`. This automatically fixes `stop_reason` since each turn's tool_calls are isolated.
-- [ ] 1b: Fix `started_at` — defer setting `TraceInfo.StartedAt` until `AddUserMessage` is first called (or add a `first_message_at` field). Update `DurationMS` calculation to use the correct start time.
-- [ ] 1c: Update trace tests — verify that a 3-LLM-call sequence produces 3 separate `llm_response` events with correct per-call usage, tool_calls, and stop_reason. Test that the final turn has `stop_reason: "end_turn"` when no tool calls follow.
+- [x] 1a: Add turn boundary detection in `handleAgentEvent` — when `EventTextDelta` or `EventToolCallStart` arrives and the current turn already has usage set, call `FinalizeTurn` before processing the new event. Mirror the pattern already used in `subagent.go`. This automatically fixes `stop_reason` since each turn's tool_calls are isolated.
+- [x] 1b: Fix `started_at` — defer setting `TraceInfo.StartedAt` until `AddUserMessage` is first called (or add a `first_message_at` field). Update `DurationMS` calculation to use the correct start time.
+- [x] 1c: Update trace tests — verify that a 3-LLM-call sequence produces 3 separate `llm_response` events with correct per-call usage, tool_calls, and stop_reason. Test that the final turn has `stop_reason: "end_turn"` when no tool calls follow.
 
 ## Phase 2: System Prompt Restructure
 
