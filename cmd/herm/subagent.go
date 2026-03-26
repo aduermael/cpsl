@@ -276,9 +276,12 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				if turns > t.maxTurns {
 					agent.Cancel()
 				}
+				subTC.StartToolCall(agentID, event.ToolID, event.ToolName, event.ToolInput)
 				t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: agentID, Text: fmt.Sprintf("tool: %s", event.ToolName)})
 			case EventToolCallDone:
 				currentTool = ""
+			case EventToolResult:
+				subTC.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
 			case EventUsage:
 				// EventUsage fires once per LLM response — reset the flag so the
 				// next batch of tool calls counts as a new turn.
@@ -353,6 +356,10 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)
 						subTC.AddTextDelta(agentID, event.Text)
+					case EventToolCallStart:
+						subTC.StartToolCall(agentID, event.ToolID, event.ToolName, event.ToolInput)
+					case EventToolResult:
+						subTC.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
 					}
 				default:
 					break drainLoop

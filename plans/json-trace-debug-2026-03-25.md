@@ -239,7 +239,7 @@ Enable full sub-agent traces by having each SubAgentTool collect its sub-agent's
 
 - [x] 2b: **Collect sub-agent trace in SubAgentTool** — In `subagent.go`, create a `TraceCollector` when the sub-agent starts. In the event drain loop, feed all events (text deltas, tool calls, results, usage) to this local collector in addition to the existing forwarding logic. On sub-agent completion, call `Finalize()` and attach the trace to the `EventSubAgentStatus` event.
 
-- [ ] 2c: **Forward sub-agent tool call events** — Currently `EventToolCallStart` from sub-agents is forwarded as `EventSubAgentStatus`. Additionally feed these to the local trace collector so the nested trace includes full tool call details (name, input, result, timing).
+- [x] 2c: **Forward sub-agent tool call events** — Currently `EventToolCallStart` from sub-agents is forwarded as `EventSubAgentStatus`. Additionally feed these to the local trace collector so the nested trace includes full tool call details (name, input, result, timing).
 
 ---
 
