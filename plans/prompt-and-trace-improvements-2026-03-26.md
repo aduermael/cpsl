@@ -56,8 +56,8 @@ The `traceUsageSeen` pattern in `agentui.go` triggers `FinalizeTurn` on `EventTo
 
 The grep tool has no `-i` flag. Case-insensitive search is common (searching for "TODO", "error" regardless of casing). Without it, the model must construct fragile regexes like `[Ee]rror` or fall back to bash with `rg -i`, defeating the dedicated tool.
 
-- [ ] 5a: Add `case_insensitive` boolean to grep — add property to JSON schema in `Definition()`, add `CaseInsensitive bool` field to `grepInput` struct, pass `-i` to the rg command in `Execute()` when true.
-- [ ] 5b: Update grep tool description in `grep.md` — mention the case_insensitive option briefly.
+- [x] 5a: Add `case_insensitive` boolean to grep — add property to JSON schema in `Definition()`, add `CaseInsensitive bool` field to `grepInput` struct, pass `-i` to the rg command in `Execute()` when true.
+- [x] 5b: Update grep tool description in `grep.md` — mention the case_insensitive option briefly.
 
 ## Phase 6: Deduplicate Practices and Role Workflow
 

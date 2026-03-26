@@ -195,6 +195,10 @@ func (t *GrepTool) Definition() types.ToolDefinition {
 					"type": "string",
 					"enum": ["files_with_matches", "content", "count"],
 					"description": "Output format: files_with_matches (default, file paths only), content (matching lines with line numbers), count (match count per file)"
+				},
+				"case_insensitive": {
+					"type": "boolean",
+					"description": "Case-insensitive search (default: false)"
 				}
 			},
 			"required": ["pattern"]
@@ -203,11 +207,12 @@ func (t *GrepTool) Definition() types.ToolDefinition {
 }
 
 type grepInput struct {
-	Pattern    string `json:"pattern"`
-	Path       string `json:"path,omitempty"`
-	Glob       string `json:"glob,omitempty"`
-	Context    int    `json:"context,omitempty"`
-	OutputMode string `json:"output_mode,omitempty"`
+	Pattern         string `json:"pattern"`
+	Path            string `json:"path,omitempty"`
+	Glob            string `json:"glob,omitempty"`
+	Context         int    `json:"context,omitempty"`
+	OutputMode      string `json:"output_mode,omitempty"`
+	CaseInsensitive bool   `json:"case_insensitive,omitempty"`
 }
 
 // grepMaxLines is the maximum number of output lines returned by GrepTool.
@@ -248,6 +253,9 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 
 	if in.Glob != "" {
 		args = append(args, "-g", shellQuote(in.Glob))
+	}
+	if in.CaseInsensitive {
+		args = append(args, "-i")
 	}
 
 	args = append(args, "--", shellQuote(in.Pattern))
