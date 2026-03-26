@@ -1334,3 +1334,192 @@ func TestTraceCollector_OSField(t *testing.T) {
 		t.Error("OS should be set from runtime.GOOS")
 	}
 }
+
+// ── 6a: Test parallel_group field on tool calls ──
+
+func TestTraceCollector_ParallelGroup_SameTurnSharesGroup(t *testing.T) {
+	tc := NewTraceCollector("sess-pg")
+	tc.SetMainAgentID("main")
+
+	tc.StartLLMResponse("main")
+	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{"command":"ls"}`))
+	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{"path":"f.go"}`))
+	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
+	tc.EndToolCall("t2", "ok", false, 10*time.Millisecond)
+	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0)
+	tc.FinalizeTurn("main")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	var ev TraceLLMResponse
+	json.Unmarshal(trace.Events[0], &ev)
+	if len(ev.ToolCalls) != 2 {
+		t.Fatalf("tool_calls len = %d, want 2", len(ev.ToolCalls))
+	}
+	if ev.ToolCalls[0].ParallelGroup != ev.ToolCalls[1].ParallelGroup {
+		t.Errorf("tool calls in same turn should share parallel_group: %d vs %d",
+			ev.ToolCalls[0].ParallelGroup, ev.ToolCalls[1].ParallelGroup)
+	}
+	if ev.ToolCalls[0].ParallelGroup == 0 {
+		t.Error("parallel_group should be >0")
+	}
+}
+
+func TestTraceCollector_ParallelGroup_DifferentTurnsDiffer(t *testing.T) {
+	tc := NewTraceCollector("sess-pg-diff")
+	tc.SetMainAgentID("main")
+
+	// Turn 1: one tool call.
+	tc.StartLLMResponse("main")
+	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
+	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
+	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0)
+	tc.FinalizeTurn("main")
+
+	// Turn 2: another tool call.
+	tc.StartLLMResponse("main")
+	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{}`))
+	tc.EndToolCall("t2", "ok", false, 10*time.Millisecond)
+	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0)
+	tc.FinalizeTurn("main")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	if len(trace.Events) != 2 {
+		t.Fatalf("events len = %d, want 2", len(trace.Events))
+	}
+
+	var ev1, ev2 TraceLLMResponse
+	json.Unmarshal(trace.Events[0], &ev1)
+	json.Unmarshal(trace.Events[1], &ev2)
+
+	g1 := ev1.ToolCalls[0].ParallelGroup
+	g2 := ev2.ToolCalls[0].ParallelGroup
+	if g1 == g2 {
+		t.Errorf("tool calls in different turns should have different parallel_group: both %d", g1)
+	}
+}
+
+func TestTraceCollector_ParallelGroup_JSONSerialization(t *testing.T) {
+	tc := NewTraceCollector("sess-pg-json")
+	tc.SetMainAgentID("main")
+
+	tc.StartLLMResponse("main")
+	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
+	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
+	tc.SetUsage("main", "model", "", nil, 0)
+	tc.FinalizeTurn("main")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	data, _ := json.Marshal(trace)
+	var raw map[string]json.RawMessage
+	json.Unmarshal(data, &raw)
+
+	var events []json.RawMessage
+	json.Unmarshal(raw["events"], &events)
+
+	var ev map[string]json.RawMessage
+	json.Unmarshal(events[0], &ev)
+
+	var toolCalls []map[string]json.RawMessage
+	json.Unmarshal(ev["tool_calls"], &toolCalls)
+
+	if _, ok := toolCalls[0]["parallel_group"]; !ok {
+		t.Error("parallel_group field missing from JSON output")
+	}
+}
+
+// ── 6b: Test system prompt hash ──
+
+func TestTraceCollector_SystemPromptHash(t *testing.T) {
+	tc := NewTraceCollector("sess-hash")
+	tc.SetSystemPrompt("You are helpful.")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	if trace.Info.SystemPromptHash == "" {
+		t.Fatal("system_prompt_hash should be set after SetSystemPrompt")
+	}
+	// SHA256 hex is always 64 characters.
+	if len(trace.Info.SystemPromptHash) != 64 {
+		t.Errorf("system_prompt_hash length = %d, want 64", len(trace.Info.SystemPromptHash))
+	}
+}
+
+func TestTraceCollector_SystemPromptHash_Deterministic(t *testing.T) {
+	tc1 := NewTraceCollector("sess-h1")
+	tc1.SetSystemPrompt("identical prompt")
+
+	tc2 := NewTraceCollector("sess-h2")
+	tc2.SetSystemPrompt("identical prompt")
+
+	tc1.mu.Lock()
+	h1 := tc1.buildTraceLocked().Info.SystemPromptHash
+	tc1.mu.Unlock()
+
+	tc2.mu.Lock()
+	h2 := tc2.buildTraceLocked().Info.SystemPromptHash
+	tc2.mu.Unlock()
+
+	if h1 != h2 {
+		t.Errorf("same prompt should produce same hash: %q vs %q", h1, h2)
+	}
+}
+
+func TestTraceCollector_SystemPromptHash_DifferentPrompts(t *testing.T) {
+	tc1 := NewTraceCollector("sess-hd1")
+	tc1.SetSystemPrompt("prompt A")
+
+	tc2 := NewTraceCollector("sess-hd2")
+	tc2.SetSystemPrompt("prompt B")
+
+	tc1.mu.Lock()
+	h1 := tc1.buildTraceLocked().Info.SystemPromptHash
+	tc1.mu.Unlock()
+
+	tc2.mu.Lock()
+	h2 := tc2.buildTraceLocked().Info.SystemPromptHash
+	tc2.mu.Unlock()
+
+	if h1 == h2 {
+		t.Error("different prompts should produce different hashes")
+	}
+}
+
+func TestTraceCollector_SystemPromptHash_EmptyWithoutPrompt(t *testing.T) {
+	tc := NewTraceCollector("sess-no-prompt")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	if trace.Info.SystemPromptHash != "" {
+		t.Errorf("system_prompt_hash should be empty without SetSystemPrompt, got %q", trace.Info.SystemPromptHash)
+	}
+}
+
+func TestTraceCollector_SystemPromptHash_JSONSerialization(t *testing.T) {
+	tc := NewTraceCollector("sess-hash-json")
+	tc.SetSystemPrompt("test prompt")
+
+	tc.mu.Lock()
+	trace := tc.buildTraceLocked()
+	tc.mu.Unlock()
+
+	data, _ := json.Marshal(trace.Info)
+	var raw map[string]json.RawMessage
+	json.Unmarshal(data, &raw)
+
+	if _, ok := raw["system_prompt_hash"]; !ok {
+		t.Error("system_prompt_hash field missing from JSON output")
+	}
+}

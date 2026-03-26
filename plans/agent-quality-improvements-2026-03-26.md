@@ -101,8 +101,8 @@ Currently sub-agents block the parent until completion. For long-running tasks (
 
 Additional trace quality improvements that emerged from the review.
 
-- [ ] 6a: Add `parallel_group` field to `TraceToolCall` — tool calls returned in the same LLM response share a group ID, distinguishing intentional parallelism from coincidental timing. Set the group ID from the LLM response's tool_use blocks.
-- [ ] 6b: Add system prompt hash to `TraceInfo` — SHA256 of the system prompt text for quick comparison across traces without diffing kilobytes. Keep the full text too for reproducibility.
+- [x] 6a: Add `parallel_group` field to `TraceToolCall` — tool calls returned in the same LLM response share a group ID, distinguishing intentional parallelism from coincidental timing. Set the group ID from the LLM response's tool_use blocks.
+- [x] 6b: Add system prompt hash to `TraceInfo` — SHA256 of the system prompt text for quick comparison across traces without diffing kilobytes. Keep the full text too for reproducibility.
 
 ---
 

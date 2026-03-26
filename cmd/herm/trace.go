@@ -5,6 +5,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -28,16 +29,17 @@ type Trace struct {
 
 // TraceInfo holds session metadata and aggregate totals.
 type TraceInfo struct {
-	SessionID  string       `json:"session_id"`
-	StartedAt  *time.Time   `json:"started_at"`
-	EndedAt    *time.Time   `json:"ended_at"`
-	DurationMS *int64       `json:"duration_ms"`
-	Model      string       `json:"model,omitempty"`
-	GitBranch  string       `json:"git_branch,omitempty"`
-	GitRoot    string       `json:"git_root,omitempty"`
-	OS         string       `json:"os"`
-	Totals     TraceTotals  `json:"totals"`
-	ToolSummary map[string]*TraceToolSummary `json:"tool_summary,omitempty"`
+	SessionID        string       `json:"session_id"`
+	StartedAt        *time.Time   `json:"started_at"`
+	EndedAt          *time.Time   `json:"ended_at"`
+	DurationMS       *int64       `json:"duration_ms"`
+	Model            string       `json:"model,omitempty"`
+	SystemPromptHash string       `json:"system_prompt_hash,omitempty"`
+	GitBranch        string       `json:"git_branch,omitempty"`
+	GitRoot          string       `json:"git_root,omitempty"`
+	OS               string       `json:"os"`
+	Totals           TraceTotals  `json:"totals"`
+	ToolSummary      map[string]*TraceToolSummary `json:"tool_summary,omitempty"`
 }
 
 // TraceTotals holds cumulative counters for the session.
@@ -109,16 +111,17 @@ type TraceUsage struct {
 
 // TraceToolCall pairs a tool invocation with its result.
 type TraceToolCall struct {
-	ID         string           `json:"id"`
-	Name       string           `json:"name"`
-	Input      json.RawMessage  `json:"input"`
-	StartedAt  *time.Time       `json:"started_at,omitempty"`
-	EndedAt    *time.Time       `json:"ended_at,omitempty"`
-	DurationMS *int64           `json:"duration_ms,omitempty"`
-	Result     string           `json:"result,omitempty"`
-	ResultBytes int             `json:"result_bytes,omitempty"`
-	IsError    bool             `json:"is_error,omitempty"`
-	Approval   *TraceApproval   `json:"approval,omitempty"`
+	ID            string           `json:"id"`
+	Name          string           `json:"name"`
+	Input         json.RawMessage  `json:"input"`
+	ParallelGroup int              `json:"parallel_group"`
+	StartedAt     *time.Time       `json:"started_at,omitempty"`
+	EndedAt       *time.Time       `json:"ended_at,omitempty"`
+	DurationMS    *int64           `json:"duration_ms,omitempty"`
+	Result        string           `json:"result,omitempty"`
+	ResultBytes   int              `json:"result_bytes,omitempty"`
+	IsError       bool             `json:"is_error,omitempty"`
+	Approval      *TraceApproval   `json:"approval,omitempty"`
 }
 
 // TraceApproval captures the tool approval flow.
@@ -200,6 +203,9 @@ type TraceCollector struct {
 
 	// Track main agent ID for distinguishing main vs sub-agent LLM calls.
 	mainAgentID string
+
+	// Monotonic counter for parallel_group — incremented each new turn.
+	parallelGroupSeq int
 }
 
 // NewTraceCollector creates a new trace collector.
@@ -231,11 +237,12 @@ func (tc *TraceCollector) SetMainAgentID(id string) {
 	tc.mainAgentID = id
 }
 
-// SetSystemPrompt records the system prompt.
+// SetSystemPrompt records the system prompt and its SHA256 hash.
 func (tc *TraceCollector) SetSystemPrompt(prompt string) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	tc.systemPrompt = prompt
+	tc.info.SystemPromptHash = fmt.Sprintf("%x", sha256.Sum256([]byte(prompt)))
 }
 
 // SetTools records the tool definitions.
@@ -319,10 +326,11 @@ func (tc *TraceCollector) StartToolCall(agentID, toolID, toolName string, input 
 	tc.ensureTurn(agentID)
 
 	call := &TraceToolCall{
-		ID:        toolID,
-		Name:      toolName,
-		Input:     input,
-		StartedAt: &now,
+		ID:            toolID,
+		Name:          toolName,
+		Input:         input,
+		ParallelGroup: tc.parallelGroupSeq,
+		StartedAt:     &now,
 	}
 	tc.pendingTools[toolID] = call
 	tc.toolAgent[toolID] = agentID
@@ -486,6 +494,7 @@ func (tc *TraceCollector) ensureTurn(agentID string) *TraceLLMResponse {
 	if turn, ok := tc.currentTurn[agentID]; ok {
 		return turn
 	}
+	tc.parallelGroupSeq++
 	turn := &TraceLLMResponse{
 		Type:      "llm_response",
 		AgentID:   agentID,
