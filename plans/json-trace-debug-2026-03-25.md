@@ -251,7 +251,7 @@ Wire the trace collector into the App lifecycle and event handlers, replacing al
 
 - [x] 3a: **Update App struct and lifecycle** — Replace `debugFile *os.File` + `debugFilePath string` with `traceCollector *TraceCollector` + `traceFilePath string`. Update `initAppDebugLog()` to create the trace collector and set the file path (`.json` extension). Update `closeDebugLog` → finalize collector and do final write. Update config editor toggle.
 
-- [ ] 3b: **Feed events from submitToAgent** — In `agentui.go:submitToAgent()`, replace the three `debugWriteSection` calls (system prompt, tool definitions, user message) with `traceCollector.SetSystemPrompt()`, `traceCollector.SetTools()`, `traceCollector.AddUserMessage()`. Capture `agentStartTime` in the trace info.
+- [x] 3b: **Feed events from submitToAgent** — In `agentui.go:submitToAgent()`, replace the three `debugWriteSection` calls (system prompt, tool definitions, user message) with `traceCollector.SetSystemPrompt()`, `traceCollector.SetTools()`, `traceCollector.AddUserMessage()`. Capture `agentStartTime` in the trace info.
 
 - [ ] 3c: **Feed events from handleAgentEvent** — Replace every `debugWriteSection` call in `handleAgentEvent()` with the corresponding trace collector method. Map: `EventTextDelta` → `AddTextDelta`, `EventToolCallStart` → `StartToolCall`, `EventToolResult` → `EndToolCall` + flush, `EventUsage` → `SetUsage`, `EventApprovalReq` → `AddApproval`, `EventCompacted` → `AddCompaction`, `EventSubAgentStart` → (record start time), `EventSubAgentStatus` (done) → `AddSubAgent(event.SubTrace)`, `EventStreamClear` → `AddStreamClear()`, `EventRetry` → `AddRetry`, `EventError` → `AddError`, `EventDone` → `Finalize` + final flush.
 

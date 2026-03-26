@@ -126,7 +126,7 @@ func (a *App) startAgent(userMessage string) {
 		if a.worktreePath != "" {
 			hermDir := filepath.Join(a.worktreePath, ".herm")
 			mounts := []MountSpec{
-				{Source: a.worktreePath, Destination: "/workspace"},
+				{Source: a.worktreePath, Destination: a.worktreePath},
 				{Source: a.attachmentDir(), Destination: "/attachments", ReadOnly: true},
 			}
 			var projectID string
@@ -184,7 +184,7 @@ func (a *App) startAgent(userMessage string) {
 		skills, _ = loadSkills(filepath.Join(a.worktreePath, ".herm", "skills"))
 	}
 
-	workDir := "/workspace"
+	workDir := a.worktreePath
 
 	containerImage := a.containerImage
 	if containerImage == "" {
@@ -218,10 +218,28 @@ func (a *App) startAgent(userMessage string) {
 	}
 	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage, wtBranch, a.projectSnap)
 
-	// Debug file: log system prompt, tool definitions, and user message
-	a.debugWriteSection("System Prompt", systemPrompt)
-	a.debugWriteSection("Tool Definitions", formatToolDefinitions(tools, serverTools))
-	a.debugWriteSection("User Message", userMessage)
+	// Feed system prompt, tool definitions, and user message to trace collector.
+	if a.traceCollector != nil {
+		a.traceCollector.SetSystemPrompt(systemPrompt)
+		var traceTools []TraceTool
+		for _, t := range tools {
+			def := t.Definition()
+			traceTools = append(traceTools, TraceTool{
+				Name:        def.Name,
+				Description: def.Description,
+				Parameters:  def.InputSchema,
+			})
+		}
+		for _, st := range serverTools {
+			traceTools = append(traceTools, TraceTool{
+				Name:        st.Name,
+				Description: st.Description,
+				Parameters:  st.InputSchema,
+			})
+		}
+		a.traceCollector.SetTools(traceTools)
+		a.traceCollector.AddUserMessage(userMessage)
+	}
 
 	a.showModelChange(modelID)
 
@@ -239,6 +257,9 @@ func (a *App) startAgent(userMessage string) {
 		WithThinking(a.config.Thinking))
 	subAgentTool.parentEvents = agent.events
 	a.agent = agent
+	if a.traceCollector != nil {
+		a.traceCollector.SetMainAgentID(agent.ID())
+	}
 	a.agentRunning = true
 	a.streamingText = ""
 	a.needsTextSep = true
