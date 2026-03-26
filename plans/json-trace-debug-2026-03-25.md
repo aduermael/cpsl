@@ -261,7 +261,7 @@ Wire the trace collector into the App lifecycle and event handlers, replacing al
 
 - [x] 3f: **Update /clear and headless mode** — In `/clear` handler: finalize current trace, start new collector with new `.json` file path. In headless mode: same lifecycle, print `.json` path to stderr.
 
-- [ ] 3g: **Update footer display** — In `render.go`, update the debug path display to show the `.json` file path (minimal change — just the extension will naturally change).
+- [x] 3g: **Update footer display** — In `render.go`, update the debug path display to show the `.json` file path (minimal change — just the extension will naturally change).
 
 - [ ] 3h: **Populate info object** — Wire `info` fields: `session_id` from `a.sessionID`, `started_at` from `a.agentStartTime`, `model` from the first LLM call's model, `git_branch` from `a.branch`, `git_root` from `a.repoRoot`, `os` from `runtime.GOOS`. Compute `totals` from accumulated session stats. Build `tool_summary` from `sessionToolStats` (add duration tracking per tool).
 
