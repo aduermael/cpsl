@@ -40,9 +40,9 @@ The `traceUsageSeen` pattern in `agentui.go` triggers `FinalizeTurn` on `EventTo
 
 "Runs inside the dev container." appears in 7 tool descriptions (~48 tokens). "Do NOT use bash for X" appears in 5 descriptions (~70 tokens). The bash description and system prompt already cover routing. Total waste: ~120 tokens per request.
 
-- [ ] 3a: Remove "Runs inside the dev container." opener from `glob.md`, `grep.md`, `read_file.md`, `edit_file.md`, `write_file.md`, `outline.md`. Keep it only in `bash.md` (where the image name and mount point are useful context). Add one line to `prompts/tools.md`: "All tools except git run inside the dev container."
-- [ ] 3b: Remove "Do NOT use bash for X" from `glob.md`, `grep.md`, `read_file.md`, `edit_file.md`, `write_file.md`. The bash description already says "Prefer dedicated tools for reading, searching, and editing files."
-- [ ] 3c: Update tests that assert on tool description content, if any.
+- [x] 3a: Remove "Runs inside the dev container." opener from `glob.md`, `grep.md`, `read_file.md`, `edit_file.md`, `write_file.md`, `outline.md`. Keep it only in `bash.md` (where the image name and mount point are useful context). Add one line to `prompts/tools.md`: "All tools except git run inside the dev container."
+- [x] 3b: Remove "Do NOT use bash for X" from `glob.md`, `grep.md`, `read_file.md`, `edit_file.md`, `write_file.md`. The bash description already says "Prefer dedicated tools for reading, searching, and editing files."
+- [x] 3c: Update tests that assert on tool description content, if any.
 
 ## Phase 4: Trim Git Tool Description
 

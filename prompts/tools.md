@@ -3,7 +3,7 @@
 
 ## Tools
 
-Prefer dedicated tools over bash for file operations — they produce structured, compact output that saves tokens.
+All tools except git run inside the dev container. Prefer dedicated tools over bash for file operations — they produce structured, compact output that saves tokens.
 {{- if .HasGlob}}
 
 Explore in layers: glob (structure) → grep (search){{if .HasOutline}} → outline (signatures){{end}} → read_file (examine). Each step narrows focus.
