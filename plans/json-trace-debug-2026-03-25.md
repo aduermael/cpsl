@@ -25,7 +25,6 @@
 ```json
 {
   "info": {
-    "format_version": 1,
     "session_id": "abc-123",
     "started_at": "2026-03-25T15:04:05.000Z",
     "ended_at": "2026-03-25T15:10:30.000Z",
@@ -159,8 +158,7 @@
 // Stream clear
 {
   "type": "stream_clear",
-  "timestamp": "2026-03-25T15:06:29.500Z",
-  "discarded_text": "partial response that was..."
+  "timestamp": "2026-03-25T15:06:29.500Z"
 }
 
 // Error
@@ -172,17 +170,15 @@
 ```
 
 **Additional properties beyond user's request:**
-- `format_version` — enables schema evolution without breaking parsers
-- `stop_reason` per LLM call — distinguishes `end_turn` vs `tool_use` vs `max_tokens`
+- `stop_reason` per LLM call — distinguishes `end_turn` vs `tool_use` vs `max_tokens` (useful for diagnosing silent stream stops)
 - `node_id` per LLM response — links back to langdag conversation tree
 - `agent_id` — distinguishes main agent from sub-agents
-- `reasoning_tokens` — extended thinking tokens (when thinking mode enabled)
+- `reasoning_tokens` — extended thinking tokens (included when non-zero)
 - `cost_usd` per LLM call AND in totals — granular cost attribution
 - `git_branch`, `git_root`, `os` in info — environment context
 - `tool_summary` with `total_duration_ms` per tool — performance profiling
 - `approval` object on tool calls — captures approval flow (requested, approved, wait time)
 - `result_bytes` per tool call — size tracking without counting yourself
-- `discarded_text` in stream_clear — see what was lost during retries
 - `turns` + `max_turns` on sub-agents — budget tracking
 
 **Architecture approach:**
@@ -227,7 +223,7 @@ Define the JSON schema as Go structs and implement the in-memory trace collector
 
 - [ ] 1a: **Define trace JSON structs** — New file `trace.go` (or extend `debuglog.go`). Structs: `Trace` (top-level with `Info`, `SystemPrompt`, `Tools`, `Events`), `TraceInfo` (with `Totals` and `ToolSummary`), `TraceEvent` (union type with `Type` discriminator), `TraceLLMResponse` (with nested `TraceToolCall` array), `TraceSubAgent` (with nested `Events`), `TraceUsage`, `TraceToolCall` (with `Result`, `Approval`). All timestamp fields as `time.Time` serialized to RFC3339 with milliseconds. All durations as `int` milliseconds.
 
-- [ ] 1b: **Implement TraceCollector** — Methods: `SetSystemPrompt(prompt string)`, `SetTools(tools []ToolDef)`, `AddUserMessage(content string)`, `StartLLMResponse(agentID string)`, `AddTextDelta(agentID, text string)`, `SetUsage(agentID string, usage, model, nodeID, cost)`, `StartToolCall(agentID, toolID, toolName string, input json.RawMessage)`, `EndToolCall(agentID, toolID string, result string, isError bool, duration time.Duration)`, `AddApproval(agentID, toolID string, desc string, approved bool, waitDur time.Duration)`, `AddSubAgent(trace *Trace)`, `AddCompaction(nodeID, summary string)`, `AddRetry(attempt, max int, delay time.Duration, err string)`, `AddStreamClear(text string)`, `AddError(msg string)`, `Finalize()`. Internally tracks `currentTurn map[agentID]*TraceLLMResponse` and `pendingTools map[toolID]*TraceToolCall`.
+- [ ] 1b: **Implement TraceCollector** — Methods: `SetSystemPrompt(prompt string)`, `SetTools(tools []ToolDef)`, `AddUserMessage(content string)`, `StartLLMResponse(agentID string)`, `AddTextDelta(agentID, text string)`, `SetUsage(agentID string, usage, model, nodeID, cost)`, `StartToolCall(agentID, toolID, toolName string, input json.RawMessage)`, `EndToolCall(agentID, toolID string, result string, isError bool, duration time.Duration)`, `AddApproval(agentID, toolID string, desc string, approved bool, waitDur time.Duration)`, `AddSubAgent(trace *Trace)`, `AddCompaction(nodeID, summary string)`, `AddRetry(attempt, max int, delay time.Duration, err string)`, `AddStreamClear()`, `AddError(msg string)`, `Finalize()`. Internally tracks `currentTurn map[agentID]*TraceLLMResponse` and `pendingTools map[toolID]*TraceToolCall`.
 
 - [ ] 1c: **JSON serialization and file writing** — `Trace.WriteToFile(path string) error` serializes with `json.MarshalIndent` (2-space indent for readability) and atomically writes (write to temp file, rename). `TraceCollector.FlushToFile(path string)` builds the current `Trace` snapshot (including partial `info`) and calls `WriteToFile`. The `info.ended_at` is only set on `Finalize()`.
 
@@ -257,7 +253,7 @@ Wire the trace collector into the App lifecycle and event handlers, replacing al
 
 - [ ] 3b: **Feed events from submitToAgent** — In `agentui.go:submitToAgent()`, replace the three `debugWriteSection` calls (system prompt, tool definitions, user message) with `traceCollector.SetSystemPrompt()`, `traceCollector.SetTools()`, `traceCollector.AddUserMessage()`. Capture `agentStartTime` in the trace info.
 
-- [ ] 3c: **Feed events from handleAgentEvent** — Replace every `debugWriteSection` call in `handleAgentEvent()` with the corresponding trace collector method. Map: `EventTextDelta` → `AddTextDelta`, `EventToolCallStart` → `StartToolCall`, `EventToolResult` → `EndToolCall` + flush, `EventUsage` → `SetUsage`, `EventApprovalReq` → `AddApproval`, `EventCompacted` → `AddCompaction`, `EventSubAgentStart` → (record start time), `EventSubAgentStatus` (done) → `AddSubAgent(event.SubTrace)`, `EventStreamClear` → `AddStreamClear`, `EventRetry` → `AddRetry`, `EventError` → `AddError`, `EventDone` → `Finalize` + final flush.
+- [ ] 3c: **Feed events from handleAgentEvent** — Replace every `debugWriteSection` call in `handleAgentEvent()` with the corresponding trace collector method. Map: `EventTextDelta` → `AddTextDelta`, `EventToolCallStart` → `StartToolCall`, `EventToolResult` → `EndToolCall` + flush, `EventUsage` → `SetUsage`, `EventApprovalReq` → `AddApproval`, `EventCompacted` → `AddCompaction`, `EventSubAgentStart` → (record start time), `EventSubAgentStatus` (done) → `AddSubAgent(event.SubTrace)`, `EventStreamClear` → `AddStreamClear()`, `EventRetry` → `AddRetry`, `EventError` → `AddError`, `EventDone` → `Finalize` + final flush.
 
 - [ ] 3d: **Periodic flush after each LLM turn** — After `EventToolResult` (when all tools for a turn are complete) or after `EventUsage` (if no tool calls), call `FlushToFile`. This provides crash resilience — at most one turn is lost.
 
