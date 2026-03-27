@@ -493,10 +493,10 @@ func (t *EditFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("old_string is required")
 	}
 
-	// Resolve path relative to /workspace.
+	// Resolve path relative to project root.
 	filePath := in.FilePath
 	if !strings.HasPrefix(filePath, "/") {
-		filePath = "/workspace/" + filePath
+		filePath = t.container.WorkDir() + "/" + filePath
 	}
 
 	// Build JSON input for the CLI tool with the resolved path.
@@ -591,10 +591,10 @@ func (t *WriteFileTool) Execute(ctx context.Context, input json.RawMessage) (str
 		return "", fmt.Errorf("file_path is required")
 	}
 
-	// Resolve path relative to /workspace.
+	// Resolve path relative to project root.
 	filePath := in.FilePath
 	if !strings.HasPrefix(filePath, "/") {
-		filePath = "/workspace/" + filePath
+		filePath = t.container.WorkDir() + "/" + filePath
 	}
 
 	// Build JSON input for the CLI tool with the resolved path.
@@ -725,7 +725,7 @@ func (t *OutlineTool) Execute(ctx context.Context, input json.RawMessage) (strin
 func (t *OutlineTool) outlineOne(displayPath string) (string, error) {
 	filePath := displayPath
 	if !strings.HasPrefix(filePath, "/") {
-		filePath = "/workspace/" + filePath
+		filePath = t.container.WorkDir() + "/" + filePath
 	}
 
 	result, err := t.container.Exec(fmt.Sprintf("outline %s", shellQuote(filePath)), 15)

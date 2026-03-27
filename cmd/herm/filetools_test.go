@@ -27,13 +27,13 @@ func newFakeContainer(t *testing.T, execHandler func(cmd string) (string, string
 			case "run":
 				return "fake-container-id\n", "", 0
 			case "exec":
-				// Direct binary exec: docker exec -i <id> <binary> [args...]
-				if len(args) >= 5 && args[2] == "-i" {
-					return execHandler(args[4])
+				// Direct binary exec: docker exec -i -w <workDir> <id> <binary> [args...]
+				if len(args) >= 7 && args[2] == "-i" {
+					return execHandler(args[6])
 				}
-				// Shell exec: docker exec <id> sh -c <cmd>
-				if len(args) >= 6 {
-					cmd := args[5]
+				// Shell exec: docker exec -w <workDir> <id> sh -c <cmd>
+				if len(args) >= 8 {
+					cmd := args[7]
 					return execHandler(cmd)
 				}
 				return "", "no command", 1
@@ -67,11 +67,13 @@ func newFakeContainerWithStdinCapture(t *testing.T, execHandler func(cmd string)
 			case "run":
 				return "fake-container-id\n", "", 0
 			case "exec":
-				if len(args) >= 5 && args[2] == "-i" {
-					return execHandler(args[4])
+				// Direct binary exec: docker exec -i -w <workDir> <id> <binary> [args...]
+				if len(args) >= 7 && args[2] == "-i" {
+					return execHandler(args[6])
 				}
-				if len(args) >= 6 {
-					return execHandler(args[5])
+				// Shell exec: docker exec -w <workDir> <id> sh -c <cmd>
+				if len(args) >= 8 {
+					return execHandler(args[7])
 				}
 				return "", "no command", 1
 			case "rm":

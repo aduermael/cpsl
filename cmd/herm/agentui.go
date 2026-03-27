@@ -192,7 +192,7 @@ func (a *App) startAgent(userMessage string) {
 	}
 
 	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
-	toolDescriptions = loadToolDescriptions(containerImage)
+	toolDescriptions = loadToolDescriptions(containerImage, workDir)
 
 	// Sub-agent tool: output-only communication, no shared memory.
 	// Uses exploration model if configured, otherwise falls back to active model.

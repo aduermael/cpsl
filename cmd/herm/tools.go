@@ -44,13 +44,13 @@ func NewBashTool(container *ContainerClient, timeout int) *BashTool {
 func (t *BashTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "bash",
-		Description: getToolDescription("bash", "Run a shell command in the dev container (project mounted at /workspace). Output is truncated to 80 lines / 12KB (head+tail)."),
+		Description: getToolDescription("bash", "Run a shell command in the dev container. Output is truncated to 80 lines / 12KB (head+tail)."),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
 				"command": {
 					"type": "string",
-					"description": "The bash command to execute in /workspace"
+					"description": "The bash command to execute"
 				},
 				"timeout": {
 					"type": "integer",

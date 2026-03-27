@@ -93,6 +93,7 @@ type branchCheckoutMsg struct {
 
 type workspaceMsg struct {
 	worktreePath string
+	repoRoot     string
 }
 
 type langdagReadyMsg struct {
@@ -145,12 +146,12 @@ type openPickerMsg struct {
 // ─── Async init commands ───
 
 func resolveWorkspaceCmd(cfg Config) workspaceMsg {
-	if repoRoot := gitRepoRoot(); repoRoot != "" {
-		ensureGitignoreLock(repoRoot)
-		return workspaceMsg{worktreePath: repoRoot}
-	}
 	cwd, _ := os.Getwd()
-	return workspaceMsg{worktreePath: cwd}
+	repoRoot := gitRepoRoot()
+	if repoRoot != "" {
+		ensureGitignoreLock(repoRoot)
+	}
+	return workspaceMsg{worktreePath: cwd, repoRoot: repoRoot}
 }
 
 func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {

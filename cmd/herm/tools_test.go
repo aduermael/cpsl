@@ -483,9 +483,9 @@ func TestBashToolExecute_HTMLUnescape(t *testing.T) {
 				return "cid123\n", "", 0
 			case "exec":
 				// Capture the command that was passed to exec.
-				// args: docker exec cid123 sh -c <command>
-				if len(args) >= 6 {
-					capturedCmd = args[5]
+				// args: docker exec -w <workDir> cid123 sh -c <command>
+				if len(args) >= 8 {
+					capturedCmd = args[7]
 				}
 				return "ok", "", 0
 			case "stop", "rm":

@@ -5,7 +5,7 @@
 **Dockerfile rules that prevent build failures:**
 - Download official release tarballs rather than curl-pipe-to-bash setup scripts (NodeSource, rustup.sh, etc).
 - Combine related RUN steps: `apt-get update && apt-get install -y ... && rm -rf /var/lib/apt/lists/*`. Never split update and install across layers.
-- Pin specific versions for reproducibility. Set WORKDIR /workspace.
+- Pin specific versions for reproducibility.
 
 **Installing runtimes — download tarballs, not setup scripts:**
 

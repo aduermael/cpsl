@@ -4,7 +4,7 @@ description: Run a shell command in the dev container
 runs_on: container
 ---
 
-Runs inside the dev container (image: __CONTAINER_IMAGE__, project mounted at /workspace). Output is truncated to 80 lines / 12KB (head+tail).
+Runs inside the dev container (image: __CONTAINER_IMAGE__, project mounted at __WORK_DIR__). Output is truncated to 80 lines / 12KB (head+tail).
 
 Prefer dedicated tools for reading, searching, and editing files. Use bash for commands without a dedicated tool equivalent: running builds, tests, mkdir, mv, cp, chmod, curl, etc.
 

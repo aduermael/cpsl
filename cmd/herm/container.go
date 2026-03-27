@@ -112,7 +112,7 @@ func (c *ContainerClient) Start(workspace string, mounts []MountSpec) error {
 
 	name := fmt.Sprintf("herm-%s", randomID())
 
-	args := []string{"run", "-d", "--name", name}
+	args := []string{"run", "-d", "-w", workspace, "--name", name}
 	for _, m := range mounts {
 		vol := fmt.Sprintf("%s:%s", m.Source, m.Destination)
 		if m.ReadOnly {
@@ -155,7 +155,7 @@ func (c *ContainerClient) Exec(command string, timeout int) (CommandResult, erro
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	cmd := dockerCommand(ctx, "docker", "exec", c.containerID, "sh", "-c", command)
+	cmd := dockerCommand(ctx, "docker", "exec", "-w", c.workDir, c.containerID, "sh", "-c", command)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -195,7 +195,7 @@ func (c *ContainerClient) ExecWithStdin(stdin []byte, timeout int, args ...strin
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
 
-	fullArgs := append([]string{"exec", "-i", c.containerID}, args...)
+	fullArgs := append([]string{"exec", "-i", "-w", c.workDir, c.containerID}, args...)
 	cmd := dockerCommand(ctx, "docker", fullArgs...)
 	cmd.Stdin = bytes.NewReader(stdin)
 	var stdout, stderr bytes.Buffer

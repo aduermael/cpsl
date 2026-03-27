@@ -6,7 +6,7 @@
 - Date: {{.Date}}
 - Working directory: {{.WorkDir}}
 - Container image: {{.ContainerImage}}
-- Project mounted at: /workspace
+- Project mounted at: {{.WorkDir}}
 {{- if .HostTools}}
 - Host tools: {{range $i, $t := .HostTools}}{{if $i}}, {{end}}{{$t}}{{end}}{{if containsStr .HostTools "git"}} (worktree{{if .WorktreeBranch}}: {{.WorktreeBranch}}{{end}}){{end}}
 {{- end}}

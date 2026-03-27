@@ -604,7 +604,7 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 // --- Tool Description tests ---
 
 func TestLoadToolDescriptions(t *testing.T) {
-	descs := loadToolDescriptions("test-image:latest")
+	descs := loadToolDescriptions("test-image:latest", "/workspace")
 	if descs == nil {
 		t.Fatal("loadToolDescriptions returned nil")
 	}
@@ -630,7 +630,7 @@ func TestLoadToolDescriptions(t *testing.T) {
 }
 
 func TestLoadToolDescriptionsPlaceholderReplacement(t *testing.T) {
-	descs := loadToolDescriptions("my-custom:v1.2.3")
+	descs := loadToolDescriptions("my-custom:v1.2.3", "/workspace")
 
 	// bash.md and devenv.md use __CONTAINER_IMAGE__.
 	for _, name := range []string{"bash", "devenv"} {
@@ -651,7 +651,7 @@ func TestLoadToolDescriptionsPlaceholderReplacement(t *testing.T) {
 }
 
 func TestToolDescriptionContainsGuidance(t *testing.T) {
-	descs := loadToolDescriptions("alpine:latest")
+	descs := loadToolDescriptions("alpine:latest", "/workspace")
 
 	// Each tool description should contain key guidance keywords.
 	tests := []struct {
@@ -761,7 +761,7 @@ func TestGetToolDescriptionFallback(t *testing.T) {
 
 func TestGetToolDescriptionLoaded(t *testing.T) {
 	old := toolDescriptions
-	toolDescriptions = loadToolDescriptions("alpine:latest")
+	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace")
 	defer func() { toolDescriptions = old }()
 
 	result := getToolDescription("bash", "fallback")
@@ -775,7 +775,7 @@ func TestGetToolDescriptionLoaded(t *testing.T) {
 
 func TestGetToolDescriptionMissingTool(t *testing.T) {
 	old := toolDescriptions
-	toolDescriptions = loadToolDescriptions("alpine:latest")
+	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace")
 	defer func() { toolDescriptions = old }()
 
 	result := getToolDescription("nonexistent_tool", "my fallback")

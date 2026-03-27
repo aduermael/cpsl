@@ -912,7 +912,10 @@ func (a *App) handleResult(result any) {
 
 	case workspaceMsg:
 		a.worktreePath = msg.worktreePath
-		a.repoRoot = msg.worktreePath
+		a.repoRoot = msg.repoRoot
+		if a.repoRoot == "" {
+			a.repoRoot = msg.worktreePath
+		}
 		a.projectConfig = loadProjectConfig(a.repoRoot)
 		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
 		a.configReady = true

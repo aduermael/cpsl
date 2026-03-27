@@ -24,8 +24,8 @@ var toolDescriptions map[string]ToolDesc
 
 // loadToolDescriptions reads all markdown files from the embedded prompts/tools/
 // directory and returns a map keyed by tool name. Dynamic placeholders
-// (__CONTAINER_IMAGE__) are replaced with the provided values.
-func loadToolDescriptions(containerImage string) map[string]ToolDesc {
+// (__CONTAINER_IMAGE__, __WORK_DIR__) are replaced with the provided values.
+func loadToolDescriptions(containerImage, workDir string) map[string]ToolDesc {
 	entries, err := prompts.ToolDescFS.ReadDir("tools")
 	if err != nil {
 		return nil
@@ -51,6 +51,10 @@ func loadToolDescriptions(containerImage string) map[string]ToolDesc {
 		if containerImage != "" {
 			td.Full = strings.ReplaceAll(td.Full, "__CONTAINER_IMAGE__", containerImage)
 			td.Brief = strings.ReplaceAll(td.Brief, "__CONTAINER_IMAGE__", containerImage)
+		}
+		if workDir != "" {
+			td.Full = strings.ReplaceAll(td.Full, "__WORK_DIR__", workDir)
+			td.Brief = strings.ReplaceAll(td.Brief, "__WORK_DIR__", workDir)
 		}
 
 		descs[td.Name] = td

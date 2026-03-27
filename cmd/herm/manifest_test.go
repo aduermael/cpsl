@@ -62,7 +62,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3-pip pyt
 }
 
 func TestManifestFromDockerfile_NoCustomizations(t *testing.T) {
-	dockerfile := "FROM aduermael/herm:__HERM_VERSION__\nWORKDIR /workspace\n"
+	dockerfile := "FROM aduermael/herm:__HERM_VERSION__\n"
 	got := manifestFromDockerfile(dockerfile)
 
 	if !strings.Contains(got, "Pre-installed:") {
