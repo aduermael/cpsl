@@ -746,8 +746,11 @@
             .features-grid { grid-template-columns: 1fr; }
         }
         @media (max-width: 700px) {
-            .nav-links, .nav-right { display: none; }
-            .mobile-toggle { display: flex; margin-left: auto; }
+            .nav-links { display: none; }
+            .nav-right .btn-secondary { display: none; }
+            .nav-right { margin-left: auto; }
+            .nav { gap: 12px; }
+            .mobile-toggle { display: flex; }
             .hero { padding: 120px 0 48px; }
             .mascot { width: 130px; }
             h1 { font-size: 2.4rem; }
@@ -851,7 +854,6 @@
     <a href="#install" onclick="closeMobile()">Install</a>
     <a href="#compare" onclick="closeMobile()">Compare</a>
     <a href="#faq" onclick="closeMobile()">FAQ</a>
-    <a href="https://github.com/aduermael/herm" target="_blank" rel="noopener">GitHub</a>
     <a href="https://discord.gg/xMEF646A" target="_blank" rel="noopener">Discord</a>
 </div>
 
