@@ -793,8 +793,8 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	// skips node creation for an empty max_tokens response (Phase 4b), the
 	// error flows through drainStream and retryableStream retries. But as a
 	// defence-in-depth, also check here in case a max_tokens stop reaches
-	// us with an empty nodeID and no tool calls.
-	if stopReason == "max_tokens" && len(toolCalls) == 0 && nodeID == "" {
+	// us with no tool calls.
+	if stopReason == "max_tokens" && len(toolCalls) == 0 {
 		a.emit(AgentEvent{
 			Type:  EventError,
 			Error: fmt.Errorf("response was truncated — output exceeded max_tokens with no usable content; try breaking the task into smaller steps"),
@@ -816,6 +816,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	}
 	iteration := 0
 	for iteration < maxIter && len(toolCalls) > 0 {
+		iteration++
 		if err := ctx.Err(); err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: err})
 			break
@@ -1033,7 +1034,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 			break
 		}
 
-		if stopReason == "max_tokens" && len(toolCalls) == 0 && nodeID == "" {
+		if stopReason == "max_tokens" && len(toolCalls) == 0 {
 			a.emit(AgentEvent{
 				Type:  EventError,
 				Error: fmt.Errorf("response was truncated — output exceeded max_tokens with no usable content; try breaking the task into smaller steps"),
@@ -1042,6 +1043,10 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		}
 
 		if nodeID == "" {
+			a.emit(AgentEvent{
+				Type:  EventError,
+				Error: fmt.Errorf("LLM response produced no conversation node — stopping"),
+			})
 			break
 		}
 		inputTokens := a.emitUsage(ctx, nodeID, stopReason)
@@ -1056,6 +1061,13 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		a.emit(AgentEvent{
 			Type:  EventError,
 			Error: fmt.Errorf("reached maximum tool iterations (%d) — stopping to prevent runaway loop", maxIter),
+		})
+	}
+
+	if iteration >= maxIter && len(toolCalls) > 0 {
+		a.emit(AgentEvent{
+			Type:  EventError,
+			Error: fmt.Errorf("reached maximum tool iterations (%d) — stopping; send another message to continue", maxIter),
 		})
 	}
 
