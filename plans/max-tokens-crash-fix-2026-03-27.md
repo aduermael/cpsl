@@ -92,7 +92,7 @@ Node A (assistant, output_group=X): partial content (hit max_tokens)
 
 - [x] 7a: Add `OutputGroupID` field to `types.Node` (nullable string). Add `MaxOutputGroupTokens` to `CompletionRequest` or as a new `PromptOption`. Add `WithMaxOutputGroupTokens()` option to langdag.go.
 - [x] 7b: In `streamResponse()`, when `stop_reason=max_tokens` and there is usable content: save the partial node with an `OutputGroupID`, then issue a continuation call to the provider with the accumulated content as assistant prefill. Keep streaming events on the same channel. Track cumulative output tokens against the group budget; stop if exceeded.
-- [ ] 7c: Update `buildMessages()` — when walking ancestors, if consecutive nodes share an `OutputGroupID`, only include the last node's content (since it's accumulated). This prevents sending duplicated content to the LLM on future turns.
+- [x] 7c: Update `buildMessages()` — when walking ancestors, if consecutive nodes share an `OutputGroupID`, only include the last node's content (since it's accumulated). This prevents sending duplicated content to the LLM on future turns.
 - [ ] 7d: Wire `WithMaxOutputGroupTokens()` from herm's `buildPromptOpts()` — set a reasonable default (e.g., 4× max_tokens = 65536).
 - [ ] 7e: Add tests: mock provider returns max_tokens 3 times then end_turn → verify 3 intermediate nodes + 1 final node all share the same group ID, final node has accumulated content, caller stream sees continuous chunks. Test group budget exceeded → verify generation stops gracefully. Test `buildMessages` deduplication for group nodes.
 
