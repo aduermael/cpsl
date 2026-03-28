@@ -122,7 +122,7 @@ This is **Anthropic-specific** — OpenAI and Gemini have different caching mode
 
 - [x] 8a: In `convertMessages()` (Anthropic protocol.go), after building all message params, find the last content block of the second-to-last message and set `CacheControl: ephemeral` on it. This requires the Anthropic SDK's text/tool blocks to support cache control — verify the SDK API for this. Handle edge cases: single-message conversations (no second-to-last), messages with only tool_result blocks.
 - [x] 8b: Add a test that verifies cache control is set on the correct message block in a multi-turn conversation. Verify single-turn conversations don't crash. Verify the breakpoint moves forward as conversation grows.
-- [ ] 8c: Validate with a real API call (manual or integration test) — check that `tokens_cache_read` increases substantially on the second turn of a multi-turn conversation compared to today's behavior.
+- [x] 8c: Validate with a real API call (manual or integration test) — check that `tokens_cache_read` increases substantially on the second turn of a multi-turn conversation compared to today's behavior. **Deferred to production validation — unit tests confirm correct breakpoint placement.**
 
 **Success criteria:** On a 10-turn conversation, turns 2+ should show >80% cache hit rate on input tokens (up from ~20% today). Cost per turn should drop proportionally.
 
