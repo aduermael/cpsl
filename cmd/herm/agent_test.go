@@ -2796,13 +2796,15 @@ func TestRunMaxTokensEmptyResponse(t *testing.T) {
 }
 
 func TestRunMaxTokensWithPartialText(t *testing.T) {
-	// When the model returns max_tokens but has partial text, the agent
-	// should continue normally — the user sees the text and the
-	// conversation state is valid for follow-up.
+	// When the model returns max_tokens but has partial text, langdag
+	// automatically continues generation (output groups). The agent sees
+	// all text deltas transparently — both from the truncated first call
+	// and the continuation.
 	prov := &scriptedProvider{
 		model: "test-model",
 		responses: []scriptedResponse{
-			{text: "Here is the beginning of a long response that got truncated", stopReason: "max_tokens", tokensIn: 100, tokensOut: 500},
+			{text: "Here is the beginning", stopReason: "max_tokens", tokensIn: 100, tokensOut: 500},
+			{text: " and here is the rest", stopReason: "end_turn", tokensIn: 600, tokensOut: 200},
 		},
 	}
 	store := newMockStorage()
@@ -2812,15 +2814,12 @@ func TestRunMaxTokensWithPartialText(t *testing.T) {
 	go agent.Run(context.Background(), "write a huge file", "")
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
-	var hasText, hasDone, hasUsage bool
-	var hasError bool
+	var allText string
+	var hasDone, hasUsage, hasError bool
 	for _, ev := range events {
 		switch ev.Type {
 		case EventTextDelta:
-			hasText = true
-			if ev.Text != "Here is the beginning of a long response that got truncated" {
-				t.Errorf("text = %q, want truncated text", ev.Text)
-			}
+			allText += ev.Text
 		case EventUsage:
 			hasUsage = true
 		case EventError:
@@ -2829,14 +2828,14 @@ func TestRunMaxTokensWithPartialText(t *testing.T) {
 			hasDone = true
 		}
 	}
-	if !hasText {
-		t.Error("expected EventTextDelta with partial text")
+	if allText != "Here is the beginning and here is the rest" {
+		t.Errorf("accumulated text = %q, want both parts concatenated", allText)
 	}
 	if !hasUsage {
 		t.Error("expected EventUsage")
 	}
 	if hasError {
-		t.Error("unexpected EventError — partial text should not produce an error")
+		t.Error("unexpected EventError — continuation should be transparent")
 	}
 	if !hasDone {
 		t.Error("expected EventDone")
