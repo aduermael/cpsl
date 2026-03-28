@@ -57,8 +57,8 @@ When `stop_reason=max_tokens`, the response may contain partial/incomplete conte
 
 Even with langdag fixes, herm should gracefully handle truncation rather than silently dropping content.
 
-- [ ] 5a: In `runLoop()`, after `retryableStream()` returns, check if `stopReason == "max_tokens"`. If there are no tool calls and no text was emitted, emit an informative error event (e.g., "Response was truncated — output exceeded max_tokens. Try breaking the task into smaller steps.") and break the loop. If there IS text (the model produced partial text before hitting the limit), continue normally — the user sees the partial text, and the conversation state is valid for follow-up.
-- [ ] 5b: Add test in `agent_test.go`: mock a `max_tokens` stop reason with empty response → verify agent emits an error event with guidance. Mock a `max_tokens` stop reason with partial text → verify agent continues normally.
+- [x] 5a: In `runLoop()`, after `retryableStream()` returns, check if `stopReason == "max_tokens"`. If there are no tool calls and no text was emitted, emit an informative error event (e.g., "Response was truncated — output exceeded max_tokens. Try breaking the task into smaller steps.") and break the loop. If there IS text (the model produced partial text before hitting the limit), continue normally — the user sees the partial text, and the conversation state is valid for follow-up.
+- [x] 5b: Add test in `agent_test.go`: mock a `max_tokens` stop reason with empty response → verify agent emits an error event with guidance. Mock a `max_tokens` stop reason with partial text → verify agent continues normally.
 
 **Success criteria:** Users see a helpful message instead of a cryptic 400 error chain.
 

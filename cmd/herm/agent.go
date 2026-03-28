@@ -782,6 +782,20 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		return
 	}
 
+	// Handle max_tokens truncation with no usable content. When langdag
+	// skips node creation for an empty max_tokens response (Phase 4b), the
+	// error flows through drainStream and retryableStream retries. But as a
+	// defence-in-depth, also check here in case a max_tokens stop reaches
+	// us with an empty nodeID and no tool calls.
+	if stopReason == "max_tokens" && len(toolCalls) == 0 && nodeID == "" {
+		a.emit(AgentEvent{
+			Type:  EventError,
+			Error: fmt.Errorf("response was truncated — output exceeded max_tokens with no usable content; try breaking the task into smaller steps"),
+		})
+		a.emit(AgentEvent{Type: EventDone})
+		return
+	}
+
 	if nodeID == "" {
 		a.emit(AgentEvent{Type: EventDone})
 		return
@@ -1008,6 +1022,14 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		})
 		if err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("prompt (tool results): %w", err)})
+			break
+		}
+
+		if stopReason == "max_tokens" && len(toolCalls) == 0 && nodeID == "" {
+			a.emit(AgentEvent{
+				Type:  EventError,
+				Error: fmt.Errorf("response was truncated — output exceeded max_tokens with no usable content; try breaking the task into smaller steps"),
+			})
 			break
 		}
 

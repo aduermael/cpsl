@@ -324,6 +324,7 @@ type scriptedResponse struct {
 	toolCalls  []types.ContentBlock // tool_use blocks to include
 	tokensIn   int
 	tokensOut  int
+	stopReason string // override stop reason (default: "end_turn" or "tool_use" if toolCalls present)
 }
 
 // scriptedProvider returns pre-defined responses with optional tool calls.
@@ -351,9 +352,12 @@ func (p *scriptedProvider) Complete(_ context.Context, _ *types.CompletionReques
 	r := p.responses[idx]
 	content := []types.ContentBlock{{Type: "text", Text: r.text}}
 	content = append(content, r.toolCalls...)
-	stopReason := "end_turn"
-	if len(r.toolCalls) > 0 {
-		stopReason = "tool_use"
+	stopReason := r.stopReason
+	if stopReason == "" {
+		stopReason = "end_turn"
+		if len(r.toolCalls) > 0 {
+			stopReason = "tool_use"
+		}
 	}
 	return &types.CompletionResponse{
 		ID: fmt.Sprintf("resp-%d", idx), Model: p.model,
@@ -400,9 +404,12 @@ func (p *scriptedProvider) Stream(_ context.Context, req *types.CompletionReques
 		// Build complete response for done event
 		content := []types.ContentBlock{{Type: "text", Text: r.text}}
 		content = append(content, r.toolCalls...)
-		stopReason := "end_turn"
-		if len(r.toolCalls) > 0 {
-			stopReason = "tool_use"
+		stopReason := r.stopReason
+		if stopReason == "" {
+			stopReason = "end_turn"
+			if len(r.toolCalls) > 0 {
+				stopReason = "tool_use"
+			}
 		}
 
 		ch <- types.StreamEvent{
@@ -2747,5 +2754,91 @@ func TestAgentInjectBackgroundResultConcurrent(t *testing.T) {
 	results := agent.drainBackgroundResults()
 	if len(results) != 10 {
 		t.Errorf("expected 10 results, got %d", len(results))
+	}
+}
+
+// --- Phase 5: max_tokens handling in herm agent loop ---
+
+func TestRunMaxTokensEmptyResponse(t *testing.T) {
+	// When the model returns max_tokens with no usable content, langdag's
+	// Phase 4b emits an error (no node saved). The agent should surface an
+	// error event to the user rather than silently succeeding.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{text: "", stopReason: "max_tokens", tokensIn: 100, tokensOut: 0},
+			// Retry will hit the same response.
+			{text: "", stopReason: "max_tokens", tokensIn: 100, tokensOut: 0},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "write a huge file", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasError, hasDone bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventError:
+			hasError = true
+		case EventDone:
+			hasDone = true
+		}
+	}
+	if !hasError {
+		t.Error("expected EventError for max_tokens with empty response")
+	}
+	if !hasDone {
+		t.Error("expected EventDone")
+	}
+}
+
+func TestRunMaxTokensWithPartialText(t *testing.T) {
+	// When the model returns max_tokens but has partial text, the agent
+	// should continue normally — the user sees the text and the
+	// conversation state is valid for follow-up.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{text: "Here is the beginning of a long response that got truncated", stopReason: "max_tokens", tokensIn: 100, tokensOut: 500},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "write a huge file", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasText, hasDone, hasUsage bool
+	var hasError bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventTextDelta:
+			hasText = true
+			if ev.Text != "Here is the beginning of a long response that got truncated" {
+				t.Errorf("text = %q, want truncated text", ev.Text)
+			}
+		case EventUsage:
+			hasUsage = true
+		case EventError:
+			hasError = true
+		case EventDone:
+			hasDone = true
+		}
+	}
+	if !hasText {
+		t.Error("expected EventTextDelta with partial text")
+	}
+	if !hasUsage {
+		t.Error("expected EventUsage")
+	}
+	if hasError {
+		t.Error("unexpected EventError — partial text should not produce an error")
+	}
+	if !hasDone {
+		t.Error("expected EventDone")
 	}
 }
