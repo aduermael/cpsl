@@ -814,7 +814,8 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	if maxIter <= 0 {
 		maxIter = defaultMaxToolIterations
 	}
-	for iteration := 0; iteration < maxIter && len(toolCalls) > 0; iteration++ {
+	iteration := 0
+	for iteration < maxIter && len(toolCalls) > 0 {
 		if err := ctx.Err(); err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: err})
 			break
@@ -1046,6 +1047,16 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		inputTokens := a.emitUsage(ctx, nodeID, stopReason)
 		a.clearOldToolResults(ctx, nodeID, inputTokens)
 		nodeID = a.maybeCompact(ctx, nodeID, inputTokens)
+		iteration++
+	}
+
+	// Emit an error when the loop exhausted maxToolIterations while the LLM
+	// was still requesting tool calls.
+	if iteration >= maxIter && len(toolCalls) > 0 {
+		a.emit(AgentEvent{
+			Type:  EventError,
+			Error: fmt.Errorf("reached maximum tool iterations (%d) — stopping to prevent runaway loop", maxIter),
+		})
 	}
 
 	a.emit(AgentEvent{Type: EventDone, NodeID: nodeID})

@@ -3547,3 +3547,116 @@ check:
 		t.Error("expected EventDone")
 	}
 }
+
+// --- Task 6d: Max tool iterations boundary ---
+
+// alwaysToolProvider returns a tool_use on every call, forcing the agent to
+// loop until maxToolIterations is hit.
+type alwaysToolProvider struct {
+	mu      sync.Mutex
+	callIdx int
+	model   string
+}
+
+func (p *alwaysToolProvider) Complete(_ context.Context, _ *types.CompletionRequest) (*types.CompletionResponse, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	p.mu.Unlock()
+	return &types.CompletionResponse{
+		ID: fmt.Sprintf("resp-%d", idx), Model: p.model,
+		Content: []types.ContentBlock{
+			{Type: "text", Text: fmt.Sprintf("step %d", idx)},
+			{Type: "tool_use", ID: fmt.Sprintf("call_%d", idx), Name: "step_tool", Input: json.RawMessage(`{}`)},
+		},
+		StopReason: "tool_use",
+		Usage:      types.Usage{InputTokens: 100, OutputTokens: 50},
+	}, nil
+}
+
+func (p *alwaysToolProvider) Stream(_ context.Context, req *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	p.mu.Unlock()
+
+	ch := make(chan types.StreamEvent, 10)
+	go func() {
+		defer close(ch)
+		text := fmt.Sprintf("step %d", idx)
+		tc := types.ContentBlock{Type: "tool_use", ID: fmt.Sprintf("call_%d", idx), Name: "step_tool", Input: json.RawMessage(`{}`)}
+		ch <- types.StreamEvent{Type: types.StreamEventDelta, Content: text}
+		ch <- types.StreamEvent{Type: types.StreamEventContentDone, ContentBlock: &tc}
+		ch <- types.StreamEvent{
+			Type: types.StreamEventDone,
+			Response: &types.CompletionResponse{
+				ID: fmt.Sprintf("resp-%d", idx), Model: req.Model,
+				Content:    []types.ContentBlock{{Type: "text", Text: text}, tc},
+				StopReason: "tool_use",
+				Usage:      types.Usage{InputTokens: 100, OutputTokens: 50},
+			},
+		}
+	}()
+	return ch, nil
+}
+
+func (p *alwaysToolProvider) Name() string             { return "mock" }
+func (p *alwaysToolProvider) Models() []types.ModelInfo { return nil }
+
+// TestMaxToolIterations verifies that when the agent reaches exactly
+// maxToolIterations, it emits a clear error message and stops gracefully.
+func TestMaxToolIterations(t *testing.T) {
+	prov := &alwaysToolProvider{model: "test-model"}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	maxIter := 3
+	tool := &testTool{name: "step_tool", result: "ok"}
+	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0,
+		WithMaxToolIterations(maxIter))
+
+	go agent.Run(context.Background(), "loop forever", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	// Count tool executions.
+	var toolExecs int
+	var hasError, hasDone bool
+	var lastNodeID string
+	for _, ev := range events {
+		if ev.Type == EventToolCallDone {
+			toolExecs++
+		}
+		if ev.Type == EventError {
+			hasError = true
+			if !strings.Contains(ev.Error.Error(), "maximum tool iterations") {
+				t.Errorf("error should mention max iterations, got: %v", ev.Error)
+			}
+		}
+		if ev.Type == EventDone {
+			hasDone = true
+			lastNodeID = ev.NodeID
+		}
+	}
+
+	if toolExecs != maxIter {
+		t.Errorf("tool executions = %d, want exactly %d", toolExecs, maxIter)
+	}
+	if !hasError {
+		t.Error("expected EventError when max tool iterations reached")
+	}
+	if !hasDone {
+		t.Error("expected EventDone")
+	}
+	if lastNodeID == "" {
+		t.Error("EventDone should have a valid nodeID for conversation resume")
+	}
+}
+
+// TestMaxToolIterations_DefaultValue verifies that the default maxToolIterations
+// (25) is used when none is configured.
+func TestMaxToolIterations_DefaultValue(t *testing.T) {
+	agent := NewAgent(newTestClient("ok"), nil, nil, "", "test-model", 0)
+	if agent.maxToolIterations != 0 {
+		t.Errorf("maxToolIterations = %d, want 0 (uses default %d)", agent.maxToolIterations, defaultMaxToolIterations)
+	}
+}
