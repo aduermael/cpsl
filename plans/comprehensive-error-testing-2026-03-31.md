@@ -139,7 +139,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 - [x] 8c: **Non-streaming error responses** — Test: `POST /prompt` (non-streaming) with a provider that returns errors. Verify: HTTP 500 with `{"error": "..."}` body containing the original error context (not just "internal server error").
 - [x] 8d: **Invalid request validation** — Test: `POST /prompt` with empty body, missing `message` field, invalid JSON, extremely long message (>1MB). Verify: 400 status with descriptive error for each case. Empty body and invalid JSON already tested (TestPromptInvalidJSON, TestPromptEmptyMessage). Added: nil body, missing message field, 1MB+ message (succeeds — no server limit), streaming empty body.
 - [x] 8e: **Auth edge cases** — Tests: empty X-API-Key header, malformed Bearer tokens (trailing space, no space, Basic scheme, wrong key), health endpoint bypasses auth with wrong credentials, no-config means all endpoints open. All return 401 with "unauthorized" message. No bugs found.
-- [ ] 8f: Fix any actual bugs found in error responses.
+- [x] 8f: Fix any actual bugs found in error responses. **One bug fixed**: SSE error events wrote raw error messages without handling newlines — `fmt.Fprintf(w, "event: error\ndata: %s\n\n", err)` broke SSE format when error contained `\n`, causing parsers to see only the first line. Fixed with `writeSSEError` helper that writes each line with its own `data:` prefix per SSE spec. Also added nil-check for `StreamEventError.Error` to prevent panic on malformed events. All three SDKs (Go, Python, TypeScript) already handle multi-line `data:` fields correctly.
 
 ---
 
