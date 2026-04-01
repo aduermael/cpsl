@@ -30,8 +30,6 @@ The current `mock.Provider` can only simulate clean responses and context cancel
 
 Each provider (Anthropic, OpenAI, Gemini, Grok) has protocol conversion code that can encounter malformed data. These paths need tests that verify errors propagate (not panic or silently produce garbage).
 
-**Parallel Phases: 2, 3**
-
 **Files:** `internal/provider/{anthropic,openai,gemini}/protocol.go`, `internal/provider/openai/{grok.go,responses.go}`
 
 - [ ] 2a: **Anthropic protocol** — Test `convertMessages()` with: malformed JSON content blocks, empty content arrays, unknown block types, tool_use blocks with invalid JSON in input field, messages with only empty-text blocks (should be filtered). Test `processStreamEvents()` with: stream that closes mid-content-block, delta with missing index, content_block_start with unknown type. Verify each produces a clear error or safe fallback — never a panic.
@@ -124,8 +122,6 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 - [ ] 8f: Fix any actual bugs found in error responses.
 
 ---
-
-**Parallel Phases: 9, 10, 11**
 
 ## Phase 9: Go SDK — Error Handling & SSE Edge Cases
 
