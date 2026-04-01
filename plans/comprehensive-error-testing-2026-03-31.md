@@ -151,7 +151,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 - [x] 9b: **SSE malformed JSON handling consistency** — Tested malformed delta among valid ones: valid content accumulates correctly ("Hello world!"), malformed delta emitted with empty Content (not skipped), no stream-level error. Verified behavior is intentional — per-event parse failures don't escalate to stream errors. Added `Err()` method (in 9a) for stream-level errors (SSE error events, I/O errors). No bugs found.
 - [x] 9c: **HTTP 5xx during streaming** — Tested with httptest servers: HTTP 200 + SSE error event → `*StreamError` with "provider crashed" and partial content preserved via `Content()`. HTTP 500 before streaming → `*APIError` with status 500 and server message. Error type differentiation works correctly. No bugs found.
 - [x] 9d: **Connection drop mid-stream** — Tested with httptest server using Hijack() to abruptly close connections: (1) drop between events — start+delta received, content "before drop" preserved, Node() returns error, no hang (5s guard), (2) drop mid-event (mid-line) — incomplete delta line, stream detects and exits cleanly, Node() returns error. No bugs found.
-- [ ] 9e: **Concurrent streaming** — Test: open 2+ concurrent streaming requests. Verify: no shared state corruption, each stream receives its own events independently.
+- [x] 9e: **Concurrent streaming** — 5 concurrent `PromptStream` requests against httptest server, each with unique message/content. Verified with `-race`: each stream receives its own events independently, no content mixing, no duplicate content, unique nodeIDs. No bugs found.
 - [ ] 9f: Fix any actual bugs found — especially around silent failures in SSE parsing.
 
 ---
