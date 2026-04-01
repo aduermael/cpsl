@@ -1933,6 +1933,180 @@ func TestSubAgentBackgroundCompletionInjection(t *testing.T) {
 	}
 }
 
+// --- Phase 5, Task 5e: Concurrent sub-agent race conditions ---
+
+func TestSubAgentConcurrentForegroundRace(t *testing.T) {
+	// Spawn 5 foreground sub-agents concurrently from the same SubAgentTool.
+	// Verify: no race conditions on agentNodes map, all results correctly
+	// attributed with unique agent_ids. Must pass with -race flag.
+	prov := &mockProvider{responses: []string{
+		"output-0", "output-1", "output-2", "output-3", "output-4",
+	}, model: "test-model"}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	const n = 5
+	results := make([]string, n)
+	errors := make([]error, n)
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			results[idx], errors[idx] = tool.Execute(context.Background(), json.RawMessage(
+				fmt.Sprintf(`{"task":"task %d","mode":"explore"}`, idx)))
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errors {
+		if err != nil {
+			t.Errorf("sub-agent %d error: %v", i, err)
+		}
+	}
+
+	// Each result should contain a unique agent_id.
+	agentIDs := make(map[string]bool)
+	for i, result := range results {
+		id := extractAgentID(t, result)
+		if agentIDs[id] {
+			t.Errorf("duplicate agent_id %q from sub-agent %d", id, i)
+		}
+		agentIDs[id] = true
+	}
+
+	if len(agentIDs) != n {
+		t.Errorf("expected %d unique agent_ids, got %d", n, len(agentIDs))
+	}
+}
+
+func TestSubAgentConcurrentBackgroundRace(t *testing.T) {
+	// Spawn 5 background sub-agents concurrently from the same SubAgentTool.
+	// Verify: no race conditions on bgAgents map, all complete with unique IDs.
+	prov := &mockProvider{responses: []string{
+		"bg-0", "bg-1", "bg-2", "bg-3", "bg-4",
+	}, model: "test-model"}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	parentEvents := make(chan AgentEvent, 256)
+	tool.parentEvents = parentEvents
+
+	const n = 5
+	results := make([]string, n)
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			result, err := tool.Execute(context.Background(), json.RawMessage(
+				fmt.Sprintf(`{"task":"bg task %d","mode":"explore","background":true}`, idx)))
+			if err != nil {
+				t.Errorf("Execute %d error: %v", idx, err)
+				return
+			}
+			results[idx] = result
+		}(i)
+	}
+	wg.Wait()
+
+	// Wait for all background agents to complete.
+	agentIDs := make(map[string]bool)
+	for _, result := range results {
+		if result == "" {
+			continue
+		}
+		id := extractAgentID(t, result)
+		agentIDs[id] = true
+		waitForBgAgent(t, tool, id, 10*time.Second)
+	}
+
+	if len(agentIDs) != n {
+		t.Errorf("expected %d unique agent_ids, got %d", n, len(agentIDs))
+	}
+
+	// All should have completed status.
+	for id := range agentIDs {
+		status, err := tool.bgAgentStatus(id)
+		if err != nil {
+			t.Errorf("bgAgentStatus(%q) error: %v", id, err)
+			continue
+		}
+		if !strings.Contains(status, "[status: completed]") {
+			t.Errorf("agent %q should be completed, got: %q", id, status)
+		}
+	}
+}
+
+func TestSubAgentConcurrentMixedRace(t *testing.T) {
+	// Mix foreground and background sub-agents concurrently to exercise all
+	// shared state paths simultaneously.
+	prov := &mockProvider{responses: []string{
+		"mixed-0", "mixed-1", "mixed-2", "mixed-3", "mixed-4", "mixed-5",
+	}, model: "test-model"}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	parentEvents := make(chan AgentEvent, 256)
+	tool.parentEvents = parentEvents
+
+	const n = 6 // 3 foreground + 3 background
+	results := make([]string, n)
+	errs := make([]error, n)
+
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		bg := i >= 3 // last 3 are background
+		go func(idx int, background bool) {
+			defer wg.Done()
+			input := fmt.Sprintf(`{"task":"mixed task %d","mode":"explore"`, idx)
+			if background {
+				input += `,"background":true`
+			}
+			input += "}"
+			results[idx], errs[idx] = tool.Execute(context.Background(), json.RawMessage(input))
+		}(i, bg)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("sub-agent %d error: %v", i, err)
+		}
+	}
+
+	// Wait for background agents to complete.
+	for i := 3; i < n; i++ {
+		if results[i] == "" {
+			continue
+		}
+		id := extractAgentID(t, results[i])
+		waitForBgAgent(t, tool, id, 10*time.Second)
+	}
+
+	// All should have unique agent_ids.
+	agentIDs := make(map[string]bool)
+	for _, result := range results {
+		if result == "" {
+			continue
+		}
+		id := extractAgentID(t, result)
+		if agentIDs[id] {
+			t.Errorf("duplicate agent_id %q", id)
+		}
+		agentIDs[id] = true
+	}
+}
+
 func TestSubAgentStreamErrorMidResponse(t *testing.T) {
 	// When the stream sends an error event mid-response (simulating connection
 	// reset), the error should be collected and appear in the result.
