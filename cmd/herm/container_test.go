@@ -8,7 +8,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // fakeDockerCommand returns a function that replaces dockerCommand in tests.
@@ -689,5 +691,88 @@ func TestContainerClient_RebuildStartFailure(t *testing.T) {
 	// Old container must have been stopped before the failed Start.
 	if !calledRmOld {
 		t.Errorf("expected docker rm -f %s to be called before new Start", oldID)
+	}
+}
+
+func TestContainerClient_ConcurrentExecAndRebuild(t *testing.T) {
+	orig := dockerCommand
+	defer func() { dockerCommand = orig }()
+
+	dockerCommand = fakeDockerCommand(func(args []string) (string, string, int) {
+		if len(args) >= 2 {
+			switch args[1] {
+			case "run":
+				return "container-id\n", "", 0
+			case "exec":
+				return "exec-output\n", "", 0
+			case "build":
+				return "", "", 0
+			case "rm":
+				return "", "", 0
+			}
+		}
+		return "", "", 1
+	})
+
+	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
+	if err := c.Start("/workspace", nil); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 10)
+
+	// Launch 3 concurrent execs.
+	for i := 0; i < 3; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_, err := c.Exec("echo test", 5)
+			if err != nil {
+				// ErrNotRunning is expected during the rebuild window
+				// (between Rebuild setting running=false and Start completing).
+				if cerr, ok := err.(*ContainerError); ok && cerr.Code == ErrNotRunning {
+					return
+				}
+				errCh <- fmt.Errorf("exec: %w", err)
+			}
+		}()
+	}
+
+	// Launch rebuild concurrently.
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		err := c.Rebuild("new:latest", "/tmp/Dockerfile", "/workspace", nil)
+		if err != nil {
+			errCh <- fmt.Errorf("rebuild: %w", err)
+		}
+	}()
+
+	// Wait with timeout to detect deadlock.
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// All operations completed — no deadlock.
+	case <-time.After(10 * time.Second):
+		t.Fatal("deadlock: concurrent exec + rebuild did not complete within 10s")
+	}
+
+	close(errCh)
+	for err := range errCh {
+		t.Errorf("unexpected error: %v", err)
+	}
+
+	// After rebuild, the container must be running.
+	c.mu.Lock()
+	running := c.running
+	c.mu.Unlock()
+	if !running {
+		t.Error("expected container to be running after concurrent rebuild")
 	}
 }
