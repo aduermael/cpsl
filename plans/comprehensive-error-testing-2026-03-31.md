@@ -110,16 +110,83 @@ Several places in the agent loop silently ignore errors. While some are intentio
 
 ---
 
-## Phase 8: Integration — End-to-End Error Chains
+## Phase 8: Langdag API Server — Streaming & Error Responses
+
+The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cases are undertested.
+
+**Files:** `external-deps-workspace/langdag/internal/api/server.go`, `api_test.go`
+
+- [ ] 8a: **Streaming error mid-response** — Test: start a `POST /prompt?stream=true` request, mock provider emits a few deltas then a `StreamEventError`. Verify: SSE stream sends `event: error` with the error message, then the connection closes cleanly. Client should receive all prior deltas plus the error event.
+- [ ] 8b: **Provider failure during streaming** — Test: mock provider's `Stream()` returns an error (not a stream). Verify: API returns a well-formed SSE error event (not an HTTP 500 with JSON body — the stream has already started with `Content-Type: text/event-stream`).
+- [ ] 8c: **Non-streaming error responses** — Test: `POST /prompt` (non-streaming) with a provider that returns errors. Verify: HTTP 500 with `{"error": "..."}` body containing the original error context (not just "internal server error").
+- [ ] 8d: **Invalid request validation** — Test: `POST /prompt` with empty body, missing `message` field, invalid JSON, extremely long message (>1MB). Verify: 400 status with descriptive error for each case.
+- [ ] 8e: **Auth edge cases** — Test: requests with empty API key header, malformed Bearer token, correct key but wrong endpoint. Verify: 401 with clear message, health endpoint bypasses auth.
+- [ ] 8f: Fix any actual bugs found in error responses.
+
+---
+
+**Parallel Phases: 9, 10, 11**
+
+## Phase 9: Go SDK — Error Handling & SSE Edge Cases
+
+**Files:** `external-deps-workspace/langdag/sdks/go/client.go`, `sse.go`, `errors.go`
+
+- [ ] 9a: **SSE stream without done event** — Test: server sends start + deltas but connection closes without a done event. Verify: `Stream.Node()` returns an error (not empty string), `Stream.Content()` still returns accumulated content. Currently this path may hang or return silently empty.
+- [ ] 9b: **SSE malformed JSON handling consistency** — Currently Go SDK silently ignores JSON parse errors in delta/done events (returns event with empty Content/NodeID). Test and verify this is intentional: a stream with one malformed delta among valid ones should still produce the valid content. If this masks real errors, add a way to surface parse failures (e.g., via `Stream.Err()`).
+- [ ] 9c: **HTTP 5xx during streaming** — Test: server returns HTTP 200 with `Content-Type: text/event-stream` headers, then sends an error event. Versus: server returns HTTP 500 before streaming starts. Verify: both cases produce appropriate error types (`StreamError` vs `APIError`).
+- [ ] 9d: **Connection drop mid-stream** — Test using a mock HTTP server that closes the connection after sending partial SSE data (mid-event, mid-line). Verify: `Stream` detects the interruption and returns an error via `Stream.Err()` or the events channel, does not hang.
+- [ ] 9e: **Concurrent streaming** — Test: open 2+ concurrent streaming requests. Verify: no shared state corruption, each stream receives its own events independently.
+- [ ] 9f: Fix any actual bugs found — especially around silent failures in SSE parsing.
+
+---
+
+## Phase 10: Python SDK — Error Handling & SSE Edge Cases
+
+**Files:** `external-deps-workspace/langdag/sdks/python/langdag/client.py`, `async_client.py`, `exceptions.py`
+
+- [ ] 10a: **SSE stream without done event** — Test both sync and async: server sends start + deltas, then closes. Verify: `StreamResult.node_id` is None or raises `StreamError`, accumulated content is still accessible. Test that consuming the stream iterator completes (does not hang).
+- [ ] 10b: **Provider error mid-stream** — Test: server sends start, 2 deltas, then `event: error\ndata: provider crashed`. Verify: `StreamError` is raised with the error message when iterating, prior deltas are not lost if caller caught partial content.
+- [ ] 10c: **Connection timeout during stream** — Test using httpx mock: configure a timeout that fires after first delta. Verify: raises `ConnectionError` (or `StreamError`), not an unhandled httpx exception. Test both sync and async clients.
+- [ ] 10d: **Invalid SSE event sequence** — Test: server sends delta before start, done without any deltas, multiple done events. Verify: SDK handles gracefully (no crash, reasonable behavior).
+- [ ] 10e: **Large streamed response** — Test: server sends 10,000 delta events. Verify: memory usage is bounded (no unbounded buffer accumulation if caller iterates lazily), all content collected correctly.
+- [ ] 10f: Fix any actual bugs found in Python SDK error handling.
+
+---
+
+## Phase 11: TypeScript SDK — Error Handling & SSE Edge Cases
+
+**Files:** `external-deps-workspace/langdag/sdks/typescript/src/client.ts`, `sse.ts`, `errors.ts`
+
+- [ ] 11a: **SSE stream without done event** — Test: readable stream sends start + deltas then closes. Verify: `stream.node()` throws `SSEParseError` (no done event received), `stream.content` still has accumulated text from deltas.
+- [ ] 11b: **Provider error mid-stream** — Test: stream sends start, deltas, then error event. Verify: error event is yielded by `stream.events()` iterator, `stream.node()` rejects with the error. Prior delta content is accessible.
+- [ ] 11c: **Chunked SSE delivery edge cases** — Test: SSE events split across ReadableStream chunks at awkward boundaries (mid-UTF8 character, mid-`\n\n` separator, mid-`data:` prefix). Verify: parser reassembles correctly, no data loss or corruption.
+- [ ] 11d: **Fetch failure during streaming** — Test: ReadableStream reader throws an error mid-read (simulating network drop). Verify: `stream.events()` throws `NetworkError`, `stream.node()` rejects, no unhandled promise rejections.
+- [ ] 11e: **Response.body null** — Test: fetch returns response with null body for streaming request. Verify: throws `NetworkError` with descriptive message. (May already be tested — verify and extend if needed.)
+- [ ] 11f: Fix any actual bugs found in TypeScript SDK error handling.
+
+---
+
+## Phase 12: Cross-SDK Consistency & E2E Streaming Errors
+
+Verify all 3 SDKs behave consistently when the server returns errors during streaming. These tests run against a test HTTP server (not a full langdag server — just SSE responses).
+
+- [ ] 12a: **Error event format contract** — Define and document the exact SSE error format the server sends. Verify all 3 SDKs parse it identically: Go → `StreamError`, Python → `StreamError`, TypeScript → error `SSEEvent`. Write a shared test fixture (SSE response bytes) and test each SDK against it.
+- [ ] 12b: **Graceful degradation contract** — Define what each SDK should do when the stream ends without a done event. Verify behavior is consistent: all SDKs should make accumulated content available even when the stream terminates abnormally. If SDKs diverge, align them.
+- [ ] 12c: **E2E streaming error** — Using the mock LLM server (`tools/mockllm/` or `docker-compose.test.yml` with mock provider), trigger a streaming response that produces an error event. Run each SDK's E2E test suite against it. Verify all 3 SDKs surface the error.
+- [ ] 12d: Fix any cross-SDK inconsistencies — especially around malformed delta JSON (Go silently ignores, TypeScript throws `SSEParseError`, Python falls back to message). Align to a single documented behavior or justify the divergence.
+
+---
+
+## Phase 13: Integration — End-to-End Error Chains (Herm)
 
 Verify that errors flow correctly through the full stack: provider error → langdag → herm agent → user-visible message. These tests use the enhanced mock from Phase 1.
 
-- [ ] 8a: **Provider permanent error → user sees error** — Mock returns 401 on all calls. Verify: langdag wraps the error, herm's retry logic classifies it as non-retryable, agent emits `EventError` with the original API error message, and emits `EventDone`. The user should see "Unauthorized" or similar — not just "an error occurred".
-- [ ] 8b: **Provider transient error → retry → success** — Mock fails twice with 503, succeeds on third call. Verify: `EventRetry` emitted for each retry (user sees "retrying..."), final response delivered normally, usage stats reflect only the successful call.
-- [ ] 8c: **Mid-stream failure → stream retry → success** — Mock sends 3 chunks then errors, retry sends full response. Verify: `EventStreamClear` emitted (partial text discarded), full response displayed, no duplicate content.
-- [ ] 8d: **Sub-agent error chain** — Main agent spawns sub-agent, sub-agent's provider returns error. Verify: error collected with full context (agent_id, turn number, tool name), parent agent receives structured error result, parent agent's LLM can see the error and respond appropriately.
-- [ ] 8e: **Cascading failure** — Sub-agent hits max_tokens with no content, then parent agent retries with a different approach. Verify the full chain works without corruption: sub-agent error → parent sees error → parent takes corrective action → corrective action succeeds.
-- [ ] 8f: Fix any actual bugs found in the end-to-end error chain.
+- [ ] 13a: **Provider permanent error → user sees error** — Mock returns 401 on all calls. Verify: langdag wraps the error, herm's retry logic classifies it as non-retryable, agent emits `EventError` with the original API error message, and emits `EventDone`. The user should see "Unauthorized" or similar — not just "an error occurred".
+- [ ] 13b: **Provider transient error → retry → success** — Mock fails twice with 503, succeeds on third call. Verify: `EventRetry` emitted for each retry (user sees "retrying..."), final response delivered normally, usage stats reflect only the successful call.
+- [ ] 13c: **Mid-stream failure → stream retry → success** — Mock sends 3 chunks then errors, retry sends full response. Verify: `EventStreamClear` emitted (partial text discarded), full response displayed, no duplicate content.
+- [ ] 13d: **Sub-agent error chain** — Main agent spawns sub-agent, sub-agent's provider returns error. Verify: error collected with full context (agent_id, turn number, tool name), parent agent receives structured error result, parent agent's LLM can see the error and respond appropriately.
+- [ ] 13e: **Cascading failure** — Sub-agent hits max_tokens with no content, then parent agent retries with a different approach. Verify the full chain works without corruption: sub-agent error → parent sees error → parent takes corrective action → corrective action succeeds.
+- [ ] 13f: Fix any actual bugs found in the end-to-end error chain.
 
 ---
 
@@ -133,3 +200,7 @@ Verify that errors flow correctly through the full stack: provider error → lan
 - All tests pass with `-race` flag
 - No test assertions are weakened to accommodate bugs — bugs are fixed in production code
 - `go test ./...` passes for both `cmd/herm/` and `external-deps-workspace/langdag/`
+- All 3 client SDKs (Go, Python, TypeScript) handle streaming errors consistently: connection drops, mid-stream errors, missing done events, malformed SSE data
+- SDK error types map correctly to HTTP status codes: 401→AuthenticationError, 404→NotFoundError, 400→BadRequestError
+- SSE parsing behavior is documented and aligned across SDKs (or divergence is explicitly justified)
+- Python and TypeScript SDK tests run via their respective test runners (`pytest`, `vitest`); Go SDK tests via `go test`
