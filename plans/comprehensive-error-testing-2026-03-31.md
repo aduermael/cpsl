@@ -18,10 +18,10 @@ The current `mock.Provider` can only simulate clean responses and context cancel
 
 **Current state:** 4 modes (random, echo, fixed, tool_use). No way to simulate: mid-stream errors, HTTP-level failures, partial responses with error, call-indexed failures (fail on call N, succeed on N+1). Agent tests work around this with custom `failThenSucceedProvider` and `streamFailThenSucceedProvider` wrappers — those are fine for herm-level tests but langdag's own tests need mock-level support.
 
-- [ ] 1a: Add `"error"` mode to mock provider — `Complete()` and `Stream()` return a configurable error (new `Error error` field on `Config`). This lets langdag tests simulate provider-level failures without custom wrappers.
-- [ ] 1b: Add `"stream_error"` mode — `Stream()` starts sending chunks normally, then emits a `StreamEventError` after a configurable number of chunks (new `ErrorAfterChunks int` field). Simulates mid-stream provider failure (network drop, server crash).
-- [ ] 1c: Add `"partial_max_tokens"` mode — `Stream()` sends partial text chunks then emits done with `StopReason: "max_tokens"` and a configurable amount of content (empty, partial text, or text + tool_use blocks). Uses existing `FixedResponse` + new `StopReason` field on Config.
-- [ ] 1d: Add call-counting support — new `FailUntilCall int` field: calls 1..N return `Config.Error`, call N+1 onwards use normal mode. Simulates transient failures followed by recovery. Existing `LastRequest` capture continues to work.
+- [x] 1a: Add `"error"` mode to mock provider — `Complete()` and `Stream()` return a configurable error (new `Error error` field on `Config`). This lets langdag tests simulate provider-level failures without custom wrappers.
+- [x] 1b: Add `"stream_error"` mode — `Stream()` starts sending chunks normally, then emits a `StreamEventError` after a configurable number of chunks (new `ErrorAfterChunks int` field). Simulates mid-stream provider failure (network drop, server crash).
+- [x] 1c: Add `"partial_max_tokens"` mode — `Stream()` sends partial text chunks then emits done with `StopReason: "max_tokens"` and a configurable amount of content (empty, partial text, or text + tool_use blocks). Uses existing `FixedResponse` + new `StopReason` field on Config.
+- [x] 1d: Add call-counting support — new `FailUntilCall int` field: calls 1..N return `Config.Error`, call N+1 onwards use normal mode. Simulates transient failures followed by recovery. Existing `LastRequest` capture continues to work.
 - [ ] 1e: Tests for all new modes — verify each mode produces the expected stream events, errors, and stop reasons. Verify `FailUntilCall` transitions correctly.
 
 ---
