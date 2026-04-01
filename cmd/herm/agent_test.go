@@ -2916,3 +2916,312 @@ func TestRunMaxTokensCrashChain_ConversationNotCorrupted(t *testing.T) {
 		t.Error("second run: expected EventDone")
 	}
 }
+
+// --- Phase 6: Agent Loop Silent Failures & Edge Cases ---
+
+// --- Task 6a: Audit silent error paths ---
+
+// getNodeErrorStorage wraps mockStorage but errors on GetNode for specific IDs.
+type getNodeErrorStorage struct {
+	*mockStorage
+	failIDs map[string]bool
+}
+
+func (s *getNodeErrorStorage) GetNode(_ context.Context, id string) (*types.Node, error) {
+	if s.failIDs[id] {
+		return nil, fmt.Errorf("storage error: node %s unavailable", id)
+	}
+	return s.mockStorage.GetNode(context.Background(), id)
+}
+
+// TestEmitUsage_StorageError verifies that emitUsage returns 0 and the agent
+// continues normally when client.GetNode() fails. The error is silent by design
+// (usage is display-only), but must not crash or hang.
+func TestEmitUsage_StorageError(t *testing.T) {
+	store := &getNodeErrorStorage{
+		mockStorage: newMockStorage(),
+		failIDs:     map[string]bool{"node-1": true},
+	}
+	prov := &mockProvider{model: "test-model", responses: []string{"hello"}}
+	client := langdag.NewWithDeps(store, prov)
+
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	// emitUsage with a node ID that will fail in storage.
+	result := agent.emitUsage(context.Background(), "node-1", "end_turn")
+	if result != 0 {
+		t.Errorf("emitUsage returned %d, want 0 on storage error", result)
+	}
+
+	// Session stats should not change.
+	if agent.sessionInputTokens != 0 {
+		t.Errorf("sessionInputTokens = %d, want 0", agent.sessionInputTokens)
+	}
+	if agent.sessionOutputTokens != 0 {
+		t.Errorf("sessionOutputTokens = %d, want 0", agent.sessionOutputTokens)
+	}
+}
+
+// TestEmitUsage_EmptyNodeID verifies that emitUsage returns 0 immediately
+// for an empty node ID without calling storage.
+func TestEmitUsage_EmptyNodeID(t *testing.T) {
+	prov := &mockProvider{model: "test-model"}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	result := agent.emitUsage(context.Background(), "", "end_turn")
+	if result != 0 {
+		t.Errorf("emitUsage returned %d, want 0 for empty nodeID", result)
+	}
+}
+
+// TestEmitUsage_NilNode verifies that emitUsage returns 0 when the node
+// is not found (GetNode returns nil, nil).
+func TestEmitUsage_NilNode(t *testing.T) {
+	store := newMockStorage() // has no nodes
+	prov := &mockProvider{model: "test-model"}
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	result := agent.emitUsage(context.Background(), "nonexistent", "end_turn")
+	if result != 0 {
+		t.Errorf("emitUsage returned %d, want 0 for nil node", result)
+	}
+}
+
+// getAncestorsErrorStorage wraps mockStorage but errors on GetAncestors
+// after a configurable number of successful calls. This lets langdag's
+// internal PromptFrom calls succeed while the agent's clearOldToolResults
+// or maybeCompact calls fail.
+type getAncestorsErrorStorage struct {
+	*mockStorage
+	mu            sync.Mutex
+	callCount     int
+	failAfterCall int // 0 = always fail; N = fail on call N+1 and beyond
+}
+
+func (s *getAncestorsErrorStorage) GetAncestors(ctx context.Context, id string) ([]*types.Node, error) {
+	s.mu.Lock()
+	s.callCount++
+	n := s.callCount
+	s.mu.Unlock()
+
+	if s.failAfterCall > 0 && n <= s.failAfterCall {
+		return s.mockStorage.GetAncestors(ctx, id)
+	}
+	return nil, fmt.Errorf("storage error: ancestors unavailable")
+}
+
+// TestClearOldToolResults_StorageError verifies that clearOldToolResults
+// returns silently when GetAncestors fails. The agent should continue without
+// clearing — risk is context window overflow on the next call.
+func TestClearOldToolResults_StorageError(t *testing.T) {
+	store := &getAncestorsErrorStorage{mockStorage: newMockStorage(), failAfterCall: 0}
+	prov := &mockProvider{model: "test-model"}
+	client := langdag.NewWithDeps(store, prov)
+
+	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+
+	// Input tokens above threshold → would normally clear, but GetAncestors fails.
+	// Should not panic or hang.
+	agent.clearOldToolResults(context.Background(), "some-node", 90000)
+}
+
+// TestClearOldToolResults_AgentContinuesOnFailure verifies the full agent loop
+// continues normally even when clearOldToolResults fails (GetAncestors error).
+func TestClearOldToolResults_AgentContinuesOnFailure(t *testing.T) {
+	// Use a provider that returns tool_use, then a final text response.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			// Call 0: use a tool
+			{
+				text: "Let me check",
+				toolCalls: []types.ContentBlock{{
+					Type:  "tool_use",
+					ID:    "call_1",
+					Name:  "test_tool",
+					Input: json.RawMessage(`{}`),
+				}},
+				tokensIn:  90000, // above threshold
+				tokensOut: 100,
+			},
+			// Call 1: final response after tool result
+			{text: "Done", tokensIn: 95000, tokensOut: 50},
+		},
+	}
+	// Allow 2 GetAncestors calls to succeed (langdag's internal PromptFrom calls),
+	// then fail on the 3rd+ (agent's clearOldToolResults call).
+	store := &getAncestorsErrorStorage{mockStorage: newMockStorage(), failAfterCall: 2}
+	client := langdag.NewWithDeps(store, prov)
+
+	tool := &testTool{name: "test_tool", result: "file.txt"}
+	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 100000)
+
+	go agent.Run(context.Background(), "check files", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasDone, hasText bool
+	for _, ev := range events {
+		if ev.Type == EventDone {
+			hasDone = true
+		}
+		if ev.Type == EventTextDelta && ev.Text == "Done" {
+			hasText = true
+		}
+	}
+	if !hasDone {
+		t.Error("expected EventDone — agent should complete despite clearOldToolResults failure")
+	}
+	if !hasText {
+		t.Error("expected final text response — agent should continue after clearing failure")
+	}
+}
+
+// TestMaybeCompact_CompactionFailure verifies that maybeCompact returns the
+// original nodeID when compactConversation fails (e.g., LLM failure).
+func TestMaybeCompact_CompactionFailure(t *testing.T) {
+	// Use failingProvider so the LLM call inside compactConversation fails.
+	store := newClearingMockStorage()
+	prov := &failingProvider{}
+	client := langdag.NewWithDeps(store, prov)
+
+	// Build a conversation chain long enough for compaction (> compactKeepRecent=6).
+	nodes := make([]*types.Node, 10)
+	for i := range nodes {
+		parentID := ""
+		if i > 0 {
+			parentID = fmt.Sprintf("node-%d", i-1)
+		}
+		nodes[i] = &types.Node{
+			ID:       fmt.Sprintf("node-%d", i),
+			ParentID: parentID,
+			NodeType: types.NodeTypeUser,
+			Content:  fmt.Sprintf("message %d", i),
+		}
+		if i%2 == 1 {
+			nodes[i].NodeType = types.NodeTypeAssistant
+		}
+	}
+
+	var ancestorIDs []string
+	for _, n := range nodes {
+		_ = store.CreateNode(context.Background(), n)
+		ancestorIDs = append(ancestorIDs, n.ID)
+	}
+	leafID := nodes[len(nodes)-1].ID
+	store.ancestorChains[leafID] = ancestorIDs
+
+	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+
+	// Input tokens at 96% of context window → above compactThresholdFraction (0.95).
+	result := agent.maybeCompact(context.Background(), leafID, 96000)
+	if result != leafID {
+		t.Errorf("maybeCompact returned %q, want %q (original) on failure", result, leafID)
+	}
+}
+
+// TestMaybeCompact_AgentContinuesAfterFailure verifies the agent loop continues
+// with the original nodeID when compaction fails.
+func TestMaybeCompact_AgentContinuesAfterFailure(t *testing.T) {
+	// First call: tool_use with high tokens to trigger compaction.
+	// Second call: final text response.
+	// compactConversation needs GetAncestors which will fail → compaction fails →
+	// agent continues with original nodeID.
+	prov := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "Checking",
+				toolCalls: []types.ContentBlock{{
+					Type:  "tool_use",
+					ID:    "call_1",
+					Name:  "test_tool",
+					Input: json.RawMessage(`{}`),
+				}},
+				tokensIn:  96000, // above compaction threshold
+				tokensOut: 100,
+			},
+			{text: "Finished", tokensIn: 5000, tokensOut: 50},
+		},
+	}
+	// Allow 2 GetAncestors calls to succeed (langdag's internal PromptFrom calls),
+	// then fail on 3rd+ (clearOldToolResults + compactConversation).
+	store := &getAncestorsErrorStorage{mockStorage: newMockStorage(), failAfterCall: 2}
+	client := langdag.NewWithDeps(store, prov)
+
+	tool := &testTool{name: "test_tool", result: "ok"}
+	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 100000)
+
+	go agent.Run(context.Background(), "do something", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var hasDone, hasFinished bool
+	for _, ev := range events {
+		if ev.Type == EventDone {
+			hasDone = true
+		}
+		if ev.Type == EventTextDelta && ev.Text == "Finished" {
+			hasFinished = true
+		}
+	}
+	if !hasDone {
+		t.Error("expected EventDone — agent should complete despite compaction failure")
+	}
+	if !hasFinished {
+		t.Error("expected 'Finished' text — agent should continue after compaction failure")
+	}
+}
+
+// TestReplaceToolResultContent_MalformedJSON verifies replaceToolResultContent
+// returns the original content for various malformed inputs.
+func TestReplaceToolResultContent_MalformedJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+	}{
+		{"empty string", ""},
+		{"plain text", "just some text"},
+		{"partial JSON", `[{"type":"tool_result"`},
+		{"JSON object not array", `{"type":"tool_result"}`},
+		{"null", "null"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := replaceToolResultContent(tt.input)
+			if result != tt.input {
+				t.Errorf("replaceToolResultContent(%q) = %q, want original", tt.input, result)
+			}
+		})
+	}
+}
+
+// TestReplaceToolResultContent_MixedBlockTypes verifies that only tool_result
+// blocks are replaced; text and tool_use blocks are preserved.
+func TestReplaceToolResultContent_MixedBlockTypes(t *testing.T) {
+	blocks := []types.ContentBlock{
+		{Type: "text", Text: "some text"},
+		{Type: "tool_result", ToolUseID: "call_1", Content: "big output here"},
+		{Type: "tool_use", ID: "call_2", Name: "bash"},
+	}
+	data, _ := json.Marshal(blocks)
+	result := replaceToolResultContent(string(data))
+
+	var parsed []types.ContentBlock
+	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+	if len(parsed) != 3 {
+		t.Fatalf("expected 3 blocks, got %d", len(parsed))
+	}
+	if parsed[0].Text != "some text" {
+		t.Errorf("text block changed: %q", parsed[0].Text)
+	}
+	if parsed[1].Content != "[output cleared]" {
+		t.Errorf("tool_result not cleared: %q", parsed[1].Content)
+	}
+	if parsed[2].Name != "bash" {
+		t.Errorf("tool_use block changed: name=%q", parsed[2].Name)
+	}
+}

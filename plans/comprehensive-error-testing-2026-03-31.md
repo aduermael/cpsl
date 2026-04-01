@@ -109,11 +109,7 @@ Several places in the agent loop silently ignore errors. While some are intentio
 
 **Files:** `cmd/herm/agent.go`
 
-- [ ] 6a: **Audit silent error paths** — The following errors are currently silently ignored. For each, add a test that triggers the error path and verify the agent still functions correctly. If the silent error actually causes user-visible problems (stale usage, broken context, corrupted state), fix it:
-  - `emitUsage()` — `client.GetNode()` error → returns 0 silently. Test: storage error during usage emit. Risk: low (usage is display-only).
-  - `clearOldToolResults()` — `client.GetAncestors()` error → returns early. Test: storage error during context cleanup. Risk: medium (may cause context window overflow on next call if cleanup never succeeds).
-  - `maybeCompact()` — `compactConversation()` error → returns original nodeID. Test: LLM failure during compaction. Risk: medium (conversation grows unbounded if compaction always fails).
-  - `replaceToolResultContent()` — JSON unmarshal error → returns original content. Test: malformed tool result JSON. Risk: low (preserves original).
+- [x] 6a: **Audit silent error paths** — All four silent error paths tested. `emitUsage()`: returns 0 on storage error, empty nodeID, or nil node — confirmed display-only, no impact. `clearOldToolResults()`: returns silently on GetAncestors error — agent continues normally (integration test confirms). `maybeCompact()`: returns original nodeID on compaction failure (LLM or storage error) — agent continues with uncompacted conversation. `replaceToolResultContent()`: returns original content for malformed JSON (empty, plain text, partial JSON, non-array). No bugs found — all silent paths are justified (display-only or safe fallback).
 - [ ] 6b: **Tool execution error edge cases** — Test: tool.Execute() returns error with very long message (>30KB), tool.Execute() panics (not just returns error), unknown tool name in tool_use block. Verify each case produces a tool result with `IsError: true` and a clear message — never hangs or crashes the agent loop.
 - [ ] 6c: **Approval flow interruption** — Test: agent requests approval, context is canceled before approval arrives. Verify: agent exits cleanly with an error event, no goroutine leaks, no deadlock on the approval channel.
 - [ ] 6d: **Max tool iterations boundary** — Test: agent reaches exactly `maxToolIterations` (default 25). Verify: clear error message emitted ("reached maximum tool iterations"), agent stops gracefully, partial conversation state is valid for resume.
