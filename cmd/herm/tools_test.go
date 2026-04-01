@@ -746,6 +746,103 @@ func TestGitToolRequiresApproval_ForceFlag(t *testing.T) {
 	}
 }
 
+// --- Task 7b: Git tool error paths ---
+
+func TestGitToolExecute_CredentialHintInResult(t *testing.T) {
+	tmp := t.TempDir()
+
+	// Set up a git repo with a commit and a non-existent remote.
+	for _, cmd := range [][]string{
+		{"init"},
+		{"config", "user.email", "test@test.com"},
+		{"config", "user.name", "Test"},
+	} {
+		c := newGitCmd(tmp, cmd...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", cmd, err, out)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "test.txt"), []byte("content"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, cmd := range [][]string{
+		{"add", "."},
+		{"commit", "-m", "initial"},
+		// Point origin to a non-existent local path — git will fail with
+		// "Could not read from remote repository" which triggers credential hint.
+		{"remote", "add", "origin", "/nonexistent/path/to/repo.git"},
+	} {
+		c := newGitCmd(tmp, cmd...)
+		if out, err := c.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", cmd, err, out)
+		}
+	}
+
+	tool := NewGitTool(tmp, false)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"push","args":["origin","HEAD"]}`))
+	if err != nil {
+		t.Fatalf("expected exit-code result, got error: %v", err)
+	}
+
+	// Should contain exit code from the failed push.
+	if !strings.Contains(result, "exit code:") {
+		t.Errorf("expected 'exit code:' in result, got:\n%s", result)
+	}
+
+	// Should contain credential hint — git's "Could not read from remote repository"
+	// matches the credential hint pattern.
+	if !strings.Contains(result, "Hint:") {
+		t.Errorf("expected credential hint in result, got:\n%s", result)
+	}
+	if !strings.Contains(result, "credentials") || !strings.Contains(result, "SSH") {
+		t.Errorf("hint should mention credentials/SSH, got:\n%s", result)
+	}
+}
+
+func TestGitToolExecute_StderrOnSuccess(t *testing.T) {
+	tmp := t.TempDir()
+
+	initCmd := newGitCmd(tmp, "init")
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	// git checkout -b writes "Switched to a new branch 'x'" to stderr with exit 0.
+	// CombinedOutput should capture it.
+	tool := NewGitTool(tmp, false)
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"checkout","args":["-b","test-branch"]}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// The stderr message should be visible in the result.
+	if !strings.Contains(result, "Switched to a new branch") {
+		t.Errorf("stderr should be included in result, got: %q", result)
+	}
+}
+
+func TestGitToolExecute_CanceledContext(t *testing.T) {
+	tmp := t.TempDir()
+	initCmd := newGitCmd(tmp, "init")
+	if out, err := initCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+
+	// Cancel context before Execute — git fails to start (non-ExitError).
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tool := NewGitTool(tmp, false)
+	_, err := tool.Execute(ctx, json.RawMessage(`{"subcommand":"status"}`))
+	if err == nil {
+		t.Fatal("expected error with canceled context")
+	}
+	// Error should be wrapped with "git exec:" (not a raw context error).
+	if !strings.Contains(err.Error(), "git exec:") {
+		t.Errorf("error should be wrapped with 'git exec:', got: %v", err)
+	}
+}
+
 // --- Task 7a: BashTool docker exec failure ---
 
 func TestBashToolExecute_DockerExecFailure(t *testing.T) {
