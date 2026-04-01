@@ -134,7 +134,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 
 **Files:** `external-deps-workspace/langdag/internal/api/server.go`, `api_test.go`
 
-- [ ] 8a: **Streaming error mid-response** — Test: start a `POST /prompt?stream=true` request, mock provider emits a few deltas then a `StreamEventError`. Verify: SSE stream sends `event: error` with the error message, then the connection closes cleanly. Client should receive all prior deltas plus the error event.
+- [x] 8a: **Streaming error mid-response** — Test: start a `POST /prompt?stream=true` request, mock provider emits a few deltas then a `StreamEventError`. Verify: SSE stream sends `event: error` with the error message, then the connection closes cleanly. Client should receive all prior deltas plus the error event.
 - [ ] 8b: **Provider failure during streaming** — Test: mock provider's `Stream()` returns an error (not a stream). Verify: API returns a well-formed SSE error event (not an HTTP 500 with JSON body — the stream has already started with `Content-Type: text/event-stream`).
 - [ ] 8c: **Non-streaming error responses** — Test: `POST /prompt` (non-streaming) with a provider that returns errors. Verify: HTTP 500 with `{"error": "..."}` body containing the original error context (not just "internal server error").
 - [ ] 8d: **Invalid request validation** — Test: `POST /prompt` with empty body, missing `message` field, invalid JSON, extremely long message (>1MB). Verify: 400 status with descriptive error for each case.
