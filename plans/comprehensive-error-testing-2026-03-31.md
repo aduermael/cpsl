@@ -138,7 +138,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 - [x] 8b: **Provider failure during streaming** — Test: mock provider's `Stream()` returns an error (not a stream). Verify: API returns a well-formed SSE error event (not an HTTP 500 with JSON body — the stream has already started with `Content-Type: text/event-stream`).
 - [x] 8c: **Non-streaming error responses** — Test: `POST /prompt` (non-streaming) with a provider that returns errors. Verify: HTTP 500 with `{"error": "..."}` body containing the original error context (not just "internal server error").
 - [x] 8d: **Invalid request validation** — Test: `POST /prompt` with empty body, missing `message` field, invalid JSON, extremely long message (>1MB). Verify: 400 status with descriptive error for each case. Empty body and invalid JSON already tested (TestPromptInvalidJSON, TestPromptEmptyMessage). Added: nil body, missing message field, 1MB+ message (succeeds — no server limit), streaming empty body.
-- [ ] 8e: **Auth edge cases** — Test: requests with empty API key header, malformed Bearer token, correct key but wrong endpoint. Verify: 401 with clear message, health endpoint bypasses auth.
+- [x] 8e: **Auth edge cases** — Tests: empty X-API-Key header, malformed Bearer tokens (trailing space, no space, Basic scheme, wrong key), health endpoint bypasses auth with wrong credentials, no-config means all endpoints open. All return 401 with "unauthorized" message. No bugs found.
 - [ ] 8f: Fix any actual bugs found in error responses.
 
 ---
