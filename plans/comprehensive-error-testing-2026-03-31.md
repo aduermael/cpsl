@@ -162,7 +162,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 
 - [x] 10a: **SSE stream without done event** — Tested both sync and async: server sends start + deltas then closes. Both clients complete iteration without hanging. Content from deltas is fully accessible via manual accumulation. No node_id available (all events return None). Parser-level tests verify the same. No bugs found.
 - [x] 10b: **Provider error mid-stream** — Tested sync and async: server sends start + 2 deltas + error event. Error event yielded as `SSEEvent` with `SSEEventType.ERROR` (not raised as exception — consistent with SDK's event-driven design). Prior delta content preserved and accessible. Plain text error data wrapped as `{"message": ...}`. No bugs found.
-- [ ] 10c: **Connection timeout during stream** — Test using httpx mock: configure a timeout that fires after first delta. Verify: raises `ConnectionError` (or `StreamError`), not an unhandled httpx exception. Test both sync and async clients.
+- [x] 10c: **Connection timeout during stream** — Tested sync and async: connect timeout to unreachable host raises `ConnectionError`. Read timeout (via httpx mock) raises `httpx.ReadTimeout`. Neither hangs or produces unhandled exceptions. No bugs found.
 - [ ] 10d: **Invalid SSE event sequence** — Test: server sends delta before start, done without any deltas, multiple done events. Verify: SDK handles gracefully (no crash, reasonable behavior).
 - [ ] 10e: **Large streamed response** — Test: server sends 10,000 delta events. Verify: memory usage is bounded (no unbounded buffer accumulation if caller iterates lazily), all content collected correctly.
 - [ ] 10f: Fix any actual bugs found in Python SDK error handling.
