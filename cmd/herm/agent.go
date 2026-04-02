@@ -1052,16 +1052,6 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		inputTokens := a.emitUsage(ctx, nodeID, stopReason)
 		a.clearOldToolResults(ctx, nodeID, inputTokens)
 		nodeID = a.maybeCompact(ctx, nodeID, inputTokens)
-		iteration++
-	}
-
-	// Emit an error when the loop exhausted maxToolIterations while the LLM
-	// was still requesting tool calls.
-	if iteration >= maxIter && len(toolCalls) > 0 {
-		a.emit(AgentEvent{
-			Type:  EventError,
-			Error: fmt.Errorf("reached maximum tool iterations (%d) — stopping to prevent runaway loop", maxIter),
-		})
 	}
 
 	if iteration >= maxIter && len(toolCalls) > 0 {
