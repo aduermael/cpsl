@@ -562,6 +562,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		sa := a.getOrCreateSubAgent(event.AgentID)
 		if event.Text == "done" {
 			sa.done = true
+			sa.completedAt = time.Now()
 			sa.failed = event.IsError
 			if event.Usage != nil {
 				sa.inputTokens = event.Usage.InputTokens

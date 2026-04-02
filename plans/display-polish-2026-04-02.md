@@ -121,7 +121,7 @@ The `subAgentDisplayLines()` function (render.go:506-510) iterates over a `map[s
 - `cmd/herm/agentui.go` — `EventSubAgentStatus` "done" handler (line 563)
 
 - [x] 8a: Add a `completedAt time.Time` field to `subAgentDisplay` struct
-- [ ] 8b: In the `EventSubAgentStatus` "done" handler (agentui.go:563), set `sa.completedAt = time.Now()`
+- [x] 8b: In the `EventSubAgentStatus` "done" handler (agentui.go:563), set `sa.completedAt = time.Now()`
 - [ ] 8c: In `subAgentDisplayLines()`, after collecting visible agents into the `visible` slice, sort them: completed agents first (by `completedAt` ascending), then running agents (by `startTime` ascending). Use `sort.SliceStable` or `slices.SortFunc`
 - [ ] 8d: Add tests verifying stable ordering: 3 agents started at different times, one completes — verify completed one appears first, running ones maintain start-time order
 
