@@ -345,7 +345,7 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 			innerWidth = vw
 		}
 		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
-			for _, line := range strings.Split(strings.ReplaceAll(entry.result, "\t", " "), "\n") {
+			for _, line := range strings.Split(strings.TrimRight(strings.ReplaceAll(entry.result, "\t", " "), "\n"), "\n") {
 				if lw := visibleWidth(line); lw > innerWidth {
 					innerWidth = lw
 				}
@@ -411,7 +411,7 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 		// bash/git show output only for the last result-bearing tool,
 		// read/glob/grep/other results are hidden (summary is enough).
 		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
-			content := strings.ReplaceAll(entry.result, "\t", " ")
+			content := strings.TrimRight(strings.ReplaceAll(entry.result, "\t", " "), "\n")
 			isDiff := isDiffContent(content)
 			for _, line := range strings.Split(content, "\n") {
 				b.WriteByte('\n')

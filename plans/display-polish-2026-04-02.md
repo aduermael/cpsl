@@ -71,7 +71,7 @@ Tool result content often ends with `\n`, and `strings.Split(content, "\n")` pro
 - `content.go:306` — `collapseToolResult()`: `strings.Split(result, "\n")` — trailing empty element inflates line count
 
 - [x] 4a: In `collapseToolResult()`, trim trailing newlines from `result` before splitting (`strings.TrimRight(result, "\n")`)
-- [ ] 4b: In `renderToolGroup()`, trim trailing newlines from `content` before the split at line 416
+- [x] 4b: In `renderToolGroup()`, trim trailing newlines from `content` before the split at line 416
 - [ ] 4c: In `renderToolBox()`, trim trailing newlines from `content` at the start of the function (before both split locations at lines 198 and 258)
 - [ ] 4d: Add tests verifying that tool results ending with `\n` do not produce empty lines inside rendered blocks
 
