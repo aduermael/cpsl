@@ -1,6 +1,6 @@
-# Display Polish: Hide Internal Tool Calls, Fix Ordering, Empty Lines & Sub-Agent Metrics
+# Display Polish: Tool Grouping, Sub-Agent Ordering, Iteration Awareness & More
 
-**Goal:** Clean up six remaining display issues from the display overhaul: hide internal agent-checking tool calls, ensure the main agent status line is always last, suppress sleep/wait tool blocks, eliminate spurious empty lines in rendered blocks, fix missing space after 🛠️ in sub-agent lines, and show live token counts for running sub-agents.
+**Goal:** Clean up display issues and improve agent robustness: hide internal tool calls, fix empty lines, group consecutive tool calls into single blocks, stabilize sub-agent display ordering, and make agents aware of their tool iteration budget to avoid runaway loops.
 
 **Context:**
 - The previous display overhaul (`display-overhaul-2026-04-02.md`) established grouped tool blocks, sub-agent metrics, and an enriched status line. Several visual artifacts remain.
@@ -92,3 +92,57 @@ Two issues in `formatSubAgentLine()` (render.go:594-632):
 ## Phase 6: Integration tests
 
 - [x] 6a: Add an end-to-end render test with a mock conversation that includes: agent status checks (should be hidden), sleep waits (should be hidden), active sub-agents with status line (status line at bottom), tool results with trailing newlines (no empty lines in blocks), and sub-agent lines with correct spacing and live token counts
+
+## Phase 7: Group consecutive main-agent tool calls into a single block
+
+When the main agent makes parallel tool calls (e.g., spawning 2 sub-agents), the events arrive as: `toolCall1, toolCall2, toolResult1, toolResult2`. The current `collectToolGroup()` (render.go:272-298) breaks the group when it encounters a `msgToolCall` not immediately followed by a `msgToolResult` (line 289-293). This causes each tool call to render as a separate bordered box instead of being grouped.
+
+**Approach:** Modify `collectToolGroup()` to consume all consecutive `msgToolCall` messages first, then pair them with the following `msgToolResult` messages. The group continues as long as we see tool calls or tool results without a different message kind in between.
+
+**Key file:** `cmd/herm/render.go` — `collectToolGroup()` (lines 272-298)
+
+**Edge cases:**
+- A trailing `msgToolCall` with no result (in-progress) should still be the last entry
+- Mixed tool names (read + grep + agent) should still group if consecutive
+- Results may not arrive in the same order as calls — pair by position (first result → first call) since tool IDs aren't tracked in messages
+
+- [ ] 7a: Rewrite `collectToolGroup()` to first collect all consecutive `msgToolCall` messages, then collect following `msgToolResult` messages, pairing them positionally. Mark `inProgress` only if there are more calls than results
+- [ ] 7b: Update existing `TestCollectToolGroup` and `TestBuildBlockRows_ToolGroup` tests to cover the parallel-calls pattern (multiple calls followed by multiple results)
+- [ ] 7c: Add a new test for the specific "2 agent spawn" pattern: `[msgToolCall(agent), msgToolCall(agent), msgToolResult(agent), msgToolResult(agent)]` verifying they produce 1 group with 2 entries
+
+## Phase 8: Stable sub-agent display ordering
+
+The `subAgentDisplayLines()` function (render.go:506-510) iterates over a `map[string]*subAgentDisplay`, which has random iteration order in Go. This causes sub-agent lines to jump around on every render tick.
+
+**Desired order:** Completed agents first (sorted by completion time ascending), then running agents (sorted by start time ascending). This keeps the display stable — once an agent finishes it stays pinned at its position, and running agents maintain their relative start order.
+
+**Key files:**
+- `cmd/herm/render.go` — `subAgentDisplay` struct (line 463), `subAgentDisplayLines()` (line 497)
+- `cmd/herm/agentui.go` — `EventSubAgentStatus` "done" handler (line 563)
+
+- [ ] 8a: Add a `completedAt time.Time` field to `subAgentDisplay` struct
+- [ ] 8b: In the `EventSubAgentStatus` "done" handler (agentui.go:563), set `sa.completedAt = time.Now()`
+- [ ] 8c: In `subAgentDisplayLines()`, after collecting visible agents into the `visible` slice, sort them: completed agents first (by `completedAt` ascending), then running agents (by `startTime` ascending). Use `sort.SliceStable` or `slices.SortFunc`
+- [ ] 8d: Add tests verifying stable ordering: 3 agents started at different times, one completes — verify completed one appears first, running ones maintain start-time order
+
+## Phase 9: Avoid hitting max tool iterations
+
+The main agent loop (agent.go:814-1061) has a `defaultMaxToolIterations = 25` limit. When reached, the agent emits an error and stops. The LLM has no awareness of this limit and can't plan accordingly. Sub-agents also don't inherit custom limits from the parent.
+
+**Approach (two parts):**
+
+1. **Inject remaining iterations into the system prompt** — Add a `RemainingToolIterations` field to `PromptData` (systemprompt.go) and include it in the system prompt template so the LLM can plan tool usage. Update it on each LLM call cycle in `runLoop()`.
+
+2. **Pass tool iteration limits to sub-agents** — When creating sub-agents in `subagent.go`, pass `WithMaxToolIterations()` with a sensible fraction of the parent's remaining budget (or a fixed sub-agent cap).
+
+**Key files:**
+- `cmd/herm/agent.go` — `runLoop()` (line 814), `defaultMaxToolIterations` (line 104)
+- `cmd/herm/systemprompt.go` — `PromptData` struct, `buildSystemPrompt()`
+- `cmd/herm/subagent.go` — sub-agent creation (lines 315-319, 521-525)
+- `prompts/system.md` — system prompt template
+
+- [ ] 9a: Add `RemainingToolIterations int` and `MaxToolIterations int` fields to `PromptData` in systemprompt.go
+- [ ] 9b: In the system prompt template (`prompts/system.md`), add a section that tells the LLM about its remaining tool iterations when below a threshold (e.g., when less than 30% remaining: "You have N tool iterations remaining out of M. Plan your remaining work efficiently.")
+- [ ] 9c: In `runLoop()` (agent.go), pass the remaining iteration count (`maxIter - iteration`) into the system prompt rebuild on each cycle. This requires threading the count through to `buildSystemPrompt()` or updating a field on the agent
+- [ ] 9d: In `subagent.go`, when creating foreground and background sub-agents (lines 315-319, 521-525), pass `WithMaxToolIterations(subLimit)` where `subLimit` is capped at a sensible value (e.g., `min(parentRemaining, defaultSubAgentMaxTurns)`)
+- [ ] 9e: Add tests: verify system prompt includes iteration warning when below threshold, verify sub-agents receive a max iterations option
