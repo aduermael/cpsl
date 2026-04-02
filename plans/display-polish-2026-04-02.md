@@ -106,7 +106,7 @@ When the main agent makes parallel tool calls (e.g., spawning 2 sub-agents), the
 - Mixed tool names (read + grep + agent) should still group if consecutive
 - Results may not arrive in the same order as calls — pair by position (first result → first call) since tool IDs aren't tracked in messages
 
-- [ ] 7a: Rewrite `collectToolGroup()` to first collect all consecutive `msgToolCall` messages, then collect following `msgToolResult` messages, pairing them positionally. Mark `inProgress` only if there are more calls than results
+- [x] 7a: Rewrite `collectToolGroup()` to first collect all consecutive `msgToolCall` messages, then collect following `msgToolResult` messages, pairing them positionally. Mark `inProgress` only if there are more calls than results
 - [ ] 7b: Update existing `TestCollectToolGroup` and `TestBuildBlockRows_ToolGroup` tests to cover the parallel-calls pattern (multiple calls followed by multiple results)
 - [ ] 7c: Add a new test for the specific "2 agent spawn" pattern: `[msgToolCall(agent), msgToolCall(agent), msgToolResult(agent), msgToolResult(agent)]` verifying they produce 1 group with 2 entries
 

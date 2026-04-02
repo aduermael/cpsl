@@ -267,33 +267,55 @@ type toolGroup struct {
 }
 
 // collectToolGroup scans messages starting at startIdx and collects consecutive
-// tool call/result pairs into a group. A group breaks when a non-tool message
-// is encountered or a tool call is found without a result (in-progress).
+// tool call/result pairs into a group. It first gathers all consecutive
+// msgToolCall messages, then pairs them with following msgToolResult messages
+// positionally. This handles both interleaved (call, result, call, result) and
+// parallel (call, call, result, result) patterns. The group continues as long
+// as tool calls or tool results appear without a different message kind in
+// between. inProgress is set when there are more calls than results.
 func collectToolGroup(messages []chatMessage, startIdx int) toolGroup {
 	var g toolGroup
 	i := startIdx
-	for i < len(messages) && messages[i].kind == msgToolCall {
-		entry := toolGroupEntry{
-			summary:  strings.ReplaceAll(messages[i].content, "\r", ""),
-			toolName: messages[i].toolName,
-		}
-		g.consumed++
-		i++
-		// Check for paired result.
-		if i < len(messages) && messages[i].kind == msgToolResult {
-			entry.result = strings.ReplaceAll(messages[i].content, "\r", "")
-			entry.isError = messages[i].isError
-			entry.duration = messages[i].duration
+
+	// Phase 1: collect all consecutive tool calls and results (no other kinds).
+	var calls []int  // indices of msgToolCall messages
+	var results []int // indices of msgToolResult messages
+	for i < len(messages) {
+		switch messages[i].kind {
+		case msgToolCall:
+			calls = append(calls, i)
 			g.consumed++
 			i++
-		} else {
-			// No result — in-progress (last entry of the group).
-			g.inProgress = true
-			g.entries = append(g.entries, entry)
-			break
+		case msgToolResult:
+			results = append(results, i)
+			g.consumed++
+			i++
+		default:
+			goto done
+		}
+	}
+done:
+
+	// Phase 2: build entries by pairing calls with results positionally.
+	for ci, callIdx := range calls {
+		entry := toolGroupEntry{
+			summary:  strings.ReplaceAll(messages[callIdx].content, "\r", ""),
+			toolName: messages[callIdx].toolName,
+		}
+		if ci < len(results) {
+			resIdx := results[ci]
+			entry.result = strings.ReplaceAll(messages[resIdx].content, "\r", "")
+			entry.isError = messages[resIdx].isError
+			entry.duration = messages[resIdx].duration
 		}
 		g.entries = append(g.entries, entry)
 	}
+
+	// More calls than results means the trailing calls are in-progress.
+	if len(calls) > len(results) {
+		g.inProgress = true
+	}
+
 	return g
 }
 
