@@ -431,15 +431,37 @@ func (a *Agent) emitUsage(ctx context.Context, nodeID, stopReason string) int {
 	return node.TokensIn + node.TokensCacheRead
 }
 
+// iterationWarningThreshold is the fraction of max tool iterations below which
+// the system prompt includes a remaining-iterations warning (30%).
+const iterationWarningThreshold = 0.30
+
 // systemPromptWithStats returns the system prompt with session usage stats
 // appended when non-zero. This gives the model visibility into cumulative
 // token consumption so it can self-regulate delegation decisions.
 func (a *Agent) systemPromptWithStats() string {
+	var extra []string
+
 	totalTokens := a.sessionInputTokens + a.sessionOutputTokens
-	if totalTokens == 0 && a.sessionAgentCalls == 0 {
+	if totalTokens > 0 || a.sessionAgentCalls > 0 {
+		extra = append(extra, fmt.Sprintf("Session: %d tokens used, %d agent calls", totalTokens, a.sessionAgentCalls))
+	}
+
+	maxIter := a.maxToolIterations
+	if maxIter <= 0 {
+		maxIter = defaultMaxToolIterations
+	}
+	remaining := maxIter - a.currentIteration
+	if remaining < 0 {
+		remaining = 0
+	}
+	if float64(remaining) < float64(maxIter)*iterationWarningThreshold {
+		extra = append(extra, fmt.Sprintf("You have %d tool iterations remaining out of %d. Plan your remaining work efficiently.", remaining, maxIter))
+	}
+
+	if len(extra) == 0 {
 		return a.systemPrompt
 	}
-	return fmt.Sprintf("%s\n\n---\nSession: %d tokens used, %d agent calls", a.systemPrompt, totalTokens, a.sessionAgentCalls)
+	return a.systemPrompt + "\n\n---\n" + strings.Join(extra, "\n")
 }
 
 // clearThresholdFraction is the fraction of context window at which old tool
