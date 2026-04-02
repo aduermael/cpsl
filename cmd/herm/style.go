@@ -319,13 +319,32 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 		reset           = "\033[0m"
 	)
 
-	// Compute inner width from all summaries and content lines.
+	// Overflow collapsing: when >6 entries, show first 3 + marker + last 3.
+	collapsedCount := 0
+	showFirst := len(entries)
+	showLast := 0
+	if len(entries) > toolGroupOverflowThreshold {
+		showFirst = toolGroupShowEdge
+		showLast = toolGroupShowEdge
+		collapsedCount = len(entries) - showFirst - showLast
+	}
+
+	// Find the last entry with a result (for bash/git output rule).
+	lastResultIdx := -1
+	for j := len(entries) - 1; j >= 0; j-- {
+		if entries[j].result != "" {
+			lastResultIdx = j
+			break
+		}
+	}
+
+	// Compute inner width from visible summaries and shown content.
 	innerWidth := 0
-	for _, entry := range entries {
+	for j, entry := range entries {
 		if vw := visibleWidth(entry.summary) + 2; vw > innerWidth {
 			innerWidth = vw
 		}
-		if entry.result != "" {
+		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
 			for _, line := range strings.Split(strings.ReplaceAll(entry.result, "\t", " "), "\n") {
 				if lw := visibleWidth(line); lw > innerWidth {
 					innerWidth = lw
@@ -335,16 +354,6 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 	}
 	if maxWidth > 0 && innerWidth > maxWidth-2 {
 		innerWidth = maxWidth - 2
-	}
-
-	// Overflow collapsing: when >6 entries, show first 3 + marker + last 3.
-	collapsedCount := 0
-	showFirst := len(entries)
-	showLast := 0
-	if len(entries) > toolGroupOverflowThreshold {
-		showFirst = toolGroupShowEdge
-		showLast = toolGroupShowEdge
-		collapsedCount = len(entries) - showFirst - showLast
 	}
 
 	var b strings.Builder
@@ -397,8 +406,11 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 			}
 		}
 
-		// Content lines with │ prefix.
-		if entry.result != "" {
+		// Content lines with │ prefix — filtered by tool output rules.
+		// Rules: errors always shown, edit/write show diff output,
+		// bash/git show output only for the last result-bearing tool,
+		// read/glob/grep/other results are hidden (summary is enough).
+		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
 			content := strings.ReplaceAll(entry.result, "\t", " ")
 			isDiff := isDiffContent(content)
 			for _, line := range strings.Split(content, "\n") {
@@ -425,6 +437,26 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 	}
 
 	return b.String()
+}
+
+// shouldShowToolOutput determines whether a tool entry's result should be
+// displayed within a grouped block. Rules:
+//   - Errors: always shown
+//   - Edit/write tools: always shown (diff output)
+//   - Bash/git: shown only for the last result-bearing tool in the group
+//   - All others (read, glob, grep, etc.): hidden (summary line is enough)
+func shouldShowToolOutput(entry toolGroupEntry, idx, lastResultIdx int) bool {
+	if entry.isError {
+		return true
+	}
+	switch entry.toolName {
+	case "edit_file", "write_file":
+		return true
+	case "bash", "git":
+		return idx == lastResultIdx
+	default:
+		return false
+	}
 }
 
 var funnyTexts = []string{
