@@ -337,9 +337,30 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 		innerWidth = maxWidth - 2
 	}
 
+	// Overflow collapsing: when >6 entries, show first 3 + marker + last 3.
+	collapsedCount := 0
+	showFirst := len(entries)
+	showLast := 0
+	if len(entries) > toolGroupOverflowThreshold {
+		showFirst = toolGroupShowEdge
+		showLast = toolGroupShowEdge
+		collapsedCount = len(entries) - showFirst - showLast
+	}
+
 	var b strings.Builder
 
 	for j, entry := range entries {
+		// Emit collapse marker at the boundary.
+		if collapsedCount > 0 && j == showFirst {
+			b.WriteByte('\n')
+			marker := fmt.Sprintf("%d tool calls… 🛠️", collapsedCount)
+			b.WriteString(borderStyle + "├ " + reset + titleStyle + marker + reset)
+		}
+		// Skip collapsed entries.
+		if collapsedCount > 0 && j >= showFirst && j < len(entries)-showLast {
+			continue
+		}
+
 		ts, cs := titleStyle, contentStyle
 		if entry.isError {
 			ts, cs = errTitleStyle, errContentStyle

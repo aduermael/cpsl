@@ -470,6 +470,12 @@ type subAgentDisplay struct {
 	failed       bool      // true if the sub-agent failed
 }
 
+// toolGroupOverflowThreshold is the entry count above which tool groups collapse middle entries.
+const toolGroupOverflowThreshold = 6
+
+// toolGroupShowEdge is the number of entries shown at each end when collapsing.
+const toolGroupShowEdge = 3
+
 // maxSubAgentDisplayLines is the maximum number of agent lines shown per group.
 const maxSubAgentDisplayLines = 5
 
