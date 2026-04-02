@@ -173,7 +173,7 @@ The API server exposes langdag over HTTP/SSE. Streaming error paths and edge cas
 
 **Files:** `external-deps-workspace/langdag/sdks/typescript/src/client.ts`, `sse.ts`, `errors.ts`
 
-- [ ] 11a: **SSE stream without done event** — Test: readable stream sends start + deltas then closes. Verify: `stream.node()` throws `SSEParseError` (no done event received), `stream.content` still has accumulated text from deltas.
+- [x] 11a: **SSE stream without done event** — Added `content` getter to Stream class (previously `collectedContent` was private and inaccessible after failed streams — same gap as Go SDK Phase 9). Tests verify: start + deltas + close without done → `stream.node()` throws `SSEParseError`, `stream.content` has accumulated "Hello world!". Auto-consume path: `node()` throws but `stream.content` still has "partial". No bugs found — API improvement only.
 - [ ] 11b: **Provider error mid-stream** — Test: stream sends start, deltas, then error event. Verify: error event is yielded by `stream.events()` iterator, `stream.node()` rejects with the error. Prior delta content is accessible.
 - [ ] 11c: **Chunked SSE delivery edge cases** — Test: SSE events split across ReadableStream chunks at awkward boundaries (mid-UTF8 character, mid-`\n\n` separator, mid-`data:` prefix). Verify: parser reassembles correctly, no data loss or corruption.
 - [ ] 11d: **Fetch failure during streaming** — Test: ReadableStream reader throws an error mid-read (simulating network drop). Verify: `stream.events()` throws `NetworkError`, `stream.node()` rejects, no unhandled promise rejections.
