@@ -1042,7 +1042,9 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		}
 
 		// Build tool results message and re-call LLM.
-		// Rebuild opts so the system prompt includes updated session stats.
+		// Rebuild opts so the system prompt includes updated session stats
+		// and the remaining tool iteration count.
+		a.currentIteration = iteration
 		opts = a.buildPromptOpts()
 		toolResultJSON, marshalErr := json.Marshal(toolResults)
 		if marshalErr != nil {

@@ -143,6 +143,6 @@ The main agent loop (agent.go:814-1061) has a `defaultMaxToolIterations = 25` li
 
 - [x] 9a: Add `RemainingToolIterations int` and `MaxToolIterations int` fields to `PromptData` in systemprompt.go
 - [x] 9b: In `systemPromptWithStats()`, add iteration warning when below 30% remaining (adapted from template approach to fit dynamic per-turn injection pattern)
-- [ ] 9c: In `runLoop()` (agent.go), pass the remaining iteration count (`maxIter - iteration`) into the system prompt rebuild on each cycle. This requires threading the count through to `buildSystemPrompt()` or updating a field on the agent
+- [x] 9c: In `runLoop()` (agent.go), update `a.currentIteration` before each `buildPromptOpts()` call so `systemPromptWithStats()` can compute remaining iterations
 - [ ] 9d: In `subagent.go`, when creating foreground and background sub-agents (lines 315-319, 521-525), pass `WithMaxToolIterations(subLimit)` where `subLimit` is capped at a sensible value (e.g., `min(parentRemaining, defaultSubAgentMaxTurns)`)
 - [ ] 9e: Add tests: verify system prompt includes iteration warning when below threshold, verify sub-agents receive a max iterations option
