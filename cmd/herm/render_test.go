@@ -2105,6 +2105,70 @@ func TestFullRenderPipelineWithSubAgents(t *testing.T) {
 	}
 }
 
+func TestSubAgentEmojiSpacing(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+	sa := &subAgentDisplay{
+		task:      "Research auth",
+		toolCount: 15,
+		startTime: time.Now().Add(-5 * time.Second),
+	}
+	line := formatSubAgentLine(sa)
+	plain := strip(line)
+	// The 🛠️ emoji should be followed by a space before the pipe separator.
+	if !strings.Contains(plain, "🛠️ ") {
+		t.Errorf("expected space after 🛠️ in %q", plain)
+	}
+}
+
+func TestSubAgentLiveTokenAccumulation(t *testing.T) {
+	mainAgentID := "main-agent"
+	subAgentID := "sub-agent-1"
+
+	app := &App{headless: true, width: 80}
+	// Create a mock agent with a known ID.
+	app.agent = &Agent{id: mainAgentID}
+
+	// Start sub-agent.
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStart, AgentID: subAgentID, Task: "Explore", Mode: "explore",
+	})
+
+	// Send usage events for the sub-agent.
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventUsage,
+		AgentID: subAgentID,
+		Usage:   &types.Usage{InputTokens: 100, OutputTokens: 50},
+	})
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventUsage,
+		AgentID: subAgentID,
+		Usage:   &types.Usage{InputTokens: 200, OutputTokens: 80},
+	})
+
+	sa := app.subAgents[subAgentID]
+	if sa == nil {
+		t.Fatal("sub-agent not created")
+	}
+	if sa.inputTokens != 300 {
+		t.Errorf("inputTokens = %d, want 300", sa.inputTokens)
+	}
+	if sa.outputTokens != 130 {
+		t.Errorf("outputTokens = %d, want 130", sa.outputTokens)
+	}
+
+	// Verify the sub-agent line includes token counts.
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+	line := formatSubAgentLine(sa)
+	plain := strip(line)
+	if !strings.Contains(plain, "↑") || !strings.Contains(plain, "↓") {
+		t.Errorf("expected live token counts in sub-agent line, got %q", plain)
+	}
+}
+
 func TestStatusLineAfterSubAgentLines(t *testing.T) {
 	strip := func(s string) string {
 		return ansiEscRe.ReplaceAllString(s, "")
