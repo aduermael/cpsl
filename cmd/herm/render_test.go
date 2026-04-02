@@ -1153,6 +1153,80 @@ func TestCollectToolGroup(t *testing.T) {
 			t.Errorf("consumed = %d, want 2", g.consumed)
 		}
 	})
+
+	t.Run("parallel calls then results", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ read foo.go", toolName: "read_file"},
+			{kind: msgToolCall, content: "~ read bar.go", toolName: "read_file"},
+			{kind: msgToolResult, content: "content1", toolName: "read_file"},
+			{kind: msgToolResult, content: "content2", toolName: "read_file"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 2 {
+			t.Fatalf("entries = %d, want 2", len(g.entries))
+		}
+		if g.consumed != 4 {
+			t.Errorf("consumed = %d, want 4", g.consumed)
+		}
+		if g.inProgress {
+			t.Error("should not be in progress — both calls have results")
+		}
+		if g.entries[0].result != "content1" {
+			t.Errorf("first entry result = %q, want content1", g.entries[0].result)
+		}
+		if g.entries[1].result != "content2" {
+			t.Errorf("second entry result = %q, want content2", g.entries[1].result)
+		}
+	})
+
+	t.Run("parallel calls partially in-progress", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ agent spawn1", toolName: "agent"},
+			{kind: msgToolCall, content: "~ agent spawn2", toolName: "agent"},
+			{kind: msgToolResult, content: "result1", toolName: "agent"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 2 {
+			t.Fatalf("entries = %d, want 2", len(g.entries))
+		}
+		if g.consumed != 3 {
+			t.Errorf("consumed = %d, want 3", g.consumed)
+		}
+		if !g.inProgress {
+			t.Error("should be in progress — second call has no result")
+		}
+		if g.entries[0].result != "result1" {
+			t.Errorf("first entry result = %q, want result1", g.entries[0].result)
+		}
+		if g.entries[1].result != "" {
+			t.Errorf("second entry result = %q, want empty", g.entries[1].result)
+		}
+	})
+
+	t.Run("mixed tool names in parallel group", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ read foo.go", toolName: "read_file"},
+			{kind: msgToolCall, content: "~ grep pattern", toolName: "grep"},
+			{kind: msgToolResult, content: "file content", toolName: "read_file"},
+			{kind: msgToolResult, content: "matches", toolName: "grep"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 2 {
+			t.Fatalf("entries = %d, want 2", len(g.entries))
+		}
+		if g.consumed != 4 {
+			t.Errorf("consumed = %d, want 4", g.consumed)
+		}
+		if g.inProgress {
+			t.Error("should not be in progress")
+		}
+		if g.entries[0].toolName != "read_file" {
+			t.Errorf("first toolName = %q, want read_file", g.entries[0].toolName)
+		}
+		if g.entries[1].toolName != "grep" {
+			t.Errorf("second toolName = %q, want grep", g.entries[1].toolName)
+		}
+	})
 }
 
 func TestRenderToolGroup(t *testing.T) {
@@ -1431,6 +1505,47 @@ func TestBuildBlockRows_ToolGroup(t *testing.T) {
 		}
 		if !hasBranch {
 			t.Error("expected ├ for in-progress tool")
+		}
+	})
+
+	t.Run("parallel agent spawns grouped into single block", func(t *testing.T) {
+		app := &App{width: 80}
+		app.messages = []chatMessage{
+			{kind: msgToolCall, content: "~ agent", toolName: "agent", leadBlank: true},
+			{kind: msgToolCall, content: "~ agent", toolName: "agent", leadBlank: true},
+			{kind: msgToolResult, content: "spawned agent-1", toolName: "agent"},
+			{kind: msgToolResult, content: "spawned agent-2", toolName: "agent"},
+		}
+		rows := app.buildBlockRows()
+		// Should have exactly 1 ┌ (single group).
+		topCount := 0
+		for _, r := range rows {
+			if strings.HasPrefix(strip(r), "┌") {
+				topCount++
+			}
+		}
+		if topCount != 1 {
+			t.Errorf("expected 1 top border (single group), got %d", topCount)
+		}
+		// Should have ├ for the second agent entry.
+		var hasBranch bool
+		for _, r := range rows {
+			if strings.Contains(strip(r), "├ ~ agent") {
+				hasBranch = true
+			}
+		}
+		if hasBranch == false {
+			t.Error("expected ├ prefix for second agent call in group")
+		}
+		// Should have └ (completed, not in-progress).
+		var hasBottom bool
+		for _, r := range rows {
+			if strings.HasPrefix(strip(r), "└") {
+				hasBottom = true
+			}
+		}
+		if !hasBottom {
+			t.Error("expected └ bottom border for completed group")
 		}
 	})
 }
