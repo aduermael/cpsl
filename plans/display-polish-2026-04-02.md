@@ -1,12 +1,14 @@
-# Display Polish: Hide Internal Tool Calls, Fix Ordering & Empty Lines
+# Display Polish: Hide Internal Tool Calls, Fix Ordering, Empty Lines & Sub-Agent Metrics
 
-**Goal:** Clean up four remaining display issues from the display overhaul: hide internal agent-checking tool calls, ensure the main agent status line is always last, suppress sleep/wait tool blocks, and eliminate spurious empty lines in rendered blocks.
+**Goal:** Clean up six remaining display issues from the display overhaul: hide internal agent-checking tool calls, ensure the main agent status line is always last, suppress sleep/wait tool blocks, eliminate spurious empty lines in rendered blocks, fix missing space after 🛠️ in sub-agent lines, and show live token counts for running sub-agents.
 
 **Context:**
-- The previous display overhaul (`display-overhaul-2026-04-02.md`) established grouped tool blocks, sub-agent metrics, and an enriched status line. Four visual artifacts remain.
+- The previous display overhaul (`display-overhaul-2026-04-02.md`) established grouped tool blocks, sub-agent metrics, and an enriched status line. Several visual artifacts remain.
 - The main agent uses the "agent" tool with `task: "status"` to poll background sub-agents, and uses bash `sleep` commands to wait. Both create visible but unhelpful UI blocks.
 - Sub-agent display lines are appended *after* the main status line in `buildBlockRows()`, pushing the status line up from its expected bottom position.
 - `strings.Split(content, "\n")` on content ending with `\n` creates trailing empty string elements that become blank lines inside rendered boxes.
+- Sub-agent lines show `15 🛠️|` with no space before the pipe — the 🛠️ emoji needs a trailing space.
+- Sub-agent token counts (`↑in ↓out`) only appear after completion because `EventUsage` events from sub-agents are not accumulated into `subAgentDisplay`. During execution, `inputTokens`/`outputTokens` stay 0 so the metrics section is hidden.
 
 **Key files:**
 - `cmd/herm/agentui.go` — event handling, creates `msgToolCall`/`msgToolResult` messages (lines 366-425)
@@ -73,6 +75,20 @@ Tool result content often ends with `\n`, and `strings.Split(content, "\n")` pro
 - [ ] 4c: In `renderToolBox()`, trim trailing newlines from `content` at the start of the function (before both split locations at lines 198 and 258)
 - [ ] 4d: Add tests verifying that tool results ending with `\n` do not produce empty lines inside rendered blocks
 
-## Phase 5: Integration tests
+## Phase 5: Fix sub-agent display line formatting
 
-- [ ] 5a: Add an end-to-end render test with a mock conversation that includes: agent status checks (should be hidden), sleep waits (should be hidden), active sub-agents with status line (status line at bottom), and tool results with trailing newlines (no empty lines in blocks)
+Two issues in `formatSubAgentLine()` (render.go:594-632):
+
+1. **Missing space after 🛠️**: Line 609 uses `fmt.Sprintf("%d 🛠️", sa.toolCount)` — when joined with `" | "` the next pipe butts up against the emoji. The emoji occupies more visual width than its byte count suggests. Add a trailing space: `"%d 🛠️ "`.
+
+2. **Missing live token counts**: The `EventUsage` handler in `agentui.go` (lines 427-455) accumulates tokens for the session and main agent, but does NOT accumulate into `subAgentDisplay`. Tokens are only set at "done" time (agentui.go:549). During execution, `sa.inputTokens`/`sa.outputTokens` stay 0, so the `↑in ↓out` section is hidden for running agents.
+
+**Approach for tokens:** In the `EventUsage` handler, when `event.AgentID` doesn't match the main agent ID, look up the sub-agent display and accumulate `inputTokens`/`outputTokens` from the usage event. This gives live token counts during execution.
+
+- [ ] 5a: Fix missing space after 🛠️ in `formatSubAgentLine()` — change the format string to `"%d 🛠️ "` (trailing space)
+- [ ] 5b: In the `EventUsage` handler, when the event comes from a sub-agent (AgentID != main agent ID), find the corresponding `subAgentDisplay` via `getOrCreateSubAgent()` and accumulate `inputTokens += event.Usage.InputTokens` and `outputTokens += event.Usage.OutputTokens`
+- [ ] 5c: Add tests for: sub-agent line spacing with 🛠️, live token accumulation during sub-agent execution
+
+## Phase 6: Integration tests
+
+- [ ] 6a: Add an end-to-end render test with a mock conversation that includes: agent status checks (should be hidden), sleep waits (should be hidden), active sub-agents with status line (status line at bottom), tool results with trailing newlines (no empty lines in blocks), and sub-agent lines with correct spacing and live token counts
