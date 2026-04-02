@@ -3713,7 +3713,7 @@ func TestMaxToolIterations(t *testing.T) {
 }
 
 // TestMaxToolIterations_DefaultValue verifies that the default maxToolIterations
-// (25) is used when none is configured.
+// (200) is used when none is configured.
 func TestMaxToolIterations_DefaultValue(t *testing.T) {
 	agent := NewAgent(newTestClient("ok"), nil, nil, "", "test-model", 0)
 	if agent.maxToolIterations != 0 {
