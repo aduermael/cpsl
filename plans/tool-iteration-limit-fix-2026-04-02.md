@@ -48,7 +48,7 @@ This replaces the current "emit error and die" behavior with a structured wind-d
 - [x] 3a: In `runLoop()`, after the main loop exits with `iteration >= maxIter && len(toolCalls) > 0`, add a "graceful exhaustion" block: look up the agent tool via type assertion, call `WaitForBackgroundAgents` with a reasonable timeout (e.g., 2 minutes), collect results
 - [x] 3b: Build a final user message that includes: (1) any pending background results, (2) a system instruction telling the model to synthesize a final response from accumulated context without requesting more tools. Make one final `PromptFrom` call with this message
 - [x] 3c: Emit the text response from the final LLM call as `EventText` events so it appears in the UI. Replace the hard `EventError` with an `EventInfo`-level notice (or emit the error before the final call so the user sees the limit was hit, followed by the synthesis)
-- [ ] 3d: Add tests: verify that when max iterations is hit with running background agents, the agent waits for them and makes a final LLM call; verify the final call's response is emitted as text
+- [x] 3d: Add tests: verify that when max iterations is hit with running background agents, the agent waits for them and makes a final LLM call; verify the final call's response is emitted as text
 
 ## Phase 4: Integration test
 

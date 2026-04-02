@@ -4176,3 +4176,135 @@ func TestE2ECascadingFailureRecovery(t *testing.T) {
 		t.Error("EventDone should have a valid nodeID for conversation resume")
 	}
 }
+
+// testBgWaiterTool is a Tool that also implements BackgroundWaiter for testing
+// graceful exhaustion with background sub-agents.
+type testBgWaiterTool struct {
+	testTool
+	mu       sync.Mutex
+	called   bool
+	injectFn func() // called during WaitForBackgroundAgents to simulate bg agent completion
+}
+
+func (t *testBgWaiterTool) WaitForBackgroundAgents(_ time.Duration) []string {
+	t.mu.Lock()
+	t.called = true
+	fn := t.injectFn
+	t.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+	return nil
+}
+
+func (t *testBgWaiterTool) wasCalled() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.called
+}
+
+func TestGracefulExhaustion(t *testing.T) {
+	// With maxToolIterations=3, the loop runs 3 iterations (each: execute tool,
+	// call LLM). The initial call + 3 in-loop calls = 4 LLM calls that return
+	// tool calls. The 5th call is the final synthesis (text-only).
+	responses := []scriptedResponse{
+		// Initial call
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc0", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		// Loop iterations 0-2
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc1", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc2", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc3", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		// Final synthesis call — text only, no tools
+		{text: "Here is a synthesis of what was accomplished.", tokensIn: 100, tokensOut: 50},
+	}
+
+	prov := &scriptedProvider{model: "test-model", responses: responses}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	bashTool := &testTool{name: "bash", result: "ok"}
+	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0,
+		WithMaxToolIterations(3),
+	)
+
+	go agent.Run(context.Background(), "test graceful exhaustion", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	var (
+		gotExhaustionError bool
+		gotSynthesisText   bool
+		doneNodeID         string
+	)
+	for _, ev := range events {
+		if ev.Type == EventError && ev.Error != nil &&
+			strings.Contains(ev.Error.Error(), "synthesizing final response") {
+			gotExhaustionError = true
+		}
+		if ev.Type == EventTextDelta &&
+			strings.Contains(ev.Text, "synthesis of what was accomplished") {
+			gotSynthesisText = true
+		}
+		if ev.Type == EventDone {
+			doneNodeID = ev.NodeID
+		}
+	}
+
+	if !gotExhaustionError {
+		t.Error("expected error event about synthesizing final response")
+	}
+	if !gotSynthesisText {
+		t.Error("expected synthesis text in EventTextDelta from the final LLM call")
+	}
+	if doneNodeID == "" {
+		t.Error("EventDone should carry the nodeID from the synthesis call")
+	}
+}
+
+func TestGracefulExhaustionCallsBackgroundWaiter(t *testing.T) {
+	// Same setup as TestGracefulExhaustion but with a BackgroundWaiter tool.
+	// Verifies WaitForBackgroundAgents is called and bg results injected during
+	// the wait are included in the final message context.
+	responses := []scriptedResponse{
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc0", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc1", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc2", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tc3", Name: "bash", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+		{text: "Synthesis including background agent context.", tokensIn: 100, tokensOut: 50},
+	}
+
+	prov := &scriptedProvider{model: "test-model", responses: responses}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+
+	bgWaiter := &testBgWaiterTool{
+		testTool: testTool{name: "agent", result: "ok"},
+	}
+	bashTool := &testTool{name: "bash", result: "ok"}
+	agent := NewAgent(client, []Tool{bashTool, bgWaiter}, nil, "", "test-model", 0,
+		WithMaxToolIterations(3),
+	)
+
+	// injectFn simulates background agents completing during WaitForBackgroundAgents,
+	// which is what happens in production (onBgComplete → InjectBackgroundResult).
+	bgWaiter.injectFn = func() {
+		agent.InjectBackgroundResult("bg-result-from-sub-agent")
+	}
+
+	go agent.Run(context.Background(), "test with bg waiter", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	if !bgWaiter.wasCalled() {
+		t.Error("WaitForBackgroundAgents should have been called during graceful exhaustion")
+	}
+
+	var gotSynthesis bool
+	for _, ev := range events {
+		if ev.Type == EventTextDelta &&
+			strings.Contains(ev.Text, "Synthesis including background agent context") {
+			gotSynthesis = true
+		}
+	}
+	if !gotSynthesis {
+		t.Error("expected synthesis text from the final LLM call")
+	}
+}
