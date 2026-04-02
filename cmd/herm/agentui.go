@@ -377,6 +377,14 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		if a.traceCollector != nil {
 			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
 		}
+		// Suppress internal agent status-check tool calls from the UI.
+		if isAgentStatusCheck(event.ToolName, event.ToolInput) {
+			if a.suppressedToolIDs == nil {
+				a.suppressedToolIDs = make(map[string]bool)
+			}
+			a.suppressedToolIDs[event.ToolID] = true
+			break
+		}
 		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true, toolName: event.ToolName})
 		a.toolStartTime = time.Now()
 		if a.toolTimer != nil {

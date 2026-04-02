@@ -189,6 +189,24 @@ func expandAttachments(s string, store map[int]Attachment) string {
 	return string(out)
 }
 
+// ─── Tool call suppression helpers ───
+
+// isAgentStatusCheck returns true if the tool call is an "agent" tool
+// with task:"status" — these are internal polling calls whose info is
+// already shown in the sub-agent display and status line.
+func isAgentStatusCheck(toolName string, input json.RawMessage) bool {
+	if toolName != "agent" {
+		return false
+	}
+	var in struct {
+		Task string `json:"task"`
+	}
+	if json.Unmarshal(input, &in) == nil && in.Task == "status" {
+		return true
+	}
+	return false
+}
+
 // ─── Tool result helpers ───
 
 func toolCallSummary(toolName string, input json.RawMessage) string {

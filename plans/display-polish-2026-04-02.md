@@ -30,7 +30,7 @@ When the main agent polls a background sub-agent, it calls the "agent" tool with
 - The tool timer should not start for suppressed tools
 
 - [x] 1a: Add a `suppressedToolID` field (or set) to `App` to track tool calls that should be hidden from the UI
-- [ ] 1b: In `EventToolCallStart` handler, detect agent status checks (tool name `"agent"`, input has `"task":"status"`) and add the tool ID to the suppressed set instead of appending a `msgToolCall`. Still forward to `traceCollector`
+- [x] 1b: In `EventToolCallStart` handler, detect agent status checks (tool name `"agent"`, input has `"task":"status"`) and add the tool ID to the suppressed set instead of appending a `msgToolCall`. Still forward to `traceCollector`
 - [ ] 1c: In `EventToolResult` handler, check if the tool ID is in the suppressed set. If so, skip creating `msgToolResult` and remove from set. Still forward to `traceCollector` and count stats
 - [ ] 1d: Add tests for the suppression logic: agent status check is hidden, agent spawn is visible, trace collector still receives both
 
