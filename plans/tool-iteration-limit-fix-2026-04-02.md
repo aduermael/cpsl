@@ -20,7 +20,7 @@
 
 The current default of 25 is insufficient. A single sub-agent spawn + status polling cycle burns ~3 iterations (spawn tool call, sleep/wait, status check). With 2-3 sub-agents plus normal tool usage, 25 is easily exhausted.
 
-- [ ] 1a: Raise `defaultMaxToolIterations` from 25 to 200 in `agent.go`. Update the config comment in `config.go` to reflect the new default
+- [x] 1a: Raise `defaultMaxToolIterations` from 25 to 200 in `agent.go`. Update the config comment in `config.go` to reflect the new default
 - [ ] 1b: Update any tests that hard-code 25 as the expected default or use it in assertions
 
 ## Phase 2: Add a method to wait for background sub-agents

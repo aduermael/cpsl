@@ -26,7 +26,7 @@ type Config struct {
 	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
-	MaxToolIterations     int             `json:"max_tool_iterations,omitempty"`     // main agent tool-call loop cap; 0 = default (25)
+	MaxToolIterations     int             `json:"max_tool_iterations,omitempty"`     // main agent tool-call loop cap; 0 = default (200)
 	MaxAgentDepth         int             `json:"max_agent_depth,omitempty"`         // max sub-agent nesting depth; 0 = default (1)
 	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
 	HistoryMaxEntries     int             `json:"history_max_entries,omitempty"`

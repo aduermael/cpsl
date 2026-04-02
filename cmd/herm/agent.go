@@ -101,7 +101,9 @@ const defaultMaxOutputTokens = 16384
 const defaultMaxOutputGroupTokens = defaultMaxOutputTokens * 4
 
 // defaultMaxToolIterations caps the agent loop to prevent runaway tool calls.
-const defaultMaxToolIterations = 25
+// Real workloads with sub-agents routinely exceed 25 iterations; 200 allows
+// complex multi-agent tasks while still bounding runaway loops.
+const defaultMaxToolIterations = 200
 
 // defaultStreamChunkTimeout is the maximum time to wait for the next stream
 // chunk before treating the stream as stalled. Resets on every chunk received.
