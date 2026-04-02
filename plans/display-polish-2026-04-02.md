@@ -56,7 +56,7 @@ Currently in `buildBlockRows()` (render.go:401-436), the main agent status line 
 **Approach:** Swap the order: emit sub-agent display lines first, then the status line.
 
 - [x] 3a: In `buildBlockRows()`, move the sub-agent display block (lines 431-436) to before the status line block (lines 401-429)
-- [ ] 3b: Add a test verifying that when both status line and sub-agent lines are present, the status line appears after the sub-agent lines in the output
+- [x] 3b: Add a test verifying that when both status line and sub-agent lines are present, the status line appears after the sub-agent lines in the output
 
 ## Phase 4: Fix empty lines in rendered blocks
 

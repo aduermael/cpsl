@@ -2069,6 +2069,52 @@ func TestFullRenderPipelineWithSubAgents(t *testing.T) {
 	}
 }
 
+func TestStatusLineAfterSubAgentLines(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	now := time.Now().Add(-3 * time.Second)
+	app := &App{
+		width:              80,
+		agentRunning:       true,
+		agentStartTime:     now,
+		agentDisplayInTok:  1000,
+		agentDisplayOutTok: 400,
+		mainAgentToolCount: 5,
+	}
+	app.subAgents = map[string]*subAgentDisplay{
+		"sa1": {task: "Research auth", mode: "explore", startTime: now, toolCount: 10},
+	}
+	app.messages = []chatMessage{
+		{kind: msgUser, content: "go"},
+	}
+
+	rows := app.buildBlockRows()
+
+	// Find the index of the sub-agent line and the status line.
+	subAgentIdx := -1
+	statusIdx := -1
+	for i, r := range rows {
+		s := strip(r)
+		if strings.Contains(s, "Research auth") {
+			subAgentIdx = i
+		}
+		if strings.ContainsAny(s, "⣾⣽⣻⢿⡿⣟⣯⣷") && strings.Contains(s, "🛠️") {
+			statusIdx = i
+		}
+	}
+	if subAgentIdx == -1 {
+		t.Fatal("sub-agent line not found in output")
+	}
+	if statusIdx == -1 {
+		t.Fatal("status line not found in output")
+	}
+	if statusIdx <= subAgentIdx {
+		t.Errorf("status line (row %d) should appear after sub-agent line (row %d)", statusIdx, subAgentIdx)
+	}
+}
+
 func TestBrailleSpinnerAnimation(t *testing.T) {
 	// Verify spinner frame index advances on each 50ms tick and wraps correctly.
 	for i := 0; i < brailleSpinnerFrameCount*3; i++ {
