@@ -39,11 +39,11 @@ Running 3 Explore agents…
 ⣾ Research client vs server state    | 35 🛠️ | 5.51s | ↑348 ↓169
 ```
 
-- [ ] 2a: Rewrite `subAgentDisplayLines()` to group active sub-agents by mode. Emit a header line per group ("Running N Explore agents…" / "Running N agents…"). For each agent, show: spinner/✓/✗ + task + `| N 🛠️ | Xs | ↑in ↓out` (hide metric sections that are zero)
-- [ ] 2b: Implement braille spinner animation (`⣾⣽⣻⢿⡿⣟⣯⣷`) on the per-agent spinner character, using the same `pastelColor()` cycle so it gets the rainbow effect. Green `✓` for done, red `✗` for failed
-- [ ] 2c: When a sub-agent completes, keep it visible in the group display (as ✓/✗) until the whole group finishes or the main agent emits text — don't immediately remove completed agents. Adjust cleanup logic in `EventDone` handler accordingly
-- [ ] 2d: Stop appending `[agent <id>] completed: <task>` as `msgInfo` chat messages — the completion is now shown inline in the group display. Only emit a `msgInfo` message if the agent failed (with error details)
-- [ ] 2e: Add tests for grouped display rendering: multiple agents of same mode, mixed modes, completion transitions, failure display
+- [x] 2a: Rewrite `subAgentDisplayLines()` to group active sub-agents by mode. Emit a header line per group ("Running N Explore agents…" / "Running N agents…"). For each agent, show: spinner/✓/✗ + task + `| N 🛠️ | Xs | ↑in ↓out` (hide metric sections that are zero)
+- [x] 2b: Implement braille spinner animation (`⣾⣽⣻⢿⡿⣟⣯⣷`) on the per-agent spinner character, using the same `pastelColor()` cycle so it gets the rainbow effect. Green `✓` for done, red `✗` for failed
+- [x] 2c: When a sub-agent completes, keep it visible in the group display (as ✓/✗) until the whole group finishes or the main agent emits text — don't immediately remove completed agents. Adjust cleanup logic in `EventDone` handler accordingly
+- [x] 2d: Stop appending `[agent <id>] completed: <task>` as `msgInfo` chat messages — the completion is now shown inline in the group display. Only emit a `msgInfo` message if the agent failed (with error details)
+- [x] 2e: Add tests for grouped display rendering: multiple agents of same mode, mixed modes, completion transitions, failure display
 
 ## Phase 3: Grouped tool call blocks for the main agent
 

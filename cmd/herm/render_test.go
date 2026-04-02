@@ -142,6 +142,210 @@ func TestSubAgentDisplayStateTransitions(t *testing.T) {
 	})
 }
 
+func TestSubAgentGroupedDisplay(t *testing.T) {
+	stripANSI := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	t.Run("multiple agents same mode grouped", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		now := time.Now()
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Research auth", mode: "explore", startTime: now, toolCount: 10},
+			"a2": {task: "Research storage", mode: "explore", startTime: now, toolCount: 5},
+		}
+		lines := app.subAgentDisplayLines()
+		if len(lines) == 0 {
+			t.Fatal("expected display lines")
+		}
+		// First line should be the group header.
+		header := stripANSI(lines[0])
+		if !strings.Contains(header, "2 Explore agents") {
+			t.Errorf("header = %q, want to contain '2 Explore agents'", header)
+		}
+		// Should have 3 lines total: header + 2 agents.
+		if len(lines) != 3 {
+			t.Errorf("got %d lines, want 3", len(lines))
+		}
+	})
+
+	t.Run("single agent shows singular header", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Implement feature", mode: "implement", startTime: time.Now()},
+		}
+		lines := app.subAgentDisplayLines()
+		header := stripANSI(lines[0])
+		if !strings.Contains(header, "Implement agent") {
+			t.Errorf("header = %q, want to contain 'Implement agent'", header)
+		}
+	})
+
+	t.Run("mixed modes produce separate groups", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		now := time.Now()
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Research", mode: "explore", startTime: now},
+			"a2": {task: "Write code", mode: "implement", startTime: now},
+		}
+		lines := app.subAgentDisplayLines()
+		// Should have 2 headers + 2 agent lines = 4.
+		if len(lines) != 4 {
+			t.Errorf("got %d lines, want 4", len(lines))
+		}
+		// First header should be explore (sorted first).
+		h0 := stripANSI(lines[0])
+		if !strings.Contains(h0, "Explore") {
+			t.Errorf("first header = %q, want Explore group first", h0)
+		}
+	})
+
+	t.Run("completed agent shows checkmark", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		now := time.Now().Add(-5 * time.Second)
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Done task", mode: "explore", startTime: now, done: true, inputTokens: 500, outputTokens: 200, toolCount: 10},
+			"a2": {task: "Active task", mode: "explore", startTime: now},
+		}
+		lines := app.subAgentDisplayLines()
+		// Find the completed agent line.
+		found := false
+		for _, line := range lines {
+			plain := stripANSI(line)
+			if strings.Contains(plain, "Done task") {
+				found = true
+				if !strings.Contains(plain, "✓") {
+					t.Errorf("completed agent line = %q, expected ✓", plain)
+				}
+			}
+		}
+		if !found {
+			t.Error("completed agent not found in display")
+		}
+	})
+
+	t.Run("failed agent shows cross", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		now := time.Now().Add(-3 * time.Second)
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Failed task", mode: "explore", startTime: now, done: true, failed: true},
+			"a2": {task: "Active task", mode: "explore", startTime: now},
+		}
+		lines := app.subAgentDisplayLines()
+		found := false
+		for _, line := range lines {
+			plain := stripANSI(line)
+			if strings.Contains(plain, "Failed task") {
+				found = true
+				if !strings.Contains(plain, "✗") {
+					t.Errorf("failed agent line = %q, expected ✗", plain)
+				}
+			}
+		}
+		if !found {
+			t.Error("failed agent not found in display")
+		}
+	})
+
+	t.Run("all done returns nil", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Done", mode: "explore", done: true},
+		}
+		lines := app.subAgentDisplayLines()
+		if lines != nil {
+			t.Errorf("expected nil when all done, got %v", lines)
+		}
+	})
+
+	t.Run("metrics shown in agent line", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		now := time.Now().Add(-2 * time.Second)
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {task: "Research", mode: "explore", startTime: now, toolCount: 15, inputTokens: 1200, outputTokens: 300},
+		}
+		lines := app.subAgentDisplayLines()
+		// Agent line should contain tool count and token counts.
+		agentLine := stripANSI(lines[1]) // skip header
+		if !strings.Contains(agentLine, "15 🛠️") {
+			t.Errorf("agent line = %q, missing tool count", agentLine)
+		}
+		if !strings.Contains(agentLine, "↑1200") {
+			t.Errorf("agent line = %q, missing input tokens", agentLine)
+		}
+		if !strings.Contains(agentLine, "↓300") {
+			t.Errorf("agent line = %q, missing output tokens", agentLine)
+		}
+	})
+}
+
+func TestBrailleSpinner(t *testing.T) {
+	// Verify spinner cycles through all 8 frames.
+	seen := make(map[string]bool)
+	for i := 0; i < brailleSpinnerFrameCount; i++ {
+		elapsed := time.Duration(i*50) * time.Millisecond
+		s := brailleSpinner(elapsed)
+		plain := ansiEscRe.ReplaceAllString(s, "")
+		seen[plain] = true
+	}
+	if len(seen) != brailleSpinnerFrameCount {
+		t.Errorf("expected %d unique frames, got %d", brailleSpinnerFrameCount, len(seen))
+	}
+
+	// Verify it wraps (frame 8 == frame 0).
+	s0 := ansiEscRe.ReplaceAllString(brailleSpinner(0), "")
+	s8 := ansiEscRe.ReplaceAllString(brailleSpinner(time.Duration(brailleSpinnerFrameCount*50)*time.Millisecond), "")
+	if s0 != s8 {
+		t.Errorf("spinner should wrap: frame 0 = %q, frame %d = %q", s0, brailleSpinnerFrameCount, s8)
+	}
+}
+
+func TestSubAgentDoneNoCompletionMessage(t *testing.T) {
+	// Verify that successful sub-agent completion doesn't append a msgInfo message.
+	app := &App{headless: true, width: 80}
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStart, AgentID: "a1", Task: "work", Mode: "explore",
+	})
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventSubAgentStatus,
+		AgentID: "a1",
+		Text:    "done",
+		Usage:   &types.Usage{InputTokens: 100, OutputTokens: 50},
+	})
+
+	// Should not have any info messages about completion.
+	for _, msg := range app.messages {
+		if msg.kind == msgInfo && strings.Contains(msg.content, "completed") {
+			t.Errorf("unexpected completion message: %q", msg.content)
+		}
+	}
+}
+
+func TestSubAgentFailedEmitsMessage(t *testing.T) {
+	// Verify that failed sub-agent completion does append a msgInfo message.
+	app := &App{headless: true, width: 80}
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStart, AgentID: "a1", Task: "risky work", Mode: "implement",
+	})
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventSubAgentStatus,
+		AgentID: "a1",
+		Text:    "done",
+		IsError: true,
+		Usage:   &types.Usage{InputTokens: 100, OutputTokens: 50},
+	})
+
+	foundFailed := false
+	for _, msg := range app.messages {
+		if msg.kind == msgInfo && strings.Contains(msg.content, "failed") {
+			foundFailed = true
+		}
+	}
+	if !foundFailed {
+		t.Error("expected a failed message for errored sub-agent")
+	}
+}
+
 func TestWrapString(t *testing.T) {
 	tests := []struct {
 		name     string

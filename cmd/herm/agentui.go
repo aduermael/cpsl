@@ -546,23 +546,18 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				sa.inputTokens = event.Usage.InputTokens
 				sa.outputTokens = event.Usage.OutputTokens
 			}
-			completionMsg := fmt.Sprintf("[agent %s] completed: %s", shortID(event.AgentID), sa.task)
-			if event.Usage != nil && (event.Usage.InputTokens > 0 || event.Usage.OutputTokens > 0) {
-				completionMsg += fmt.Sprintf(" (↑%s ↓%s",
-					formatTokenCount(event.Usage.InputTokens),
-					formatTokenCount(event.Usage.OutputTokens))
-				if event.Task != "" {
-					completionMsg += ", " + event.Task
-				}
-				completionMsg += ")"
-			}
 			if a.traceCollector != nil && event.SubTrace != nil {
 				a.traceCollector.AddSubAgent(event.SubTrace)
 			}
-			a.messages = append(a.messages, chatMessage{
-				kind:    msgInfo,
-				content: completionMsg,
-			})
+			// Only emit a chat message if the agent failed — successful
+			// completions are shown inline in the grouped display.
+			if event.IsError {
+				failMsg := fmt.Sprintf("[agent %s] failed: %s", shortID(event.AgentID), sa.task)
+				a.messages = append(a.messages, chatMessage{
+					kind:    msgInfo,
+					content: failMsg,
+				})
+			}
 		} else {
 			sa.status = event.Text
 			if strings.HasPrefix(event.Text, "tool:") {

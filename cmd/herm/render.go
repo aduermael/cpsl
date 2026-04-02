@@ -449,41 +449,157 @@ type subAgentDisplay struct {
 	failed       bool      // true if the sub-agent failed
 }
 
-// maxSubAgentDisplayLines is the maximum number of active agent lines shown.
+// maxSubAgentDisplayLines is the maximum number of agent lines shown per group.
 const maxSubAgentDisplayLines = 5
 
-// subAgentDisplayLines returns one line per active sub-agent showing its task label and status.
+// brailleSpinnerFrames is the 8-frame braille spinner animation sequence.
+var brailleSpinnerFrames = []string{"⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷"}
+
+// brailleSpinnerFrameCount is the number of frames in the braille spinner.
+const brailleSpinnerFrameCount = 8
+
+// brailleSpinner returns a colored braille spinner character for the given elapsed time.
+func brailleSpinner(elapsed time.Duration) string {
+	frameIdx := int(elapsed.Milliseconds()/50) % brailleSpinnerFrameCount
+	color := pastelColor(elapsed)
+	return fmt.Sprintf("%s%s\033[0m", color, brailleSpinnerFrames[frameIdx])
+}
+
+// subAgentDisplayLines returns grouped sub-agent display lines with per-agent metrics.
+// Agents are grouped by mode. Each group has a header ("Running N Explore agents…")
+// and per-agent lines showing spinner/✓/✗ + task + metrics.
 func (a *App) subAgentDisplayLines() []string {
 	if len(a.subAgents) == 0 {
 		return nil
 	}
-	var active []*subAgentDisplay
+
+	// Collect all visible agents (active + recently completed within the group).
+	var visible []*subAgentDisplay
 	for _, sa := range a.subAgents {
-		if !sa.done {
-			active = append(active, sa)
-		}
+		visible = append(visible, sa)
 	}
-	if len(active) == 0 {
+	if len(visible) == 0 {
 		return nil
 	}
-	var out []string
-	shown := active
-	if len(shown) > maxSubAgentDisplayLines {
-		shown = shown[:maxSubAgentDisplayLines]
-	}
-	for _, sa := range shown {
-		label := sa.task
-		status := sa.status
-		if status == "" {
-			status = "starting..."
+
+	// Check if any agent is still active — if all done, don't show the group.
+	allDone := true
+	for _, sa := range visible {
+		if !sa.done {
+			allDone = false
+			break
 		}
-		// dim (2) + italic (3), task label in normal weight
-		out = append(out, fmt.Sprintf("\033[2;3m[agent] \033[0;2m%s\033[2;3m: %s\033[0m", label, status))
 	}
-	if len(active) > maxSubAgentDisplayLines {
-		out = append(out, fmt.Sprintf("\033[2;3m  ...and %d more\033[0m", len(active)-maxSubAgentDisplayLines))
+	if allDone {
+		return nil
+	}
+
+	// Group by mode.
+	groups := make(map[string][]*subAgentDisplay)
+	for _, sa := range visible {
+		mode := sa.mode
+		if mode == "" {
+			mode = "agent"
+		}
+		groups[mode] = append(groups[mode], sa)
+	}
+
+	// Stable ordering: explore first, then implement, then other.
+	modeOrder := []string{"explore", "implement"}
+	for mode := range groups {
+		found := false
+		for _, m := range modeOrder {
+			if mode == m {
+				found = true
+				break
+			}
+		}
+		if !found {
+			modeOrder = append(modeOrder, mode)
+		}
+	}
+
+	var out []string
+	for _, mode := range modeOrder {
+		agents, ok := groups[mode]
+		if !ok {
+			continue
+		}
+
+		// Count active agents in this group.
+		activeCount := 0
+		for _, sa := range agents {
+			if !sa.done {
+				activeCount++
+			}
+		}
+
+		// Header line.
+		modeLabel := strings.ToUpper(mode[:1]) + mode[1:]
+		total := len(agents)
+		var header string
+		if total == 1 {
+			header = fmt.Sprintf("\033[2;3mRunning %s agent…\033[0m", modeLabel)
+		} else {
+			header = fmt.Sprintf("\033[2;3mRunning %d %s agents…\033[0m", total, modeLabel)
+		}
+		out = append(out, header)
+
+		// Per-agent lines (capped).
+		shown := agents
+		if len(shown) > maxSubAgentDisplayLines {
+			shown = shown[:maxSubAgentDisplayLines]
+		}
+		for _, sa := range shown {
+			out = append(out, formatSubAgentLine(sa))
+		}
+		if len(agents) > maxSubAgentDisplayLines {
+			out = append(out, fmt.Sprintf("\033[2;3m  …and %d more\033[0m", len(agents)-maxSubAgentDisplayLines))
+		}
 	}
 	return out
+}
+
+// formatSubAgentLine renders a single sub-agent status line:
+// spinner/✓/✗ + task + | N 🛠️ | Xs | ↑in ↓out
+func formatSubAgentLine(sa *subAgentDisplay) string {
+	var prefix string
+	if sa.done {
+		if sa.failed {
+			prefix = "\033[31m✗\033[0m" // red ✗
+		} else {
+			prefix = "\033[32m✓\033[0m" // green ✓
+		}
+	} else {
+		elapsed := time.Since(sa.startTime)
+		prefix = brailleSpinner(elapsed)
+	}
+
+	var metrics []string
+	if sa.toolCount > 0 {
+		metrics = append(metrics, fmt.Sprintf("%d 🛠️", sa.toolCount))
+	}
+	var elapsed time.Duration
+	if !sa.startTime.IsZero() {
+		if sa.done {
+			// For done agents, use the last known elapsed (inputTokens are set at done time).
+			elapsed = time.Since(sa.startTime)
+		} else {
+			elapsed = time.Since(sa.startTime)
+		}
+		metrics = append(metrics, fmt.Sprintf("%.2fs", elapsed.Seconds()))
+	}
+	if sa.inputTokens > 0 || sa.outputTokens > 0 {
+		metrics = append(metrics, fmt.Sprintf("↑%s ↓%s",
+			formatTokenCount(sa.inputTokens),
+			formatTokenCount(sa.outputTokens)))
+	}
+
+	line := fmt.Sprintf("%s \033[2m%s\033[0m", prefix, sa.task)
+	if len(metrics) > 0 {
+		line += fmt.Sprintf(" \033[2m| %s\033[0m", strings.Join(metrics, " | "))
+	}
+	return line
 }
 
 // truncateTaskLabel returns the first ~40 chars of a task description for display.
