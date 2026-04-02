@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -2087,4 +2088,85 @@ func TestBrailleSpinnerAnimation(t *testing.T) {
 	if c1 == c2 && c2 == c3 {
 		t.Error("pastelColor should produce different colors at different times")
 	}
+}
+
+func TestAgentStatusCheckSuppression(t *testing.T) {
+	t.Run("agent status check is hidden from UI", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type:      EventToolCallStart,
+			ToolName:  "agent",
+			ToolID:    "tool-status-1",
+			ToolInput: json.RawMessage(`{"task":"status","agent_id":"sub-1"}`),
+		})
+		// No msgToolCall should be added.
+		for _, m := range app.messages {
+			if m.kind == msgToolCall {
+				t.Error("agent status check should not produce a msgToolCall")
+			}
+		}
+		// Tool ID should be in suppressed set.
+		if !app.suppressedToolIDs["tool-status-1"] {
+			t.Error("tool ID should be in suppressedToolIDs")
+		}
+
+		// Now fire the result — it should also be hidden.
+		app.handleAgentEvent(AgentEvent{
+			Type:       EventToolResult,
+			ToolID:     "tool-status-1",
+			ToolName:   "agent",
+			ToolResult: `{"status":"running"}`,
+		})
+		for _, m := range app.messages {
+			if m.kind == msgToolResult {
+				t.Error("suppressed tool result should not produce a msgToolResult")
+			}
+		}
+		// Tool ID should be removed from suppressed set.
+		if app.suppressedToolIDs["tool-status-1"] {
+			t.Error("tool ID should be removed from suppressedToolIDs after result")
+		}
+		// Stats should still be counted.
+		if app.sessionToolResults != 1 {
+			t.Errorf("sessionToolResults = %d, want 1", app.sessionToolResults)
+		}
+	})
+
+	t.Run("agent spawn is NOT suppressed", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type:      EventToolCallStart,
+			ToolName:  "agent",
+			ToolID:    "tool-spawn-1",
+			ToolInput: json.RawMessage(`{"task":"Research the auth module","mode":"explore"}`),
+		})
+		var found bool
+		for _, m := range app.messages {
+			if m.kind == msgToolCall {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("agent spawn should produce a msgToolCall")
+		}
+		if app.suppressedToolIDs["tool-spawn-1"] {
+			t.Error("agent spawn should NOT be in suppressedToolIDs")
+		}
+	})
+
+	t.Run("trace collector receives suppressed events", func(t *testing.T) {
+		tc := NewTraceCollector("test-session")
+		app := &App{headless: true, width: 80, traceCollector: tc}
+		app.handleAgentEvent(AgentEvent{
+			Type:      EventToolCallStart,
+			ToolName:  "agent",
+			ToolID:    "tool-status-2",
+			AgentID:   "main-agent",
+			ToolInput: json.RawMessage(`{"task":"status","agent_id":"sub-1"}`),
+		})
+		// Trace should have recorded the tool call as pending.
+		if _, ok := tc.pendingTools["tool-status-2"]; !ok {
+			t.Error("trace collector should receive suppressed tool call start")
+		}
+	})
 }
