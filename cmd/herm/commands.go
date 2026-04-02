@@ -57,6 +57,7 @@ func (a *App) handleCommand(input string) {
 		a.mainAgentInputTokens = 0
 		a.mainAgentOutputTokens = 0
 		a.mainAgentLLMCalls = 0
+		a.mainAgentToolCount = 0
 		a.sessionToolResults = 0
 		a.sessionToolBytes = 0
 		a.sessionToolStats = nil

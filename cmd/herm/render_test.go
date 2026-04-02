@@ -1681,3 +1681,124 @@ func TestRenderFullClearSequence(t *testing.T) {
 		t.Errorf("render should emit clear-to-end-of-screen (\\033[J) after rows")
 	}
 }
+
+func TestStatusLineFormats(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	t.Run("running status has spinner and pipe-separated format", func(t *testing.T) {
+		app := &App{
+			width:              80,
+			agentRunning:       true,
+			agentStartTime:     time.Now().Add(-10 * time.Second),
+			mainAgentToolCount: 12,
+			agentDisplayInTok:  348,
+			agentDisplayOutTok: 169,
+		}
+		rows := app.buildBlockRows()
+		var found string
+		for _, r := range rows {
+			s := strip(r)
+			if strings.Contains(s, "🛠️") && strings.Contains(s, "|") {
+				found = s
+				break
+			}
+		}
+		if found == "" {
+			t.Fatalf("expected running status line with tool count, got rows: %v", rows)
+		}
+		// Should contain braille spinner character at start.
+		if !strings.ContainsAny(found, "⣾⣽⣻⢿⡿⣟⣯⣷") {
+			t.Errorf("running status should have braille spinner, got: %s", found)
+		}
+		// Should contain pipe-separated tool count.
+		if !strings.Contains(found, "| 12 🛠️ |") {
+			t.Errorf("running status should have pipe-separated tool count, got: %s", found)
+		}
+		// Should contain token arrows.
+		if !strings.Contains(found, "↑") || !strings.Contains(found, "↓") {
+			t.Errorf("running status should have token counts, got: %s", found)
+		}
+	})
+
+	t.Run("paused status has pause icon and pipe-separated format", func(t *testing.T) {
+		app := &App{
+			width:              80,
+			agentRunning:       true,
+			awaitingApproval:   true,
+			agentStartTime:     time.Now().Add(-5 * time.Second),
+			mainAgentToolCount: 7,
+			agentDisplayInTok:  200,
+			agentDisplayOutTok: 100,
+		}
+		rows := app.buildBlockRows()
+		var found string
+		for _, r := range rows {
+			s := strip(r)
+			if strings.Contains(s, "⏸") {
+				found = s
+				break
+			}
+		}
+		if found == "" {
+			t.Fatalf("expected paused status line, got rows: %v", rows)
+		}
+		if !strings.Contains(found, "| 7 🛠️ |") {
+			t.Errorf("paused status should have pipe-separated tool count, got: %s", found)
+		}
+		if !strings.Contains(found, "↑") || !strings.Contains(found, "↓") {
+			t.Errorf("paused status should have token counts, got: %s", found)
+		}
+	})
+
+	t.Run("finished status has green checkmark and pipe-separated format", func(t *testing.T) {
+		app := &App{
+			width:                 80,
+			agentElapsed:          15 * time.Second,
+			mainAgentToolCount:    20,
+			mainAgentInputTokens:  500,
+			mainAgentOutputTokens: 250,
+		}
+		rows := app.buildBlockRows()
+		var found string
+		for _, r := range rows {
+			s := strip(r)
+			if strings.Contains(s, "✓") && strings.Contains(s, "🛠️") {
+				found = s
+				break
+			}
+		}
+		if found == "" {
+			t.Fatalf("expected finished status line, got rows: %v", rows)
+		}
+		if !strings.Contains(found, "✓") {
+			t.Errorf("finished status should have checkmark, got: %s", found)
+		}
+		if !strings.Contains(found, "20 🛠️") {
+			t.Errorf("finished status should show tool count, got: %s", found)
+		}
+		if !strings.Contains(found, "15.00s") {
+			t.Errorf("finished status should show elapsed time, got: %s", found)
+		}
+	})
+
+	t.Run("tool count resets on new session", func(t *testing.T) {
+		app := &App{
+			width:              80,
+			mainAgentToolCount: 15,
+			agentElapsed:       5 * time.Second,
+		}
+		// Simulate /new reset.
+		app.mainAgentToolCount = 0
+		app.agentElapsed = 0
+		rows := app.buildBlockRows()
+		// With agentElapsed == 0 and agentRunning == false, no status line should appear.
+		for _, r := range rows {
+			s := strip(r)
+			if strings.Contains(s, "🛠️") {
+				t.Errorf("after reset, no tool count should appear in status, got: %s", s)
+			}
+		}
+	})
+}

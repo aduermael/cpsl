@@ -146,6 +146,7 @@ type App struct {
 	mainAgentInputTokens   int // input tokens from main agent only
 	mainAgentOutputTokens  int // output tokens from main agent only
 	mainAgentLLMCalls      int // LLM calls from main agent only
+	mainAgentToolCount     int // tool results from main agent only
 	sessionToolResults  int            // count of tool results this session
 	sessionToolBytes    int            // cumulative tool result bytes this session
 	sessionToolStats    map[string][2]int // tool name → [count, bytes]

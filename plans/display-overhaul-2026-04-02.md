@@ -82,12 +82,12 @@ to:
 ⣾ pondering the cosmos... | 12 🛠️ | 58.51s | ↑348 ↓169
 ```
 
-- [ ] 4a: Add `mainAgentToolCount int` field to `App`, increment on `EventToolResult` when the event comes from the main agent (check `event.AgentID == a.agent.ID()`)
-- [ ] 4b: Update the running status line in `buildBlockRows()` to use pipe-separated format: `⣾ <funny-text> | N 🛠️ | Xs | ↑in ↓out`. Add braille spinner prefix with `pastelColor()`. Apply pastel color to the entire line
-- [ ] 4c: Update the paused status line (approval mode) to match format: `⏸ <funny-text> | N 🛠️ | Xs | ↑in ↓out` (dim instead of pastel)
-- [ ] 4d: Update the finished status line (after agent done) to match: `✓ N 🛠️ | Xs | ↑in ↓out` (dim, with green ✓)
-- [ ] 4e: Reset `mainAgentToolCount` alongside other session state in `/new` command handler
-- [ ] 4f: Add tests for status line rendering across all three states (running, paused, finished) with tool count display
+- [x] 4a: Add `mainAgentToolCount int` field to `App`, increment on `EventToolResult` when the event comes from the main agent (check `event.AgentID == a.agent.ID()`)
+- [x] 4b: Update the running status line in `buildBlockRows()` to use pipe-separated format: `⣾ <funny-text> | N 🛠️ | Xs | ↑in ↓out`. Add braille spinner prefix with `pastelColor()`. Apply pastel color to the entire line
+- [x] 4c: Update the paused status line (approval mode) to match format: `⏸ <funny-text> | N 🛠️ | Xs | ↑in ↓out` (dim instead of pastel)
+- [x] 4d: Update the finished status line (after agent done) to match: `✓ N 🛠️ | Xs | ↑in ↓out` (dim, with green ✓)
+- [x] 4e: Reset `mainAgentToolCount` alongside other session state in `/new` command handler
+- [x] 4f: Add tests for status line rendering across all three states (running, paused, finished) with tool count display
 
 ## Phase 5: Polish and edge cases
 

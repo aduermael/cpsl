@@ -414,6 +414,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			s[1] += len(event.ToolResult)
 			a.sessionToolStats[event.ToolName] = s
 		}
+		if a.agent != nil && event.AgentID == a.agent.ID() {
+			a.mainAgentToolCount++
+		}
 		if a.traceCollector != nil {
 			a.traceCollector.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
 			a.traceCollector.FlushToFile(a.traceFilePath)
