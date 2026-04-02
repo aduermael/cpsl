@@ -3660,3 +3660,459 @@ func TestMaxToolIterations_DefaultValue(t *testing.T) {
 		t.Errorf("maxToolIterations = %d, want 0 (uses default %d)", agent.maxToolIterations, defaultMaxToolIterations)
 	}
 }
+
+// --- Phase 13: Integration — End-to-End Error Chains ---
+
+// TestE2EPermanentErrorChain verifies the full error chain when a provider
+// returns a non-retryable error (401): provider → langdag retry (skipped) →
+// herm retryablePrompt (skipped) → agent emits EventError with original message
+// → EventDone. No EventRetry should appear. The original error message must
+// survive all wrapping layers so the user sees "401" and "Unauthorized".
+func TestE2EPermanentErrorChain(t *testing.T) {
+	prov := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			0: fmt.Errorf("HTTP 401: Unauthorized — invalid API key"),
+		},
+		responses: []scriptedResponse{
+			{text: "should never reach this", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 5*time.Second)
+
+	// Verify the complete event sequence.
+	var hasLLMStart, hasError, hasDone bool
+	var hasRetry, hasTextDelta, hasUsage bool
+	var errorMsg string
+	for _, ev := range events {
+		switch ev.Type {
+		case EventLLMStart:
+			hasLLMStart = true
+		case EventError:
+			hasError = true
+			if ev.Error != nil {
+				errorMsg = ev.Error.Error()
+			}
+		case EventDone:
+			hasDone = true
+			if ev.NodeID != "" {
+				t.Errorf("EventDone.NodeID should be empty on permanent error, got %q", ev.NodeID)
+			}
+		case EventRetry:
+			hasRetry = true
+		case EventTextDelta:
+			hasTextDelta = true
+		case EventUsage:
+			hasUsage = true
+		}
+	}
+
+	if !hasLLMStart {
+		t.Error("expected EventLLMStart — agent should attempt the LLM call")
+	}
+	if hasRetry {
+		t.Error("should NOT retry on 401 — it's a permanent error")
+	}
+	if hasTextDelta {
+		t.Error("should NOT have text deltas — the call fails before streaming")
+	}
+	if hasUsage {
+		t.Error("should NOT have usage — no successful call was made")
+	}
+	if !hasError {
+		t.Fatal("expected EventError with the original API error")
+	}
+	// The original error message must be preserved through the wrapping chain.
+	if !strings.Contains(errorMsg, "401") {
+		t.Errorf("error should contain '401', got: %q", errorMsg)
+	}
+	if !strings.Contains(errorMsg, "Unauthorized") {
+		t.Errorf("error should contain 'Unauthorized', got: %q", errorMsg)
+	}
+	if !hasDone {
+		t.Error("expected EventDone after permanent error")
+	}
+}
+
+// TestE2ETransientRetryChain verifies the full chain when a provider returns
+// transient errors (503) that eventually succeed: provider fails → langdag retry
+// → herm retryablePrompt emits EventRetry → provider succeeds → agent streams
+// response → EventUsage (only from success) → EventDone.
+func TestE2ETransientRetryChain(t *testing.T) {
+	prov := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			0: fmt.Errorf("HTTP 503: service unavailable"),
+			1: fmt.Errorf("HTTP 503: service unavailable"),
+		},
+		responses: []scriptedResponse{
+			{text: "Success after retries!", tokensIn: 200, tokensOut: 75},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	// Use short retry delay so the test completes quickly.
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "hello", "")
+	events := drainEvents(t, agent.Events(), 30*time.Second)
+
+	var retryEvents []AgentEvent
+	var finalText string
+	var hasUsage, hasDone bool
+	var usageTokensIn int
+	for _, ev := range events {
+		switch ev.Type {
+		case EventRetry:
+			retryEvents = append(retryEvents, ev)
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventUsage:
+			hasUsage = true
+			if ev.Usage != nil {
+				usageTokensIn = ev.Usage.InputTokens
+			}
+		case EventDone:
+			hasDone = true
+		}
+	}
+
+	// Should have 2 retry events (attempt 1 and 2).
+	if len(retryEvents) != 2 {
+		t.Errorf("expected 2 EventRetry events, got %d", len(retryEvents))
+	}
+	for i, rev := range retryEvents {
+		if rev.Attempt != i+1 {
+			t.Errorf("retry[%d].Attempt = %d, want %d", i, rev.Attempt, i+1)
+		}
+		if rev.Error == nil || !strings.Contains(rev.Error.Error(), "503") {
+			t.Errorf("retry[%d] should carry the 503 error", i)
+		}
+	}
+
+	// Final text should contain the success response.
+	if !strings.Contains(finalText, "Success after retries!") {
+		t.Errorf("final text = %q, want success message", finalText)
+	}
+
+	// Usage should reflect only the successful call.
+	if !hasUsage {
+		t.Error("expected EventUsage from the successful call")
+	}
+	if usageTokensIn != 200 {
+		t.Errorf("usage input tokens = %d, want 200 (from successful call only)", usageTokensIn)
+	}
+
+	if !hasDone {
+		t.Error("expected EventDone after successful retry")
+	}
+}
+
+// TestE2EMidStreamFailureRetryChain verifies mid-stream failure recovery:
+// provider streams partial content → error → agent emits EventStreamClear →
+// EventRetry → retry streams full response → EventUsage → EventDone.
+// No duplicate content should appear in the final text.
+func TestE2EMidStreamFailureRetryChain(t *testing.T) {
+	prov := &streamFailThenSucceedProvider{
+		model:           "test-model",
+		failStreamCalls: map[int]bool{0: true}, // first call fails mid-stream
+		responses: []scriptedResponse{
+			{text: "The quick brown fox", tokensIn: 100, tokensOut: 50},       // partial (fails)
+			{text: "The quick brown fox jumps!", tokensIn: 150, tokensOut: 60}, // retry succeeds
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "hi", "")
+	events := drainEvents(t, agent.Events(), 10*time.Second)
+
+	// Verify the event sequence ordering: partial text → error → clear → retry → full text → usage → done.
+	var (
+		clearIdx  = -1
+		retryIdx  = -1
+		hasDone   bool
+		hasUsage  bool
+		usageIn   int
+	)
+
+	// Collect text before and after StreamClear to verify no duplication.
+	var textBeforeClear, textAfterClear string
+	clearSeen := false
+
+	for i, ev := range events {
+		switch ev.Type {
+		case EventTextDelta:
+			if clearSeen {
+				textAfterClear += ev.Text
+			} else {
+				textBeforeClear += ev.Text
+			}
+		case EventStreamClear:
+			clearIdx = i
+			clearSeen = true
+		case EventRetry:
+			retryIdx = i
+		case EventUsage:
+			hasUsage = true
+			if ev.Usage != nil {
+				usageIn = ev.Usage.InputTokens
+			}
+		case EventDone:
+			hasDone = true
+		}
+	}
+
+	if clearIdx == -1 {
+		t.Fatal("expected EventStreamClear to discard partial text")
+	}
+	if retryIdx == -1 {
+		t.Fatal("expected EventRetry for stream retry")
+	}
+	if clearIdx >= retryIdx {
+		t.Errorf("EventStreamClear (idx=%d) must come before EventRetry (idx=%d)", clearIdx, retryIdx)
+	}
+
+	// Text before clear is partial (from the failed stream).
+	if textBeforeClear == "" {
+		t.Error("expected some partial text before StreamClear")
+	}
+
+	// Text after clear should be the full retry response (no duplication).
+	if !strings.Contains(textAfterClear, "The quick brown fox jumps!") {
+		t.Errorf("text after clear = %q, want full retry response", textAfterClear)
+	}
+	// Verify no duplication: text after clear should NOT contain the partial prefix twice.
+	if strings.Count(textAfterClear, "The quick") > 1 {
+		t.Errorf("duplicate content detected in text after clear: %q", textAfterClear)
+	}
+
+	if !hasUsage {
+		t.Error("expected EventUsage from the successful retry")
+	}
+	// Usage should reflect the retry response, not the failed stream.
+	if usageIn != 150 {
+		t.Errorf("usage input tokens = %d, want 150 (from retry)", usageIn)
+	}
+
+	if !hasDone {
+		t.Error("expected EventDone after stream retry success")
+	}
+}
+
+// TestE2ESubAgentErrorChain verifies that when a main agent spawns a sub-agent
+// via tool call and the sub-agent's provider returns an error, the error flows
+// through: sub-agent provider → sub-agent EventError → sub-agent result with
+// context (agent_id, turn, error) → parent agent's LLM sees error → parent
+// responds appropriately.
+func TestE2ESubAgentErrorChain(t *testing.T) {
+	// The parent agent's provider will:
+	//   Call 0: return a tool_use for "agent" tool
+	//   Call 1: receive the sub-agent error result, respond with text
+	parentProv := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			{
+				text: "I'll delegate this to a sub-agent.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "sa1", Name: "agent", Input: json.RawMessage(`{"task":"check auth","mode":"explore"}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "The sub-agent encountered an authentication error. The API key may be invalid.", tokensIn: 200, tokensOut: 60},
+		},
+	}
+	store := newMockStorage()
+	parentClient := langdag.NewWithDeps(store, parentProv)
+
+	// The sub-agent's provider returns a permanent 401 error.
+	subProv := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			0: fmt.Errorf("HTTP 401: Unauthorized — invalid API key"),
+		},
+	}
+	subStore := newMockStorage()
+	subClient := langdag.NewWithDeps(subStore, subProv)
+
+	tmpDir := t.TempDir()
+	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0)
+	// Wire sub-agent events to the parent's event channel (as agentui.go does).
+	subAgentTool.parentEvents = agent.events
+
+	go agent.Run(context.Background(), "check if auth is working", "")
+	events := drainEvents(t, agent.Events(), 15*time.Second)
+
+	// Collect the tool result that the parent agent received.
+	var toolResult string
+	var toolResultIsError bool
+	var finalText string
+	var hasDone bool
+	var subAgentStartSeen bool
+	for _, ev := range events {
+		switch ev.Type {
+		case EventSubAgentStart:
+			subAgentStartSeen = true
+		case EventToolResult:
+			if ev.ToolName == "agent" {
+				toolResult = ev.ToolResult
+				toolResultIsError = ev.IsError
+			}
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventDone:
+			hasDone = true
+		}
+	}
+
+	if !subAgentStartSeen {
+		t.Error("expected EventSubAgentStart — sub-agent should have been spawned")
+	}
+
+	// The sub-agent tool result should contain the error with context.
+	if toolResult == "" {
+		t.Fatal("expected a tool result from the sub-agent")
+	}
+	if !strings.Contains(toolResult, "401") {
+		t.Errorf("sub-agent result should contain '401', got: %q", toolResult)
+	}
+	if !strings.Contains(toolResult, "Unauthorized") {
+		t.Errorf("sub-agent result should contain 'Unauthorized', got: %q", toolResult)
+	}
+	// Error context: should mention turn number.
+	if !strings.Contains(toolResult, "turn") {
+		t.Errorf("sub-agent result should include turn context, got: %q", toolResult)
+	}
+	// Sub-agent tool errors come back as non-error tool results (the sub-agent
+	// itself completed, but its content reports the error).
+	if toolResultIsError {
+		t.Error("sub-agent tool result should not be IsError — the Execute() call itself succeeded")
+	}
+
+	// The parent agent should have processed the error and responded.
+	if !strings.Contains(finalText, "authentication error") || !strings.Contains(finalText, "invalid") {
+		t.Errorf("parent agent's response should address the auth error, got: %q", finalText)
+	}
+	if !hasDone {
+		t.Error("expected EventDone — parent agent should complete")
+	}
+}
+
+// TestE2ECascadingFailureRecovery verifies that when a sub-agent encounters
+// a max_tokens truncation with no usable content, the parent agent receives the
+// error, and can take corrective action (e.g., retry with a different approach)
+// that succeeds without conversation corruption.
+func TestE2ECascadingFailureRecovery(t *testing.T) {
+	// Sub-agent provider: first call returns max_tokens with empty content (error),
+	// simulated by returning an error that the agent will surface.
+	subProv := &failThenSucceedProvider{
+		model: "test-model",
+		failOnCalls: map[int]error{
+			// The sub-agent's prompt call fails with a transient-ish error
+			// that exhausts retries, producing a clear error result.
+			0: fmt.Errorf("HTTP 529: overloaded"),
+			1: fmt.Errorf("HTTP 529: overloaded"),
+			2: fmt.Errorf("HTTP 529: overloaded"),
+		},
+	}
+	subStore := newMockStorage()
+	subClient := langdag.NewWithDeps(subStore, subProv)
+
+	// Parent provider:
+	//   Call 0: ask sub-agent to do work (first attempt)
+	//   Call 1: see the error, try a different sub-agent approach
+	//   Call 2: see second sub-agent success, respond
+	parentProv := &scriptedProvider{
+		model: "test-model",
+		responses: []scriptedResponse{
+			// Call 0: delegate to sub-agent
+			{
+				text: "Delegating to sub-agent.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c1", Name: "agent", Input: json.RawMessage(`{"task":"analyze code","mode":"explore"}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Call 1: sees error, tries different approach
+			{
+				text: "First attempt failed. Trying with a simpler task.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "c2", Name: "simple_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 200, tokensOut: 60,
+			},
+			// Call 2: success response
+			{text: "Done! Used the fallback approach successfully.", tokensIn: 150, tokensOut: 40},
+		},
+	}
+	parentStore := newMockStorage()
+	parentClient := langdag.NewWithDeps(parentStore, parentProv)
+
+	tmpDir := t.TempDir()
+	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	simpleTool := &testTool{name: "simple_tool", result: "fallback result ok"}
+
+	agent := NewAgent(parentClient, []Tool{subAgentTool, simpleTool}, nil, "", "test-model", 0)
+
+	go agent.Run(context.Background(), "analyze the code", "")
+	events := drainEvents(t, agent.Events(), 30*time.Second)
+
+	// Track the full sequence.
+	var (
+		subAgentResults []string
+		simpleToolSeen  bool
+		finalText       string
+		hasDone         bool
+		doneNodeID      string
+	)
+	for _, ev := range events {
+		switch ev.Type {
+		case EventToolResult:
+			if ev.ToolName == "agent" {
+				subAgentResults = append(subAgentResults, ev.ToolResult)
+			}
+			if ev.ToolName == "simple_tool" {
+				simpleToolSeen = true
+			}
+		case EventTextDelta:
+			finalText += ev.Text
+		case EventDone:
+			hasDone = true
+			doneNodeID = ev.NodeID
+		}
+	}
+
+	// First sub-agent should have failed with the overloaded error.
+	if len(subAgentResults) == 0 {
+		t.Fatal("expected at least one sub-agent tool result")
+	}
+	firstResult := subAgentResults[0]
+	if !strings.Contains(firstResult, "529") && !strings.Contains(firstResult, "overloaded") {
+		t.Errorf("first sub-agent result should contain overloaded error, got: %q", firstResult)
+	}
+
+	// Parent should have recovered with simple_tool.
+	if !simpleToolSeen {
+		t.Error("expected simple_tool execution as fallback approach")
+	}
+
+	// Final response should indicate success.
+	if !strings.Contains(finalText, "fallback approach successfully") {
+		t.Errorf("final text should indicate successful recovery, got: %q", finalText)
+	}
+
+	if !hasDone {
+		t.Fatal("expected EventDone — agent should complete after recovery")
+	}
+	if doneNodeID == "" {
+		t.Error("EventDone should have a valid nodeID for conversation resume")
+	}
+}
