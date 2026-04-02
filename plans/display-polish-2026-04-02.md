@@ -86,7 +86,7 @@ Two issues in `formatSubAgentLine()` (render.go:594-632):
 **Approach for tokens:** In the `EventUsage` handler, when `event.AgentID` doesn't match the main agent ID, look up the sub-agent display and accumulate `inputTokens`/`outputTokens` from the usage event. This gives live token counts during execution.
 
 - [x] 5a: Fix missing space after 🛠️ in `formatSubAgentLine()` — change the format string to `"%d 🛠️ "` (trailing space)
-- [ ] 5b: In the `EventUsage` handler, when the event comes from a sub-agent (AgentID != main agent ID), find the corresponding `subAgentDisplay` via `getOrCreateSubAgent()` and accumulate `inputTokens += event.Usage.InputTokens` and `outputTokens += event.Usage.OutputTokens`
+- [x] 5b: In the `EventUsage` handler, when the event comes from a sub-agent (AgentID != main agent ID), find the corresponding `subAgentDisplay` via `getOrCreateSubAgent()` and accumulate `inputTokens += event.Usage.InputTokens` and `outputTokens += event.Usage.OutputTokens`
 - [ ] 5c: Add tests for: sub-agent line spacing with 🛠️, live token accumulation during sub-agent execution
 
 ## Phase 6: Integration tests

@@ -455,6 +455,11 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				a.mainAgentInputTokens += event.Usage.InputTokens
 				a.mainAgentOutputTokens += event.Usage.OutputTokens
 				a.mainAgentLLMCalls++
+			} else if a.agent != nil && event.AgentID != a.agent.ID() {
+				// Accumulate live token counts for sub-agents.
+				sa := a.getOrCreateSubAgent(event.AgentID)
+				sa.inputTokens += event.Usage.InputTokens
+				sa.outputTokens += event.Usage.OutputTokens
 			}
 			if a.traceCollector != nil {
 				a.traceCollector.SetUsage(event.AgentID, event.Model, event.NodeID,
