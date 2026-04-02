@@ -1022,6 +1022,411 @@ func TestBuildBlockRows_ToolBox(t *testing.T) {
 	})
 }
 
+func TestCollectToolGroup(t *testing.T) {
+	t.Run("single tool call with result", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ glob", toolName: "glob"},
+			{kind: msgToolResult, content: "file1\nfile2", toolName: "glob"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 1 {
+			t.Fatalf("entries = %d, want 1", len(g.entries))
+		}
+		if g.consumed != 2 {
+			t.Errorf("consumed = %d, want 2", g.consumed)
+		}
+		if g.inProgress {
+			t.Error("should not be in progress")
+		}
+		if g.entries[0].toolName != "glob" {
+			t.Errorf("toolName = %q, want glob", g.entries[0].toolName)
+		}
+	})
+
+	t.Run("multiple consecutive pairs", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ read", toolName: "read_file"},
+			{kind: msgToolResult, content: "content1"},
+			{kind: msgToolCall, content: "~ read", toolName: "read_file"},
+			{kind: msgToolResult, content: "content2"},
+			{kind: msgToolCall, content: "~ glob", toolName: "glob"},
+			{kind: msgToolResult, content: "file.go"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 3 {
+			t.Fatalf("entries = %d, want 3", len(g.entries))
+		}
+		if g.consumed != 6 {
+			t.Errorf("consumed = %d, want 6", g.consumed)
+		}
+		if g.inProgress {
+			t.Error("should not be in progress")
+		}
+	})
+
+	t.Run("in-progress last entry", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ read", toolName: "read_file"},
+			{kind: msgToolResult, content: "content"},
+			{kind: msgToolCall, content: "~ bash", toolName: "bash"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 2 {
+			t.Fatalf("entries = %d, want 2", len(g.entries))
+		}
+		if g.consumed != 3 {
+			t.Errorf("consumed = %d, want 3", g.consumed)
+		}
+		if !g.inProgress {
+			t.Error("should be in progress")
+		}
+		if g.entries[1].result != "" {
+			t.Error("in-progress entry should have empty result")
+		}
+	})
+
+	t.Run("group breaks on text message", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgToolCall, content: "~ read", toolName: "read_file"},
+			{kind: msgToolResult, content: "content"},
+			{kind: msgAssistant, content: "Here's what I found"},
+			{kind: msgToolCall, content: "~ edit", toolName: "edit_file"},
+			{kind: msgToolResult, content: "ok"},
+		}
+		g := collectToolGroup(msgs, 0)
+		if len(g.entries) != 1 {
+			t.Errorf("entries = %d, want 1 (group should break at assistant)", len(g.entries))
+		}
+		if g.consumed != 2 {
+			t.Errorf("consumed = %d, want 2", g.consumed)
+		}
+	})
+
+	t.Run("start from middle", func(t *testing.T) {
+		msgs := []chatMessage{
+			{kind: msgAssistant, content: "thinking"},
+			{kind: msgToolCall, content: "~ bash", toolName: "bash"},
+			{kind: msgToolResult, content: "output"},
+		}
+		g := collectToolGroup(msgs, 1)
+		if len(g.entries) != 1 {
+			t.Fatalf("entries = %d, want 1", len(g.entries))
+		}
+		if g.consumed != 2 {
+			t.Errorf("consumed = %d, want 2", g.consumed)
+		}
+	})
+}
+
+func TestRenderToolGroup(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	t.Run("single tool with result", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ glob", toolName: "glob", result: "file1\nfile2"},
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		if !strings.HasPrefix(s, "┌ ~ glob ") {
+			t.Errorf("expected top border, got: %q", s)
+		}
+		if !strings.Contains(s, "└") {
+			t.Error("expected bottom border")
+		}
+	})
+
+	t.Run("multi-tool group has ├ entries", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
+			{summary: "~ read bar.go", toolName: "read_file", result: "content"},
+			{summary: "~ glob", toolName: "glob", result: "file.go"},
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		if !strings.Contains(s, "┌ ~ read foo.go ") {
+			t.Error("expected first entry as top border")
+		}
+		if !strings.Contains(s, "├ ~ read bar.go") {
+			t.Error("expected second entry with ├ prefix")
+		}
+		if !strings.Contains(s, "├ ~ glob") {
+			t.Error("expected third entry with ├ prefix")
+		}
+		if !strings.Contains(s, "└") {
+			t.Error("expected bottom border")
+		}
+	})
+
+	t.Run("overflow collapsing shows first 3 + marker + last 3", func(t *testing.T) {
+		var entries []toolGroupEntry
+		for i := 0; i < 10; i++ {
+			entries = append(entries, toolGroupEntry{
+				summary:  fmt.Sprintf("~ read file%d.go", i),
+				toolName: "read_file",
+				result:   fmt.Sprintf("content%d", i),
+			})
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		// First 3 should be visible.
+		if !strings.Contains(s, "file0.go") {
+			t.Error("expected first entry visible")
+		}
+		if !strings.Contains(s, "file2.go") {
+			t.Error("expected third entry visible")
+		}
+		// Collapse marker: 10 - 6 = 4 collapsed.
+		if !strings.Contains(s, "4 tool calls…") {
+			t.Error("expected collapse marker with count 4")
+		}
+		// Last 3 should be visible.
+		if !strings.Contains(s, "file7.go") {
+			t.Error("expected file7 visible (third from end)")
+		}
+		if !strings.Contains(s, "file9.go") {
+			t.Error("expected last entry visible")
+		}
+		// Middle entries should NOT be visible.
+		if strings.Contains(s, "file3.go") {
+			t.Error("file3 should be collapsed")
+		}
+		if strings.Contains(s, "file6.go") {
+			t.Error("file6 should be collapsed")
+		}
+	})
+
+	t.Run("in-progress omits bottom border", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
+			{summary: "~ bash", toolName: "bash"},
+		}
+		out := renderToolGroup(entries, 80, true, "")
+		s := strip(out)
+		if strings.Contains(s, "└") {
+			t.Error("in-progress group should not have bottom border")
+		}
+		if !strings.Contains(s, "├ ~ bash") {
+			t.Error("expected in-progress tool as ├ entry")
+		}
+	})
+
+	t.Run("in-progress with live duration", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
+			{summary: "~ bash", toolName: "bash"},
+		}
+		out := renderToolGroup(entries, 80, true, "1.5s")
+		s := strip(out)
+		if !strings.Contains(s, "1.5s") {
+			t.Error("expected live duration on in-progress entry")
+		}
+	})
+
+	t.Run("error result always shown", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
+			{summary: "~ bash", toolName: "bash", result: "command failed", isError: true},
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		// Error result should be visible with │ prefix.
+		if !strings.Contains(s, "│ command failed") {
+			t.Error("error result should be shown")
+		}
+		// Red styling should be present.
+		if !strings.Contains(out, "\033[31m") {
+			t.Error("error should have red styling")
+		}
+	})
+
+	t.Run("output rules: edit shown, read hidden", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ read foo.go", toolName: "read_file", result: "file content here"},
+			{summary: "~ edit bar.go", toolName: "edit_file", result: "@@ -1 +1 @@\n-old\n+new"},
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		// Read result should be hidden (summary only).
+		if strings.Contains(s, "file content here") {
+			t.Error("read_file result should be hidden in group")
+		}
+		// Edit result (diff) should be shown.
+		if !strings.Contains(s, "-old") || !strings.Contains(s, "+new") {
+			t.Error("edit_file diff result should be shown")
+		}
+	})
+
+	t.Run("output rules: bash only for last", func(t *testing.T) {
+		entries := []toolGroupEntry{
+			{summary: "~ $ ls", toolName: "bash", result: "first output"},
+			{summary: "~ $ pwd", toolName: "bash", result: "/home/user"},
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		// First bash result should be hidden (not last).
+		if strings.Contains(s, "first output") {
+			t.Error("non-last bash result should be hidden")
+		}
+		// Last bash result should be shown.
+		if !strings.Contains(s, "/home/user") {
+			t.Error("last bash result should be shown")
+		}
+	})
+
+	t.Run("6 entries no overflow", func(t *testing.T) {
+		var entries []toolGroupEntry
+		for i := 0; i < 6; i++ {
+			entries = append(entries, toolGroupEntry{
+				summary: fmt.Sprintf("~ read file%d.go", i), toolName: "read_file", result: "ok",
+			})
+		}
+		out := renderToolGroup(entries, 80, false, "")
+		s := strip(out)
+		// All 6 should be visible, no collapse marker.
+		for i := 0; i < 6; i++ {
+			name := fmt.Sprintf("file%d.go", i)
+			if !strings.Contains(s, name) {
+				t.Errorf("expected %s visible (exactly 6, no overflow)", name)
+			}
+		}
+		if strings.Contains(s, "tool calls…") {
+			t.Error("6 entries should not trigger overflow")
+		}
+	})
+}
+
+func TestBuildBlockRows_ToolGroup(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	t.Run("consecutive tools rendered as single group", func(t *testing.T) {
+		app := &App{width: 80}
+		app.messages = []chatMessage{
+			{kind: msgToolCall, content: "~ read foo.go", toolName: "read_file", leadBlank: true},
+			{kind: msgToolResult, content: "content1", toolName: "read_file"},
+			{kind: msgToolCall, content: "~ read bar.go", toolName: "read_file", leadBlank: true},
+			{kind: msgToolResult, content: "content2", toolName: "read_file"},
+		}
+		rows := app.buildBlockRows()
+		// Should have exactly one ┌ (single group, not two boxes).
+		topCount := 0
+		for _, r := range rows {
+			if strings.HasPrefix(strip(r), "┌") {
+				topCount++
+			}
+		}
+		if topCount != 1 {
+			t.Errorf("expected 1 top border (single group), got %d", topCount)
+		}
+		// Should have ├ for second entry.
+		var hasBranch bool
+		for _, r := range rows {
+			if strings.Contains(strip(r), "├ ~ read bar.go") {
+				hasBranch = true
+			}
+		}
+		if !hasBranch {
+			t.Error("expected ├ prefix for second tool call")
+		}
+	})
+
+	t.Run("group breaks on assistant text", func(t *testing.T) {
+		app := &App{width: 80}
+		app.messages = []chatMessage{
+			{kind: msgToolCall, content: "~ read foo.go", toolName: "read_file", leadBlank: true},
+			{kind: msgToolResult, content: "content", toolName: "read_file"},
+			{kind: msgAssistant, content: "Here is the result"},
+			{kind: msgToolCall, content: "~ edit bar.go", toolName: "edit_file", leadBlank: true},
+			{kind: msgToolResult, content: "ok", toolName: "edit_file"},
+		}
+		rows := app.buildBlockRows()
+		// Should have two ┌ borders (two separate groups).
+		topCount := 0
+		for _, r := range rows {
+			if strings.HasPrefix(strip(r), "┌") {
+				topCount++
+			}
+		}
+		if topCount != 2 {
+			t.Errorf("expected 2 top borders (separate groups), got %d", topCount)
+		}
+		// The assistant text should be between them.
+		var hasAssistant bool
+		for _, r := range rows {
+			if strings.Contains(strip(r), "Here is the result") {
+				hasAssistant = true
+			}
+		}
+		if !hasAssistant {
+			t.Error("expected assistant text between groups")
+		}
+	})
+
+	t.Run("in-progress last tool in group", func(t *testing.T) {
+		app := &App{width: 80}
+		app.messages = []chatMessage{
+			{kind: msgToolCall, content: "~ read foo.go", toolName: "read_file", leadBlank: true},
+			{kind: msgToolResult, content: "content", toolName: "read_file"},
+			{kind: msgToolCall, content: "~ bash", toolName: "bash", leadBlank: true},
+		}
+		rows := app.buildBlockRows()
+		var hasTop, hasBottom, hasBranch bool
+		for _, r := range rows {
+			s := strip(r)
+			if strings.HasPrefix(s, "┌") {
+				hasTop = true
+			}
+			if strings.HasPrefix(s, "└") {
+				hasBottom = true
+			}
+			if strings.Contains(s, "├ ~ bash") {
+				hasBranch = true
+			}
+		}
+		if !hasTop {
+			t.Error("expected top border")
+		}
+		if hasBottom {
+			t.Error("in-progress group should not have bottom border")
+		}
+		if !hasBranch {
+			t.Error("expected ├ for in-progress tool")
+		}
+	})
+}
+
+func TestShouldShowToolOutput(t *testing.T) {
+	tests := []struct {
+		name          string
+		entry         toolGroupEntry
+		idx           int
+		lastResultIdx int
+		want          bool
+	}{
+		{"error always shown", toolGroupEntry{toolName: "read_file", isError: true, result: "err"}, 0, 2, true},
+		{"edit always shown", toolGroupEntry{toolName: "edit_file", result: "diff"}, 0, 2, true},
+		{"write always shown", toolGroupEntry{toolName: "write_file", result: "ok"}, 0, 2, true},
+		{"bash last shown", toolGroupEntry{toolName: "bash", result: "output"}, 2, 2, true},
+		{"bash not last hidden", toolGroupEntry{toolName: "bash", result: "output"}, 0, 2, false},
+		{"git last shown", toolGroupEntry{toolName: "git", result: "ok"}, 1, 1, true},
+		{"git not last hidden", toolGroupEntry{toolName: "git", result: "ok"}, 0, 1, false},
+		{"read hidden", toolGroupEntry{toolName: "read_file", result: "content"}, 0, 2, false},
+		{"glob hidden", toolGroupEntry{toolName: "glob", result: "files"}, 0, 2, false},
+		{"grep hidden", toolGroupEntry{toolName: "grep", result: "matches"}, 0, 2, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldShowToolOutput(tt.entry, tt.idx, tt.lastResultIdx); got != tt.want {
+				t.Errorf("shouldShowToolOutput(%q, idx=%d, last=%d) = %v, want %v",
+					tt.entry.toolName, tt.idx, tt.lastResultIdx, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestIsDiffContent(t *testing.T) {
 	tests := []struct {
 		name  string

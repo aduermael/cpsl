@@ -69,7 +69,7 @@ This requires a shift from the current per-tool-call message model to a grouping
 - [x] 3c: When a group has more than 6 tool calls, show first 3 + `├ N tool calls… 🛠️` + last 3 (with their outputs). This applies only to the tool call summaries — the actual output lines for the shown tools are still displayed
 - [x] 3d: For tool output within grouped blocks: show diff output for edit tools (capped at the existing collapse limits), show bash output for the last tool in the group. Hide intermediate read/glob/grep results (the summary line is enough). Show error results always
 - [x] 3e: Handle in-progress tool calls within a group: the current tool (no result yet) appears as the last `├` entry with no bottom border (open group), live timer shown on the `├` line
-- [ ] 3f: Add tests for tool group rendering: single tool, multi-tool grouping, overflow collapsing (first 3 + last 3), in-progress state, error result display, group breaking on text messages
+- [x] 3f: Add tests for tool group rendering: single tool, multi-tool grouping, overflow collapsing (first 3 + last 3), in-progress state, error result display, group breaking on text messages
 
 ## Phase 4: Status line with tool count and spinner
 
