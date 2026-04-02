@@ -141,7 +141,7 @@ The main agent loop (agent.go:814-1061) has a `defaultMaxToolIterations = 25` li
 - `cmd/herm/subagent.go` — sub-agent creation (lines 315-319, 521-525)
 - `prompts/system.md` — system prompt template
 
-- [ ] 9a: Add `RemainingToolIterations int` and `MaxToolIterations int` fields to `PromptData` in systemprompt.go
+- [x] 9a: Add `RemainingToolIterations int` and `MaxToolIterations int` fields to `PromptData` in systemprompt.go
 - [ ] 9b: In the system prompt template (`prompts/system.md`), add a section that tells the LLM about its remaining tool iterations when below a threshold (e.g., when less than 30% remaining: "You have N tool iterations remaining out of M. Plan your remaining work efficiently.")
 - [ ] 9c: In `runLoop()` (agent.go), pass the remaining iteration count (`maxIter - iteration`) into the system prompt rebuild on each cycle. This requires threading the count through to `buildSystemPrompt()` or updating a field on the agent
 - [ ] 9d: In `subagent.go`, when creating foreground and background sub-agents (lines 315-319, 521-525), pass `WithMaxToolIterations(subLimit)` where `subLimit` is capped at a sensible value (e.g., `min(parentRemaining, defaultSubAgentMaxTurns)`)

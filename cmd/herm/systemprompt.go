@@ -42,6 +42,10 @@ type PromptData struct {
 	TopLevelListing string
 	RecentCommits   string
 	GitStatus       string
+
+	// Tool iteration budget (injected dynamically via systemPromptWithStats).
+	RemainingToolIterations int
+	MaxToolIterations       int
 }
 
 // buildSystemPrompt constructs the system prompt for the coding agent.

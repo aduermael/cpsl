@@ -220,6 +220,9 @@ type Agent struct {
 	sessionOutputTokens int
 	sessionAgentCalls   int
 
+	// Tool iteration tracking for budget awareness (9a).
+	currentIteration int
+
 	// Background sub-agent completions, injected into the next LLM call.
 	bgMu          sync.Mutex
 	bgCompletions []string
