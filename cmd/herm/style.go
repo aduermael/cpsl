@@ -298,6 +298,114 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 	return b.String()
 }
 
+// renderToolGroup renders a group of tool calls as a single bordered block:
+//
+//	┌ Read file (README.md) ────────────────────┐
+//	├ Read file (foo.txt)
+//	├ ~ git log --oneline
+//	│ d26138d commit message
+//	└───────────────────────────────────────────┘
+//
+// The first entry gets the ┌…┐ top border. Subsequent entries use ├ prefix.
+// Tool output lines use │ prefix. Bottom border is omitted when inProgress is true.
+// When inProgress and liveDur is non-empty, the duration is shown on the last ├ line.
+func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, liveDur string) string {
+	const (
+		borderStyle     = "\033[2m"    // dim
+		titleStyle      = "\033[2;3m"  // dim italic
+		contentStyle    = "\033[2m"    // dim
+		errTitleStyle   = "\033[31;3m" // red italic
+		errContentStyle = "\033[31m"   // red
+		reset           = "\033[0m"
+	)
+
+	// Compute inner width from all summaries and content lines.
+	innerWidth := 0
+	for _, entry := range entries {
+		if vw := visibleWidth(entry.summary) + 2; vw > innerWidth {
+			innerWidth = vw
+		}
+		if entry.result != "" {
+			for _, line := range strings.Split(strings.ReplaceAll(entry.result, "\t", " "), "\n") {
+				if lw := visibleWidth(line); lw > innerWidth {
+					innerWidth = lw
+				}
+			}
+		}
+	}
+	if maxWidth > 0 && innerWidth > maxWidth-2 {
+		innerWidth = maxWidth - 2
+	}
+
+	var b strings.Builder
+
+	for j, entry := range entries {
+		ts, cs := titleStyle, contentStyle
+		if entry.isError {
+			ts, cs = errTitleStyle, errContentStyle
+		}
+
+		summary := entry.summary
+
+		if j == 0 {
+			// Top border: ┌ summary ─────┐
+			if maxTitleVW := innerWidth - 2; visibleWidth(summary) > maxTitleVW && maxTitleVW >= 0 {
+				summary = truncateWithEllipsis(summary, maxTitleVW)
+			}
+			pad := innerWidth - visibleWidth(summary) - 2
+			if pad < 0 {
+				pad = 0
+			}
+			b.WriteString(borderStyle + "┌ " + reset)
+			b.WriteString(ts + summary + reset)
+			b.WriteString(borderStyle + " " + strings.Repeat("─", pad) + "┐" + reset)
+		} else {
+			b.WriteByte('\n')
+			if visibleWidth(summary) > innerWidth {
+				summary = truncateWithEllipsis(summary, innerWidth)
+			}
+			// Show live duration on the last ├ line when in-progress.
+			isLast := j == len(entries)-1
+			if isLast && inProgress && liveDur != "" {
+				b.WriteString(borderStyle + "├ " + reset)
+				b.WriteString(ts + summary + reset)
+				b.WriteString(" " + titleStyle + liveDur + reset)
+			} else {
+				b.WriteString(borderStyle + "├ " + reset)
+				b.WriteString(ts + summary + reset)
+			}
+		}
+
+		// Content lines with │ prefix.
+		if entry.result != "" {
+			content := strings.ReplaceAll(entry.result, "\t", " ")
+			isDiff := isDiffContent(content)
+			for _, line := range strings.Split(content, "\n") {
+				b.WriteByte('\n')
+				ls := cs
+				if isDiff {
+					if ds := diffLineStyle(line); ds != "" {
+						ls = ds
+					}
+				}
+				if visibleWidth(line) > innerWidth {
+					line = truncateVisual(line, innerWidth)
+				}
+				b.WriteString(borderStyle + "│ " + reset)
+				b.WriteString(ls + line + reset)
+			}
+		}
+	}
+
+	// Bottom border (omitted when in-progress).
+	if !inProgress {
+		b.WriteByte('\n')
+		b.WriteString(borderStyle + "└" + strings.Repeat("─", innerWidth) + "┘" + reset)
+	}
+
+	return b.String()
+}
+
 var funnyTexts = []string{
 	"pondering the cosmos...",
 	"consulting the oracle...",

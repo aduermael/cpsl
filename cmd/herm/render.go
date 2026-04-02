@@ -309,41 +309,20 @@ func (a *App) buildBlockRows() []string {
 			continue
 		}
 
-		// Consecutive tool calls → collect into a group and render.
+		// Consecutive tool calls → collect into a group and render as a single block.
 		if msg.kind == msgToolCall {
 			group := collectToolGroup(a.messages, i)
 			skipUntil = i + group.consumed
 			if msg.leadBlank {
 				rows = append(rows, "")
 			}
-			// Render each entry as an individual box (renderToolGroup will replace this).
-			for j, entry := range group.entries {
-				isLast := j == len(group.entries)-1
-				if isLast && group.inProgress {
-					var liveDur string
-					if !a.toolStartTime.IsZero() {
-						liveDur = formatDuration(time.Since(a.toolStartTime))
-					}
-					box := renderToolBox(entry.summary, "", a.width, false, liveDur)
-					if liveDur == "" {
-						boxLines := strings.Split(box, "\n")
-						if len(boxLines) > 1 {
-							boxLines = boxLines[:len(boxLines)-1]
-						}
-						for _, logLine := range boxLines {
-							rows = append(rows, wrapString(logLine, 0, a.width)...)
-						}
-					} else {
-						for _, logLine := range strings.Split(box, "\n") {
-							rows = append(rows, wrapString(logLine, 0, a.width)...)
-						}
-					}
-				} else {
-					box := renderToolBox(entry.summary, entry.result, a.width, entry.isError, formatDuration(entry.duration))
-					for _, logLine := range strings.Split(box, "\n") {
-						rows = append(rows, wrapString(logLine, 0, a.width)...)
-					}
-				}
+			var liveDur string
+			if group.inProgress && !a.toolStartTime.IsZero() {
+				liveDur = formatDuration(time.Since(a.toolStartTime))
+			}
+			block := renderToolGroup(group.entries, a.width, group.inProgress, liveDur)
+			for _, logLine := range strings.Split(block, "\n") {
+				rows = append(rows, wrapString(logLine, 0, a.width)...)
 			}
 			// Blank line after group unless next message has leadBlank.
 			if skipUntil >= len(a.messages) || !a.messages[skipUntil].leadBlank {

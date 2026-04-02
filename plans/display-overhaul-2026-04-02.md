@@ -65,7 +65,7 @@ Replace individual tool call boxes with a single bordered block grouping consecu
 This requires a shift from the current per-tool-call message model to a grouping model during rendering.
 
 - [x] 3a: In `buildBlockRows()`, collect consecutive `msgToolCall`/`msgToolResult` pairs into a "tool group" before rendering. A group breaks when a non-tool message (assistant text, info, etc.) is encountered
-- [ ] 3b: Create `renderToolGroup()` function in `style.go` that renders a grouped block: `┌ <first-tool-summary> ───┐` top border, `├ <tool-summary>` for middle entries, tool output shown with `│` prefix for result-bearing tools (edits, bash with output), `└───┘` bottom border
+- [x] 3b: Create `renderToolGroup()` function in `style.go` that renders a grouped block: `┌ <first-tool-summary> ───┐` top border, `├ <tool-summary>` for middle entries, tool output shown with `│` prefix for result-bearing tools (edits, bash with output), `└───┘` bottom border
 - [ ] 3c: When a group has more than 6 tool calls, show first 3 + `├ N tool calls… 🛠️` + last 3 (with their outputs). This applies only to the tool call summaries — the actual output lines for the shown tools are still displayed
 - [ ] 3d: For tool output within grouped blocks: show diff output for edit tools (capped at the existing collapse limits), show bash output for the last tool in the group. Hide intermediate read/glob/grep results (the summary line is enough). Show error results always
 - [ ] 3e: Handle in-progress tool calls within a group: the current tool (no result yet) appears as the last `├` entry with no bottom border (open group), live timer shown on the `├` line
