@@ -409,7 +409,6 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.toolTimer = nil
 		}
 		a.toolStartTime = time.Time{}
-		result := collapseToolResult(event.ToolResult)
 		a.needsTextSep = true
 		a.sessionToolResults++
 		a.sessionToolBytes += len(event.ToolResult)
@@ -429,6 +428,12 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.traceCollector.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
 			a.traceCollector.FlushToFile(a.traceFilePath)
 		}
+		// Skip UI message for suppressed tool calls (e.g., agent status checks).
+		if a.suppressedToolIDs[event.ToolID] {
+			delete(a.suppressedToolIDs, event.ToolID)
+			break
+		}
+		result := collapseToolResult(event.ToolResult)
 		a.messages = append(a.messages, chatMessage{kind: msgToolResult, content: result, isError: event.IsError, duration: event.Duration, toolName: event.ToolName})
 		a.render()
 
