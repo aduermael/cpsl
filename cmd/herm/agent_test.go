@@ -1444,10 +1444,21 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 	client := newTestClient("sub-agent output with events")
 	tmpDir := t.TempDir()
 
-	// Deliberately small parent buffer — forward() must not block.
+	// Small parent buffer — display events (forward) drop, critical events
+	// (forwardBlocking) block with a 5s timeout. Drain in a background
+	// goroutine so critical sends succeed promptly.
 	parentEvents := make(chan AgentEvent, 1)
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 1, 0, tmpDir, "", "")
 	tool.parentEvents = parentEvents
+
+	// Drain parent events slowly to test that non-critical forward() drops
+	// without deadlocking, while critical forwardBlocking() eventually succeeds.
+	drainDone := make(chan struct{})
+	go func() {
+		defer close(drainDone)
+		for range parentEvents {
+		}
+	}()
 
 	done := make(chan struct{})
 	var result string
@@ -1457,7 +1468,6 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 		result, execErr = tool.Execute(context.Background(), json.RawMessage(`{"task":"generate events","mode":"explore"}`))
 	}()
 
-	// Do NOT drain parent events — test that forward() drops rather than blocks.
 	select {
 	case <-done:
 		if execErr != nil {
@@ -1469,6 +1479,8 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("sub-agent deadlocked: forward() is blocking on full parent channel")
 	}
+	close(parentEvents)
+	<-drainDone
 }
 
 // --- Phase 6b: End-to-end exploration test ---

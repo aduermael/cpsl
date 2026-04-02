@@ -135,9 +135,14 @@ type subAgentInput struct {
 	Background bool   `json:"background,omitempty"`
 }
 
+// forwardBlockingTimeout is the maximum time forwardBlocking will wait for the
+// parent channel to accept a critical event before giving up.
+const forwardBlockingTimeout = 5 * time.Second
+
 // forward sends a sub-agent event to the parent's event channel if set.
-// The recover handles the case where the parent channel is closed (e.g.,
-// main agent finished while a background sub-agent is still running).
+// Non-blocking: drops the event if the channel is full. Use for high-frequency
+// display events (EventSubAgentDelta, EventSubAgentStatus with tool/text updates)
+// where dropping is acceptable.
 func (t *SubAgentTool) forward(e AgentEvent) {
 	if t.parentEvents == nil {
 		return
@@ -151,6 +156,27 @@ func (t *SubAgentTool) forward(e AgentEvent) {
 	case t.parentEvents <- e:
 	default:
 		debugLog("sub-agent event dropped: parent channel full (type=%d)", e.Type)
+	}
+}
+
+// forwardBlocking sends a critical sub-agent event to the parent's event channel,
+// blocking until the send succeeds or a timeout expires. Use for events that carry
+// state callers depend on: completion status (EventSubAgentStatus "done") and
+// token counts (EventUsage). Logs an error when the send times out.
+func (t *SubAgentTool) forwardBlocking(e AgentEvent) {
+	if t.parentEvents == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			debugLog("sub-agent critical event dropped: parent channel closed (type=%d)", e.Type)
+		}
+	}()
+	select {
+	case t.parentEvents <- e:
+	case <-time.After(forwardBlockingTimeout):
+		debugLog("sub-agent critical event TIMED OUT after %v: parent channel full (type=%d, agentID=%s)",
+			forwardBlockingTimeout, e.Type, e.AgentID)
 	}
 }
 
@@ -368,12 +394,12 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				}
 				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true
-				// Forward usage events so sub-agent costs are tracked.
-				t.forward(event)
+				// Forward usage events so sub-agent costs are tracked (blocking — critical for token accounting).
+				t.forwardBlocking(event)
 			case EventDone:
 				subTC.Finalize()
 				subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-				t.forward(AgentEvent{
+				t.forwardBlocking(AgentEvent{
 					Type:     EventSubAgentStatus,
 					AgentID:  agentID,
 					Text:     "done",
@@ -423,13 +449,23 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 						if event.NodeID != "" {
 							t.saveNodeID(agentID, event.NodeID)
 						}
+					case EventError:
+						if event.Error != nil && event.Error.Error() != "context canceled" {
+							errMsg := event.Error.Error()
+							if currentTool != "" {
+								errMsg = fmt.Sprintf("during tool %q (turn %d): %s", currentTool, turns, errMsg)
+							} else {
+								errMsg = fmt.Sprintf("turn %d: %s", turns, errMsg)
+							}
+							agentErrors = append(agentErrors, errMsg)
+						}
 					case EventUsage:
 						if event.Usage != nil {
 							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 							totalOutputTokens += event.Usage.OutputTokens
 						}
 						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
-						t.forward(event)
+						t.forwardBlocking(event)
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)
 						subTC.AddTextDelta(agentID, event.Text)
@@ -449,7 +485,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	// Handle gracefully.
 	subTC.Finalize()
 	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-	t.forward(AgentEvent{
+	t.forwardBlocking(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
 		Text:     "done",
@@ -578,11 +614,11 @@ drainLoop:
 				}
 				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true
-				t.forward(event)
+				t.forwardBlocking(event)
 			case EventDone:
 				subTC.Finalize()
 				subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-				t.forward(AgentEvent{
+				t.forwardBlocking(AgentEvent{
 					Type:     EventSubAgentStatus,
 					AgentID:  agentID,
 					Text:     "done",
@@ -635,13 +671,23 @@ drainLoop:
 						if event.NodeID != "" {
 							t.saveNodeID(agentID, event.NodeID)
 						}
+					case EventError:
+						if event.Error != nil && event.Error.Error() != "context canceled" {
+							errMsg := event.Error.Error()
+							if currentTool != "" {
+								errMsg = fmt.Sprintf("during tool %q (turn %d): %s", currentTool, turns, errMsg)
+							} else {
+								errMsg = fmt.Sprintf("turn %d: %s", turns, errMsg)
+							}
+							agentErrors = append(agentErrors, errMsg)
+						}
 					case EventUsage:
 						if event.Usage != nil {
 							totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 							totalOutputTokens += event.Usage.OutputTokens
 						}
 						subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
-						t.forward(event)
+						t.forwardBlocking(event)
 					case EventTextDelta:
 						textParts = append(textParts, event.Text)
 						subTC.AddTextDelta(agentID, event.Text)
@@ -660,7 +706,7 @@ drainLoop:
 	// Fallback: channel closed or doneCh fired without EventDone.
 	subTC.Finalize()
 	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-	t.forward(AgentEvent{
+	t.forwardBlocking(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
 		Text:     "done",

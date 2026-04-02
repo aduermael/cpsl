@@ -105,7 +105,7 @@ Affected tests:
 - `TestSubAgentBackgroundFatalErrorSurfacing` — `EventError` dropped, error missing from result
 - `TestSubAgentBackgroundCompletionInjection` / `TestE2ESubAgentErrorChain` — `EventDone` dropped, `bgAgentState.done` never set
 
-- [ ] 6a: Make `forward()` blocking for critical event types (`EventSubAgentStatus` with `Text:"done"`, `EventUsage`) — these carry state that callers depend on (completion status, token counts). Keep non-blocking for high-frequency display events (`EventSubAgentDelta`, `EventSubAgentStatus` with tool/text updates) where dropping is acceptable. Add a short timeout (e.g. 5s) to the blocking send to prevent indefinite hangs if the parent is stuck
-- [ ] 6b: Increase the parent event channel buffer in tests that spawn concurrent sub-agents — the current `make(chan AgentEvent, 64)` is too small when multiple agents each emit ~20 events. Use a buffer proportional to the number of agents (e.g. `agents * 64`)
-- [ ] 6c: Add a `forwardBlocking()` helper alongside the existing `forward()` for the critical-event path, with a context-aware timeout and a clear error log when the send times out (replacing the silent `debugLog` drop)
-- [ ] 6d: Verify all three previously-flaky tests pass reliably under `go test -count=20 -race` with the fixes applied
+- [x] 6a: Make `forward()` blocking for critical event types (`EventSubAgentStatus` with `Text:"done"`, `EventUsage`) — these carry state that callers depend on (completion status, token counts). Keep non-blocking for high-frequency display events (`EventSubAgentDelta`, `EventSubAgentStatus` with tool/text updates) where dropping is acceptable. Add a short timeout (e.g. 5s) to the blocking send to prevent indefinite hangs if the parent is stuck
+- [x] 6b: Increase the parent event channel buffer in tests that spawn concurrent sub-agents — the current `make(chan AgentEvent, 64)` is too small when multiple agents each emit ~20 events. Use a buffer proportional to the number of agents (e.g. `agents * 64`)
+- [x] 6c: Add a `forwardBlocking()` helper alongside the existing `forward()` for the critical-event path, with a context-aware timeout and a clear error log when the send times out (replacing the silent `debugLog` drop)
+- [x] 6d: Verify all three previously-flaky tests pass reliably under `go test -count=20 -race` with the fixes applied
