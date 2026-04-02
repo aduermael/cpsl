@@ -490,6 +490,7 @@ type subAgentDisplay struct {
 	mode         string    // "explore" or "implement"
 	toolCount    int       // number of tool calls executed
 	startTime    time.Time // when this sub-agent started
+	completedAt  time.Time // when this sub-agent finished (zero if still running)
 	inputTokens  int       // total input tokens consumed
 	outputTokens int       // total output tokens consumed
 	failed       bool      // true if the sub-agent failed
