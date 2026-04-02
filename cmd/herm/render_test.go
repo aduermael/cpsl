@@ -8,7 +8,139 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"langdag.com/langdag/types"
 )
+
+func TestSubAgentDisplayStateTransitions(t *testing.T) {
+	agentID := "test-agent-01"
+
+	t.Run("start populates mode and startTime", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type:    EventSubAgentStart,
+			AgentID: agentID,
+			Task:    "Research codebase",
+			Mode:    "explore",
+		})
+
+		sa := app.subAgents[agentID]
+		if sa == nil {
+			t.Fatal("sub-agent not created")
+		}
+		if sa.mode != "explore" {
+			t.Errorf("mode = %q, want %q", sa.mode, "explore")
+		}
+		if sa.startTime.IsZero() {
+			t.Error("startTime not set")
+		}
+		if sa.task != "Research codebase" {
+			t.Errorf("task = %q, want %q", sa.task, "Research codebase")
+		}
+	})
+
+	t.Run("tool status increments toolCount", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStart, AgentID: agentID, Task: "work", Mode: "explore",
+		})
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStatus, AgentID: agentID, Text: "tool: read_file",
+		})
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStatus, AgentID: agentID, Text: "tool: grep",
+		})
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStatus, AgentID: agentID, Text: "thinking about things",
+		})
+
+		sa := app.subAgents[agentID]
+		if sa.toolCount != 2 {
+			t.Errorf("toolCount = %d, want 2", sa.toolCount)
+		}
+	})
+
+	t.Run("done captures tokens and not failed", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStart, AgentID: agentID, Task: "work", Mode: "implement",
+		})
+		app.handleAgentEvent(AgentEvent{
+			Type:    EventSubAgentStatus,
+			AgentID: agentID,
+			Text:    "done",
+			Usage:   &types.Usage{InputTokens: 500, OutputTokens: 200},
+		})
+
+		sa := app.subAgents[agentID]
+		if !sa.done {
+			t.Error("expected done=true")
+		}
+		if sa.failed {
+			t.Error("expected failed=false")
+		}
+		if sa.inputTokens != 500 {
+			t.Errorf("inputTokens = %d, want 500", sa.inputTokens)
+		}
+		if sa.outputTokens != 200 {
+			t.Errorf("outputTokens = %d, want 200", sa.outputTokens)
+		}
+	})
+
+	t.Run("done with error sets failed", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStart, AgentID: agentID, Task: "work", Mode: "explore",
+		})
+		app.handleAgentEvent(AgentEvent{
+			Type:    EventSubAgentStatus,
+			AgentID: agentID,
+			Text:    "done",
+			IsError: true,
+			Usage:   &types.Usage{InputTokens: 100, OutputTokens: 50},
+		})
+
+		sa := app.subAgents[agentID]
+		if !sa.failed {
+			t.Error("expected failed=true")
+		}
+	})
+
+	t.Run("full lifecycle start-tools-done", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		// Start
+		app.handleAgentEvent(AgentEvent{
+			Type: EventSubAgentStart, AgentID: agentID, Task: "Explore auth module", Mode: "explore",
+		})
+		// Tool calls
+		for i := 0; i < 5; i++ {
+			app.handleAgentEvent(AgentEvent{
+				Type: EventSubAgentStatus, AgentID: agentID, Text: "tool: glob",
+			})
+		}
+		// Done
+		app.handleAgentEvent(AgentEvent{
+			Type:    EventSubAgentStatus,
+			AgentID: agentID,
+			Text:    "done",
+			Usage:   &types.Usage{InputTokens: 1000, OutputTokens: 400},
+		})
+
+		sa := app.subAgents[agentID]
+		if sa.toolCount != 5 {
+			t.Errorf("toolCount = %d, want 5", sa.toolCount)
+		}
+		if !sa.done {
+			t.Error("expected done=true")
+		}
+		if sa.inputTokens != 1000 {
+			t.Errorf("inputTokens = %d, want 1000", sa.inputTokens)
+		}
+		if sa.outputTokens != 400 {
+			t.Errorf("outputTokens = %d, want 400", sa.outputTokens)
+		}
+	})
+}
 
 func TestWrapString(t *testing.T) {
 	tests := []struct {

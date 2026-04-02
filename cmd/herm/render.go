@@ -438,9 +438,15 @@ func isBlankRow(s string) bool {
 
 // subAgentDisplay tracks per-agent display state for live TUI rendering.
 type subAgentDisplay struct {
-	task   string // task label (first ~40 chars of the task description)
-	status string // current activity (tool name or text snippet)
-	done   bool
+	task         string    // task label (first ~40 chars of the task description)
+	status       string    // current activity (tool name or text snippet)
+	done         bool
+	mode         string    // "explore" or "implement"
+	toolCount    int       // number of tool calls executed
+	startTime    time.Time // when this sub-agent started
+	inputTokens  int       // total input tokens consumed
+	outputTokens int       // total output tokens consumed
+	failed       bool      // true if the sub-agent failed
 }
 
 // maxSubAgentDisplayLines is the maximum number of active agent lines shown.

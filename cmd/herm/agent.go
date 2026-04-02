@@ -176,6 +176,7 @@ type AgentEvent struct {
 
 	// EventSubAgentStart
 	Task string // sub-agent task description
+	Mode string // sub-agent mode ("explore" or "implement")
 
 	// EventSubAgentStatus (done)
 	SubTrace *TraceSubAgent // nested trace for the sub-agent

@@ -314,6 +314,37 @@ func TestSubAgentToolForwardsEventsWithAgentID(t *testing.T) {
 	}
 }
 
+func TestSubAgentStartEventCarriesMode(t *testing.T) {
+	client := newTestClient("ok")
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 64)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.parentEvents = parentEvents
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"research","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	close(parentEvents)
+	var starts []AgentEvent
+	for ev := range parentEvents {
+		if ev.Type == EventSubAgentStart {
+			starts = append(starts, ev)
+		}
+	}
+	if len(starts) != 1 {
+		t.Fatalf("expected 1 EventSubAgentStart, got %d", len(starts))
+	}
+	if starts[0].Mode != "explore" {
+		t.Errorf("EventSubAgentStart.Mode = %q, want %q", starts[0].Mode, "explore")
+	}
+	if starts[0].Task != "research" {
+		t.Errorf("EventSubAgentStart.Task = %q, want %q", starts[0].Task, "research")
+	}
+}
+
 // --- Task 2f: SubAgentTool.Execute additional tests ---
 
 func TestSubAgentToolResumeWithAgentID(t *testing.T) {

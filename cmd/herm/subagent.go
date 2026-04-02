@@ -297,8 +297,8 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	subTC := NewTraceCollector("")
 	subTC.SetMainAgentID(agentID)
 
-	// Notify the TUI that a sub-agent is starting, with its task label.
-	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task})
+	// Notify the TUI that a sub-agent is starting, with its task label and mode.
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode})
 
 	// Run the sub-agent in a goroutine and drain events.
 	done := make(chan struct{})
@@ -377,6 +377,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 					Type:     EventSubAgentStatus,
 					AgentID:  agentID,
 					Text:     "done",
+					IsError:  len(agentErrors) > 0,
 					SubTrace: subTrace,
 					Usage: &types.Usage{
 						InputTokens:  totalInputTokens,
@@ -452,6 +453,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
 		Text:     "done",
+		IsError:  len(agentErrors) > 0,
 		SubTrace: subTrace,
 		Usage: &types.Usage{
 			InputTokens:  totalInputTokens,
@@ -502,7 +504,7 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	t.bgAgents[agentID] = state
 	t.mu.Unlock()
 
-	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task})
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode})
 
 	go t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
 
@@ -584,6 +586,7 @@ drainLoop:
 					Type:     EventSubAgentStatus,
 					AgentID:  agentID,
 					Text:     "done",
+					IsError:  len(agentErrors) > 0,
 					SubTrace: subTrace,
 					Usage: &types.Usage{
 						InputTokens:  totalInputTokens,
@@ -661,6 +664,7 @@ drainLoop:
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
 		Text:     "done",
+		IsError:  len(agentErrors) > 0,
 		SubTrace: subTrace,
 		Usage: &types.Usage{
 			InputTokens:  totalInputTokens,

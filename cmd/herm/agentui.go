@@ -520,6 +520,8 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 	case EventSubAgentStart:
 		sa := a.getOrCreateSubAgent(event.AgentID)
 		sa.task = truncateTaskLabel(event.Task)
+		sa.mode = event.Mode
+		sa.startTime = time.Now()
 		a.render()
 
 	case EventSubAgentDelta:
@@ -539,6 +541,11 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		sa := a.getOrCreateSubAgent(event.AgentID)
 		if event.Text == "done" {
 			sa.done = true
+			sa.failed = event.IsError
+			if event.Usage != nil {
+				sa.inputTokens = event.Usage.InputTokens
+				sa.outputTokens = event.Usage.OutputTokens
+			}
 			completionMsg := fmt.Sprintf("[agent %s] completed: %s", shortID(event.AgentID), sa.task)
 			if event.Usage != nil && (event.Usage.InputTokens > 0 || event.Usage.OutputTokens > 0) {
 				completionMsg += fmt.Sprintf(" (↑%s ↓%s",
@@ -558,6 +565,9 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			})
 		} else {
 			sa.status = event.Text
+			if strings.HasPrefix(event.Text, "tool:") {
+				sa.toolCount++
+			}
 		}
 		a.render()
 

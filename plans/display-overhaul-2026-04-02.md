@@ -23,10 +23,10 @@
 
 Currently `subAgentDisplay` only tracks `task`, `status`, `done`. The target display needs tool count, elapsed time, tokens, mode, and failure state per sub-agent. The `AgentEvent` also lacks a mode field for sub-agent start events.
 
-- [ ] 1a: Add `mode` field to `AgentEvent` (populated on `EventSubAgentStart`) and pass `in.Mode` from `subagent.go` when forwarding the start event
-- [ ] 1b: Extend `subAgentDisplay` with: `mode string`, `toolCount int`, `startTime time.Time`, `inputTokens int`, `outputTokens int`, `failed bool`
-- [ ] 1c: Update event handling in `agentui.go` to populate the new fields — increment `toolCount` on `EventSubAgentStatus` when text starts with `"tool:"`, set `startTime` on `EventSubAgentStart`, capture tokens and failed state from the `EventSubAgentStatus` "done" event
-- [ ] 1d: Add tests for the enriched sub-agent display state transitions (start → tool increments → done with metrics)
+- [x] 1a: Add `mode` field to `AgentEvent` (populated on `EventSubAgentStart`) and pass `in.Mode` from `subagent.go` when forwarding the start event
+- [x] 1b: Extend `subAgentDisplay` with: `mode string`, `toolCount int`, `startTime time.Time`, `inputTokens int`, `outputTokens int`, `failed bool`
+- [x] 1c: Update event handling in `agentui.go` to populate the new fields — increment `toolCount` on `EventSubAgentStatus` when text starts with `"tool:"`, set `startTime` on `EventSubAgentStart`, capture tokens and failed state from the `EventSubAgentStatus` "done" event
+- [x] 1d: Add tests for the enriched sub-agent display state transitions (start → tool increments → done with metrics)
 
 ## Phase 2: Grouped sub-agent display with per-agent metrics
 
