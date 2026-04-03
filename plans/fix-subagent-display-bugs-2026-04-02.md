@@ -25,8 +25,8 @@ Observed in `debug-20260402-223330.json`: user spawned 3 background explore agen
 
 The `formatSubAgentLine` function has a done/not-done branch (lines 652-659) where both branches are identical — a copy-paste bug. The done branch should use `sa.completedAt.Sub(sa.startTime)` to show the frozen elapsed time at the moment of completion.
 
-- [ ] 1a: In `formatSubAgentLine()` (`render.go:656`), change the done branch from `elapsed = time.Since(sa.startTime)` to `elapsed = sa.completedAt.Sub(sa.startTime)`. Add a guard: if `completedAt` is zero (shouldn't happen, but defensive), fall back to `time.Since(sa.startTime)`
-- [ ] 1b: Add test: create two `subAgentDisplay` entries with different `startTime` and `completedAt` values (both `done: true`), call `formatSubAgentLine()` on each, verify the elapsed times differ and match the expected `completedAt - startTime` durations
+- [x] 1a: In `formatSubAgentLine()` (`render.go:656`), change the done branch from `elapsed = time.Since(sa.startTime)` to `elapsed = sa.completedAt.Sub(sa.startTime)`. Add a guard: if `completedAt` is zero (shouldn't happen, but defensive), fall back to `time.Since(sa.startTime)`
+- [x] 1b: Add test: create two `subAgentDisplay` entries with different `startTime` and `completedAt` values (both `done: true`), call `formatSubAgentLine()` on each, verify the elapsed times differ and match the expected `completedAt - startTime` durations
 
 ## Phase 2: Render sub-agent display above streaming text
 

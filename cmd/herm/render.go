@@ -651,9 +651,8 @@ func formatSubAgentLine(sa *subAgentDisplay) string {
 	}
 	var elapsed time.Duration
 	if !sa.startTime.IsZero() {
-		if sa.done {
-			// For done agents, use the last known elapsed (inputTokens are set at done time).
-			elapsed = time.Since(sa.startTime)
+		if sa.done && !sa.completedAt.IsZero() {
+			elapsed = sa.completedAt.Sub(sa.startTime)
 		} else {
 			elapsed = time.Since(sa.startTime)
 		}

@@ -2297,6 +2297,43 @@ func TestSubAgentLiveTokenAccumulation(t *testing.T) {
 	}
 }
 
+func TestSubAgentElapsedFreezeOnCompletion(t *testing.T) {
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	now := time.Now()
+	// Agent A: started 60s ago, completed after 9.3s
+	agentA := &subAgentDisplay{
+		task:        "Explore auth",
+		done:        true,
+		startTime:   now.Add(-60 * time.Second),
+		completedAt: now.Add(-60*time.Second + 9300*time.Millisecond),
+	}
+	// Agent B: started 50s ago, completed after 28.5s
+	agentB := &subAgentDisplay{
+		task:        "Explore logging",
+		done:        true,
+		startTime:   now.Add(-50 * time.Second),
+		completedAt: now.Add(-50*time.Second + 28500*time.Millisecond),
+	}
+
+	lineA := strip(formatSubAgentLine(agentA))
+	lineB := strip(formatSubAgentLine(agentB))
+
+	// Agent A should show ~9.30s, Agent B should show ~28.50s
+	if !strings.Contains(lineA, "9.30s") {
+		t.Errorf("agent A: expected 9.30s elapsed, got %q", lineA)
+	}
+	if !strings.Contains(lineB, "28.50s") {
+		t.Errorf("agent B: expected 28.50s elapsed, got %q", lineB)
+	}
+	// They must differ
+	if lineA == lineB {
+		t.Error("expected different elapsed times for agents with different durations")
+	}
+}
+
 func TestStatusLineAfterSubAgentLines(t *testing.T) {
 	strip := func(s string) string {
 		return ansiEscRe.ReplaceAllString(s, "")
