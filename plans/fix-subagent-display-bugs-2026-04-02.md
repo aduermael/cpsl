@@ -45,10 +45,10 @@ Currently `agentNodes map[string]string` stores `agentID → nodeID`. Change it 
 
 Also update the tool definition: remove `"mode"` from the `required` array (since it's not required for resume), and update the description to document that mode is ignored on resume.
 
-- [ ] 3a: Add an `agentNodeState` struct with `nodeID` and `mode` fields. Change `agentNodes` from `map[string]string` to `map[string]agentNodeState`. Update `saveNodeID()` to accept and store mode alongside nodeID. Update `loadNodeID()` to return the struct (or both values). Update all callers (both in `Execute` and `executeBackground`)
-- [ ] 3b: In `Execute()` (`subagent.go`), after loading the stored state for a resume (`in.AgentID != ""`), override `in.Mode` with the stored mode. If mode was stored as empty (shouldn't happen), fall back to `"explore"`. Move this logic before the mode validation so resumed agents never hit the mode-required error
-- [ ] 3c: Update the tool definition schema (`subagent.go:104-127`): remove `"mode"` from the `required` array (only `"task"` is required). Update the `mode` description to document: required for new agents, ignored on resume (original mode is preserved)
-- [ ] 3d: Add tests: (1) spawn a sub-agent in "implement" mode, resume it without providing mode → verify it runs with "implement" (inherited). (2) spawn in "explore" mode, resume with `mode: "implement"` → verify it still uses "explore" (original mode preserved). (3) new agent without agent_id and without mode → verify mode validation error still fires
+- [x] 3a: Add an `agentNodeState` struct with `nodeID` and `mode` fields. Change `agentNodes` from `map[string]string` to `map[string]agentNodeState`. Update `saveNodeID()` to accept and store mode alongside nodeID. Update `loadNodeID()` to return the struct (or both values). Update all callers (both in `Execute` and `executeBackground`)
+- [x] 3b: In `Execute()` (`subagent.go`), after loading the stored state for a resume (`in.AgentID != ""`), override `in.Mode` with the stored mode. If mode was stored as empty (shouldn't happen), fall back to `"explore"`. Move this logic before the mode validation so resumed agents never hit the mode-required error
+- [x] 3c: Update the tool definition schema (`subagent.go:104-127`): remove `"mode"` from the `required` array (only `"task"` is required). Update the `mode` description to document: required for new agents, ignored on resume (original mode is preserved)
+- [x] 3d: Add tests: (1) spawn a sub-agent in "implement" mode, resume it without providing mode → verify it runs with "implement" (inherited). (2) spawn in "explore" mode, resume with `mode: "implement"` → verify it still uses "explore" (original mode preserved). (3) new agent without agent_id and without mode → verify mode validation error still fires
 
 ## Phase 4: Integration test
 

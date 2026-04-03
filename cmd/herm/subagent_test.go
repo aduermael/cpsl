@@ -2252,3 +2252,69 @@ func TestWaitForBackgroundAgents_Timeout(t *testing.T) {
 		t.Errorf("expected task name in timeout notice, got %v", results)
 	}
 }
+
+func TestSubAgentResumeInheritsMode(t *testing.T) {
+	client := newTestClient("resumed output")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	// Spawn in implement mode.
+	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
+	if err != nil {
+		t.Fatalf("first Execute error: %v", err)
+	}
+	agentID := extractAgentID(t, result1)
+
+	// Resume without providing mode — should inherit "implement".
+	result2, err := tool.Execute(context.Background(), json.RawMessage(
+		`{"task":"continue","agent_id":"`+agentID+`"}`))
+	if err != nil {
+		t.Fatalf("resume Execute error: %v", err)
+	}
+	if !strings.Contains(result2, "agent_id:") {
+		t.Errorf("expected agent_id in result, got %q", result2)
+	}
+}
+
+func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
+	client := newTestClient("resumed output")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	// Spawn in explore mode.
+	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"search","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("first Execute error: %v", err)
+	}
+	agentID := extractAgentID(t, result1)
+
+	// Resume with mode:"implement" — should still use "explore" (original).
+	_, err = tool.Execute(context.Background(), json.RawMessage(
+		`{"task":"continue","mode":"implement","agent_id":"`+agentID+`"}`))
+	if err != nil {
+		t.Fatalf("resume Execute error: %v", err)
+	}
+
+	// Verify the stored mode is still "explore".
+	tool.mu.Lock()
+	state := tool.agentNodes[agentID]
+	tool.mu.Unlock()
+	if state.mode != "explore" {
+		t.Errorf("stored mode = %q, want \"explore\"", state.mode)
+	}
+}
+
+func TestSubAgentNewAgentWithoutModeStillFails(t *testing.T) {
+	client := newTestClient("ok")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	// New agent (no agent_id) without mode should still fail validation.
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test"}`))
+	if err == nil {
+		t.Fatal("expected error for new agent without mode")
+	}
+	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+		t.Errorf("error = %q, want mode validation error", err.Error())
+	}
+}

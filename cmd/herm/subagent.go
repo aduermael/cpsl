@@ -47,6 +47,13 @@ type bgAgentState struct {
 	started time.Time
 }
 
+// agentNodeState stores the last nodeID and original mode for a sub-agent so
+// that resumed agents inherit their original mode.
+type agentNodeState struct {
+	nodeID string
+	mode   string
+}
+
 // SubAgentTool spawns a sub-agent to handle complex subtasks autonomously.
 // Communication is output-only: the sub-agent returns a result string and
 // that is the sole information passed back to the caller.
@@ -68,7 +75,7 @@ type SubAgentTool struct {
 	onBgComplete   func(string)     // set after construction; called when a background sub-agent finishes
 
 	mu         sync.Mutex
-	agentNodes map[string]string        // agentID → last nodeID (for resume)
+	agentNodes map[string]agentNodeState // agentID → state (nodeID + mode for resume)
 	bgAgents   map[string]*bgAgentState // background sub-agents
 }
 
@@ -92,7 +99,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		personality:      personality,
 		containerImage:   containerImage,
 		doneTimeout:      subAgentDoneTimeout,
-		agentNodes:       make(map[string]string),
+		agentNodes:       make(map[string]agentNodeState),
 		bgAgents:         make(map[string]*bgAgentState),
 	}
 }
@@ -111,7 +118,7 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 				"mode": {
 					"type": "string",
 					"enum": ["explore", "implement"],
-					"description": "The sub-agent mode. 'explore' uses a fast, cheap model for research, search, and reading tasks. 'implement' uses the full orchestrator model for writing code and making changes."
+					"description": "The sub-agent mode. Required for new agents. 'explore' uses a fast, cheap model for research, search, and reading tasks. 'implement' uses the full orchestrator model for writing code and making changes. Ignored when resuming with agent_id (the original mode is preserved)."
 				},
 				"agent_id": {
 					"type": "string",
@@ -122,7 +129,7 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 					"description": "If true, the sub-agent runs in the background and returns immediately. You will be notified when it completes."
 				}
 			},
-			"required": ["task", "mode"]
+			"required": ["task"]
 		}`),
 	}
 }
@@ -185,19 +192,19 @@ func (t *SubAgentTool) forwardBlocking(e AgentEvent) {
 	}
 }
 
-// saveNodeID stores the last nodeID for a sub-agent so it can be resumed.
-func (t *SubAgentTool) saveNodeID(agentID, nodeID string) {
+// saveNodeID stores the last nodeID and mode for a sub-agent so it can be resumed.
+func (t *SubAgentTool) saveNodeID(agentID, nodeID, mode string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.agentNodes[agentID] = nodeID
+	t.agentNodes[agentID] = agentNodeState{nodeID: nodeID, mode: mode}
 }
 
-// loadNodeID retrieves the last nodeID for a sub-agent.
-func (t *SubAgentTool) loadNodeID(agentID string) (string, bool) {
+// loadNodeID retrieves the stored state for a sub-agent.
+func (t *SubAgentTool) loadNodeID(agentID string) (agentNodeState, bool) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	nodeID, ok := t.agentNodes[agentID]
-	return nodeID, ok
+	state, ok := t.agentNodes[agentID]
+	return state, ok
 }
 
 // lookupBgAgent returns the background agent state for the given ID, or nil.
@@ -360,12 +367,28 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	if in.AgentID != "" && in.Task == "status" {
 		return t.bgAgentStatus(in.AgentID)
 	}
+	if in.Background && in.AgentID != "" {
+		return "", fmt.Errorf("background mode cannot be used with agent_id (resume)")
+	}
+
+	// For resumed agents, inherit the original mode before validation.
+	// Mode is immutable once set at spawn time.
+	var parentNodeID string
+	if in.AgentID != "" {
+		state, ok := t.loadNodeID(in.AgentID)
+		if !ok {
+			return "", fmt.Errorf("unknown agent_id %q: no previous sub-agent with that ID", in.AgentID)
+		}
+		parentNodeID = state.nodeID
+		if state.mode != "" {
+			in.Mode = state.mode
+		} else {
+			in.Mode = "explore"
+		}
+	}
 
 	if in.Mode != "explore" && in.Mode != "implement" {
 		return "", fmt.Errorf("mode must be \"explore\" or \"implement\", got %q", in.Mode)
-	}
-	if in.Background && in.AgentID != "" {
-		return "", fmt.Errorf("background mode cannot be used with agent_id (resume)")
 	}
 
 	if in.Background {
@@ -376,16 +399,6 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	model := t.explorationModel
 	if in.Mode == "implement" {
 		model = t.mainModel
-	}
-
-	// Determine if we're resuming a previous sub-agent.
-	var parentNodeID string
-	if in.AgentID != "" {
-		nodeID, ok := t.loadNodeID(in.AgentID)
-		if !ok {
-			return "", fmt.Errorf("unknown agent_id %q: no previous sub-agent with that ID", in.AgentID)
-		}
-		parentNodeID = nodeID
 	}
 
 	// Build the sub-agent's tool set (may include nested agent tool if depth allows).
@@ -503,7 +516,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				})
 				// Save the nodeID for potential resume.
 				if event.NodeID != "" {
-					t.saveNodeID(agentID, event.NodeID)
+					t.saveNodeID(agentID, event.NodeID, in.Mode)
 				}
 				// Wait for the goroutine to finish with a timeout safety net.
 				select {
@@ -537,7 +550,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 					switch event.Type {
 					case EventDone:
 						if event.NodeID != "" {
-							t.saveNodeID(agentID, event.NodeID)
+							t.saveNodeID(agentID, event.NodeID, in.Mode)
 						}
 					case EventError:
 						if event.Error != nil && event.Error.Error() != "context canceled" {
@@ -723,7 +736,7 @@ drainLoop:
 					Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
 				})
 				if event.NodeID != "" {
-					t.saveNodeID(agentID, event.NodeID)
+					t.saveNodeID(agentID, event.NodeID, in.Mode)
 				}
 				select {
 				case <-done:
@@ -761,7 +774,7 @@ drainLoop:
 					switch event.Type {
 					case EventDone:
 						if event.NodeID != "" {
-							t.saveNodeID(agentID, event.NodeID)
+							t.saveNodeID(agentID, event.NodeID, in.Mode)
 						}
 					case EventError:
 						if event.Error != nil && event.Error.Error() != "context canceled" {
