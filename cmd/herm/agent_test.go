@@ -4592,3 +4592,224 @@ func TestBackgroundCompletionCycleCap(t *testing.T) {
 		t.Error("expected EventDone — run loop should not hang when cycle cap is reached")
 	}
 }
+
+// --- Phase 4: Integration test — full background lifecycle ---
+
+// gatedProvider returns pre-defined responses, optionally blocking on per-call
+// gates. A gate is a channel that must be closed before the response is sent.
+// A nil gate means the response is sent immediately. Used to simulate staggered
+// sub-agent completion in integration tests.
+type gatedProvider struct {
+	mu        sync.Mutex
+	responses []string
+	gates     []chan struct{}
+	callIdx   int
+	model     string
+}
+
+func (p *gatedProvider) Complete(ctx context.Context, _ *types.CompletionRequest) (*types.CompletionResponse, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	p.mu.Unlock()
+
+	if idx < len(p.gates) && p.gates[idx] != nil {
+		select {
+		case <-p.gates[idx]:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	text := "ok"
+	if idx < len(p.responses) {
+		text = p.responses[idx]
+	}
+	return &types.CompletionResponse{
+		ID: fmt.Sprintf("gated-resp-%d", idx), Model: p.model,
+		Content:    []types.ContentBlock{{Type: "text", Text: text}},
+		StopReason: "end_turn",
+		Usage:      types.Usage{InputTokens: 50, OutputTokens: 20},
+	}, nil
+}
+
+func (p *gatedProvider) Stream(ctx context.Context, _ *types.CompletionRequest) (<-chan types.StreamEvent, error) {
+	p.mu.Lock()
+	idx := p.callIdx
+	p.callIdx++
+	p.mu.Unlock()
+
+	ch := make(chan types.StreamEvent, 10)
+	go func() {
+		defer close(ch)
+		if idx < len(p.gates) && p.gates[idx] != nil {
+			select {
+			case <-p.gates[idx]:
+			case <-ctx.Done():
+				return
+			}
+		}
+		text := "ok"
+		if idx < len(p.responses) {
+			text = p.responses[idx]
+		}
+		ch <- types.StreamEvent{Type: types.StreamEventDelta, Content: text}
+		ch <- types.StreamEvent{
+			Type: types.StreamEventDone,
+			Response: &types.CompletionResponse{
+				ID: fmt.Sprintf("gated-resp-%d", idx), Model: p.model,
+				Content:    []types.ContentBlock{{Type: "text", Text: text}},
+				StopReason: "end_turn",
+				Usage:      types.Usage{InputTokens: 50, OutputTokens: 20},
+			},
+		}
+	}()
+	return ch, nil
+}
+
+func (p *gatedProvider) Name() string             { return "gated" }
+func (p *gatedProvider) Models() []types.ModelInfo { return nil }
+
+// TestE2EBackgroundLifecycleThreeAgents exercises the complete scenario from
+// the bug report: main agent spawns 3 background sub-agents, one completes
+// before the main agent stops, main agent returns end_turn, system waits for
+// the remaining agents via backgroundCompletion, re-calls LLM with all
+// results, and produces a final response.
+func TestE2EBackgroundLifecycleThreeAgents(t *testing.T) {
+	// --- Sub-agent provider: 3 calls, first immediate, others gated. ---
+	gate2 := make(chan struct{})
+	gate3 := make(chan struct{})
+	subProv := &gatedProvider{
+		model: "test-model",
+		responses: []string{
+			"Auth uses OAuth2 with PKCE flow.",
+			"Database uses connection pooling with max 50 connections.",
+			"Caching layer uses Redis with 5-minute TTL.",
+		},
+		gates: []chan struct{}{nil, gate2, gate3},
+	}
+	subStore := newMockStorage()
+	subClient := langdag.NewWithDeps(subStore, subProv)
+
+	// --- Parent provider sequence ---
+	// Call 0: spawn 3 background sub-agents.
+	// Call 1: end_turn text — triggers backgroundCompletion because agents 2/3
+	//         are still gated. Agent 1's result may already be injected inline.
+	// Call 2: synthesis incorporating remaining background results.
+	parentResponses := []scriptedResponse{
+		{
+			toolCalls: []types.ContentBlock{
+				{Type: "tool_use", ID: "tc-bg1", Name: "agent",
+					Input: json.RawMessage(`{"task":"research auth","mode":"explore","background":true}`)},
+				{Type: "tool_use", ID: "tc-bg2", Name: "agent",
+					Input: json.RawMessage(`{"task":"research database","mode":"explore","background":true}`)},
+				{Type: "tool_use", ID: "tc-bg3", Name: "agent",
+					Input: json.RawMessage(`{"task":"research caching","mode":"explore","background":true}`)},
+			},
+			tokensIn: 100, tokensOut: 50,
+		},
+		{text: "Still running. Let me wait a bit more.", tokensIn: 150, tokensOut: 60},
+		{text: "All three background agents completed. Consolidated analysis covering auth, database, and caching.", tokensIn: 200, tokensOut: 80},
+	}
+
+	parentProv := &scriptedProvider{model: "test-model", responses: parentResponses}
+	parentStore := newMockStorage()
+	parentClient := langdag.NewWithDeps(parentStore, parentProv)
+
+	tmpDir := t.TempDir()
+	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0,
+		WithMaxToolIterations(10),
+	)
+
+	// Wire callbacks as production does (agentui.go:260-261).
+	subAgentTool.parentEvents = agent.events
+	subAgentTool.onBgComplete = agent.InjectBackgroundResult
+
+	// Release gated sub-agents after a short delay so the main agent reaches
+	// end_turn and enters backgroundCompletion before they complete.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		close(gate2)
+		close(gate3)
+	}()
+
+	go agent.Run(context.Background(), "analyze architecture: auth, database, caching", "")
+	events := drainEvents(t, agent.Events(), 15*time.Second)
+
+	// --- Verify event stream ---
+	var (
+		subAgentStarts int
+		subAgentDones  int
+		gotSynthesis   bool
+		gotDone        bool
+		allText        strings.Builder
+		agentIDs       = make(map[string]bool)
+	)
+	for _, ev := range events {
+		switch ev.Type {
+		case EventSubAgentStart:
+			subAgentStarts++
+			agentIDs[ev.AgentID] = true
+		case EventSubAgentStatus:
+			if ev.Text == "done" {
+				subAgentDones++
+			}
+		case EventTextDelta:
+			allText.WriteString(ev.Text)
+			if strings.Contains(ev.Text, "Consolidated analysis") {
+				gotSynthesis = true
+			}
+		case EventDone:
+			gotDone = true
+		}
+	}
+
+	if subAgentStarts != 3 {
+		t.Errorf("expected 3 EventSubAgentStart, got %d", subAgentStarts)
+	}
+	if len(agentIDs) != 3 {
+		t.Errorf("expected 3 distinct agent IDs, got %d", len(agentIDs))
+	}
+	if subAgentDones < 3 {
+		t.Errorf("expected at least 3 sub-agent done events, got %d", subAgentDones)
+	}
+	if !gotSynthesis {
+		t.Errorf("expected synthesis text with 'Consolidated analysis', got: %q", allText.String())
+	}
+	if !gotDone {
+		t.Error("expected EventDone")
+	}
+
+	// --- Verify display by replaying events through App ---
+	app := &App{headless: true, width: 80}
+	for _, ev := range events {
+		app.handleAgentEvent(ev)
+	}
+
+	if len(app.subAgents) != 3 {
+		t.Errorf("expected 3 sub-agents in display, got %d", len(app.subAgents))
+	}
+	for id, sa := range app.subAgents {
+		if !sa.done {
+			t.Errorf("sub-agent %s should be marked done in display", id)
+		}
+	}
+
+	// Completed agents should still be visible (Phase 2 fix).
+	lines := app.subAgentDisplayLines()
+	if len(lines) == 0 {
+		t.Error("subAgentDisplayLines should show completed agents, not return nil")
+	}
+
+	// Verify agent output files.
+	agentOutputPath := filepath.Join(tmpDir, ".herm", "agents")
+	entries, err := os.ReadDir(agentOutputPath)
+	if err != nil {
+		t.Fatalf("failed to read agent output dir: %v", err)
+	}
+	if len(entries) < 3 {
+		t.Errorf("expected 3 sub-agent output files, got %d", len(entries))
+	}
+}

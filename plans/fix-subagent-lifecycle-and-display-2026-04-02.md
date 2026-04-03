@@ -67,4 +67,4 @@ Also, the `agentTicker` is stopped on `EventDone`, which means the 50ms render c
 
 ## Phase 4: Integration test — full background lifecycle
 
-- [ ] 4a: Add an integration test that exercises the complete scenario from the bug report: main agent spawns 3 background sub-agents, one completes before the main agent stops, main agent returns `end_turn`, system waits for the remaining agents, re-calls LLM with all results, and produces a final response. Verify: (1) all 3 agents appear in the display, (2) the completed agent shows a checkmark, (3) the two running agents continue updating, (4) the final response incorporates all 3 agents' findings
+- [x] 4a: Add an integration test that exercises the complete scenario from the bug report: main agent spawns 3 background sub-agents, one completes before the main agent stops, main agent returns `end_turn`, system waits for the remaining agents, re-calls LLM with all results, and produces a final response. Verify: (1) all 3 agents appear in the display, (2) the completed agent shows a checkmark, (3) the two running agents continue updating, (4) the final response incorporates all 3 agents' findings
