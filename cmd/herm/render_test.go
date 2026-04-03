@@ -248,14 +248,27 @@ func TestSubAgentGroupedDisplay(t *testing.T) {
 		}
 	})
 
-	t.Run("all done returns nil", func(t *testing.T) {
+	t.Run("all done shows completed agents", func(t *testing.T) {
 		app := &App{headless: true, width: 80}
 		app.subAgents = map[string]*subAgentDisplay{
-			"a1": {task: "Done", mode: "explore", done: true},
+			"a1": {task: "Done task", mode: "explore", done: true, completedAt: time.Now()},
 		}
 		lines := app.subAgentDisplayLines()
-		if lines != nil {
-			t.Errorf("expected nil when all done, got %v", lines)
+		if len(lines) == 0 {
+			t.Fatal("expected display lines for completed agents, got nil")
+		}
+		// Header should not say "Running" when all done.
+		header := stripANSI(lines[0])
+		if strings.Contains(header, "Running") {
+			t.Errorf("header = %q, should not contain 'Running' when all done", header)
+		}
+		if !strings.Contains(header, "Explore agent") {
+			t.Errorf("header = %q, expected 'Explore agent'", header)
+		}
+		// Agent line should show checkmark.
+		agentLine := stripANSI(lines[1])
+		if !strings.Contains(agentLine, "✓") {
+			t.Errorf("agent line = %q, expected ✓ for completed agent", agentLine)
 		}
 	})
 

@@ -47,7 +47,7 @@ Two changes: stop deleting completed sub-agents from the display map on `EventDo
 
 - [x] 2a: Remove the cleanup loop in `EventDone` handler that deletes completed sub-agents from `a.subAgents`. Sub-agents persist in the display across turns; cleared only on `/clear`
 - [x] 2b: Remove the `allDone` early-return in `subAgentDisplayLines()`. When all agents are done, the display still shows them (with checkmarks/crosses). Header changes from "Running N Explore agents…" to "N Explore agents" when all done
-- [ ] 2c: Update existing tests: `TestSubAgentGroupedDisplay/"all done returns nil"` must be changed to expect output instead of nil. Add a new test verifying that completed agents persist across renders until a new turn starts
+- [x] 2c: Update existing tests: `TestSubAgentGroupedDisplay/"all done returns nil"` changed to "all done shows completed agents" — expects output with checkmark and no "Running" header
 
 ## Phase 3: Continue draining sub-agent events after main agent stops
 
