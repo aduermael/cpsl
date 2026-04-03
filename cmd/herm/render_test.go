@@ -2943,3 +2943,96 @@ func TestTickerKeptAliveForActiveSubAgents(t *testing.T) {
 		t.Error("ticker should be stopped after last sub-agent completes")
 	}
 }
+
+func TestSubAgentDisplayIntegration(t *testing.T) {
+	// Integration test: verify frozen timers + ordering in a combined scenario.
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	now := time.Now()
+	app := &App{
+		width:          80,
+		agentRunning:   true,
+		agentStartTime: now.Add(-90 * time.Second),
+		streamingText:  "Based on the three explorations, here is my summary.",
+	}
+	app.subAgents = map[string]*subAgentDisplay{
+		"sa1": {
+			task:        "Explore auth",
+			mode:        "explore",
+			done:        true,
+			startTime:   now.Add(-80 * time.Second),
+			completedAt: now.Add(-80*time.Second + 9300*time.Millisecond),
+			toolCount:   3,
+		},
+		"sa2": {
+			task:        "Explore logging",
+			mode:        "explore",
+			done:        true,
+			startTime:   now.Add(-78 * time.Second),
+			completedAt: now.Add(-78*time.Second + 28500*time.Millisecond),
+			toolCount:   7,
+		},
+		"sa3": {
+			task:        "Explore errors",
+			mode:        "explore",
+			done:        true,
+			startTime:   now.Add(-77 * time.Second),
+			completedAt: now.Add(-77*time.Second + 77700*time.Millisecond),
+			toolCount:   12,
+		},
+	}
+	app.messages = []chatMessage{
+		{kind: msgUser, content: "go"},
+	}
+
+	rows := app.buildBlockRows()
+
+	// 1. Verify each agent has a different frozen elapsed time.
+	var elapsed []string
+	for _, r := range rows {
+		s := strip(r)
+		if strings.Contains(s, "Explore auth") {
+			if !strings.Contains(s, "9.30s") {
+				t.Errorf("agent 1: expected 9.30s, got %q", s)
+			}
+			elapsed = append(elapsed, "9.30s")
+		}
+		if strings.Contains(s, "Explore logging") {
+			if !strings.Contains(s, "28.50s") {
+				t.Errorf("agent 2: expected 28.50s, got %q", s)
+			}
+			elapsed = append(elapsed, "28.50s")
+		}
+		if strings.Contains(s, "Explore errors") {
+			if !strings.Contains(s, "77.70s") {
+				t.Errorf("agent 3: expected 77.70s, got %q", s)
+			}
+			elapsed = append(elapsed, "77.70s")
+		}
+	}
+	if len(elapsed) != 3 {
+		t.Fatalf("expected 3 agent lines, found %d", len(elapsed))
+	}
+
+	// 2. Verify sub-agent lines appear before streaming text.
+	lastSubAgentIdx := -1
+	streamingIdx := -1
+	for i, r := range rows {
+		s := strip(r)
+		if strings.Contains(s, "Explore auth") || strings.Contains(s, "Explore logging") || strings.Contains(s, "Explore errors") {
+			lastSubAgentIdx = i
+		}
+		if strings.Contains(s, "Based on the three explorations") {
+			streamingIdx = i
+		}
+	}
+	if lastSubAgentIdx == -1 || streamingIdx == -1 {
+		t.Fatal("could not find sub-agent or streaming text lines")
+	}
+	if streamingIdx <= lastSubAgentIdx {
+		t.Errorf("streaming text (row %d) should appear after all sub-agent lines (last at row %d)",
+			streamingIdx, lastSubAgentIdx)
+	}
+}

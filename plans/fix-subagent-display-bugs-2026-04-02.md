@@ -52,4 +52,4 @@ Also update the tool definition: remove `"mode"` from the `required` array (sinc
 
 ## Phase 4: Integration test
 
-- [ ] 4a: Add an integration-style test that exercises the combined scenario: create a mock sub-agent display with agents that complete at different times, verify (1) elapsed times are frozen and different per agent, (2) sub-agent lines appear before streaming text in rendered output
+- [x] 4a: Add an integration-style test that exercises the combined scenario: create a mock sub-agent display with agents that complete at different times, verify (1) elapsed times are frozen and different per agent, (2) sub-agent lines appear before streaming text in rendered output
