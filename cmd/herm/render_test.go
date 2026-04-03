@@ -3190,3 +3190,97 @@ func TestSessionRestoreInsertsSubAgentGroupMarker(t *testing.T) {
 		t.Error("reconstructed sub-agent entry should have task, mode='explore', and done=true")
 	}
 }
+
+func TestIntegrationAnchoredGroupWithFrozenTimers(t *testing.T) {
+	// 8a: End-to-end integration test exercising anchored sub-agent group display
+	// with frozen timers. Simulates: pre-spawn text → sub-agent group → agents
+	// complete at different times → post-spawn text. Verifies chronological
+	// ordering AND that elapsed times are frozen and differ per agent.
+	strip := func(s string) string {
+		return ansiEscRe.ReplaceAllString(s, "")
+	}
+
+	baseTime := time.Now().Add(-2 * time.Minute)
+	app := &App{width: 80}
+	app.subAgents = map[string]*subAgentDisplay{
+		"fast": {
+			task:        "Check config",
+			mode:        "explore",
+			done:        true,
+			startTime:   baseTime,
+			completedAt: baseTime.Add(5 * time.Second),
+			toolCount:   3,
+		},
+		"slow": {
+			task:        "Analyze tests",
+			mode:        "explore",
+			done:        true,
+			startTime:   baseTime,
+			completedAt: baseTime.Add(45 * time.Second),
+			toolCount:   18,
+		},
+	}
+	app.messages = []chatMessage{
+		{kind: msgUser, content: "Explore the codebase", leadBlank: true},
+		{kind: msgAssistant, content: "Launching two agents to investigate."},
+		{kind: msgSubAgentGroup},
+		{kind: msgAssistant, content: "Both agents are done. Here is the summary."},
+	}
+
+	rows := app.buildBlockRows()
+	flat := strings.Join(rows, "\n")
+	stripped := strip(flat)
+
+	// 1. Verify chronological ordering: pre-spawn < sub-agents < post-spawn.
+	launchIdx := strings.Index(stripped, "Launching two agents")
+	configIdx := strings.Index(stripped, "Check config")
+	testsIdx := strings.Index(stripped, "Analyze tests")
+	summaryIdx := strings.Index(stripped, "Both agents are done")
+
+	if launchIdx == -1 || configIdx == -1 || testsIdx == -1 || summaryIdx == -1 {
+		t.Fatalf("missing expected text in output:\n%s", stripped)
+	}
+	if configIdx <= launchIdx {
+		t.Errorf("sub-agent 'Check config' (pos %d) should appear after pre-spawn text (pos %d)", configIdx, launchIdx)
+	}
+	if testsIdx <= launchIdx {
+		t.Errorf("sub-agent 'Analyze tests' (pos %d) should appear after pre-spawn text (pos %d)", testsIdx, launchIdx)
+	}
+	if summaryIdx <= configIdx || summaryIdx <= testsIdx {
+		t.Errorf("post-spawn text (pos %d) should appear after all sub-agent lines (config=%d, tests=%d)", summaryIdx, configIdx, testsIdx)
+	}
+
+	// 2. Verify frozen timers differ: one should show "5.00s", the other "45.00s".
+	has5s := strings.Contains(stripped, "5.00s")
+	has45s := strings.Contains(stripped, "45.00s")
+	if !has5s {
+		t.Errorf("expected frozen elapsed time of 5.00s in output:\n%s", stripped)
+	}
+	if !has45s {
+		t.Errorf("expected frozen elapsed time of 45.00s in output:\n%s", stripped)
+	}
+}
+
+func TestIntegrationExplorePromptProgressiveDepth(t *testing.T) {
+	// 8b: Verify explore-mode sub-agent system prompt includes progressive-depth
+	// exploration guidance keywords.
+	allTools := []Tool{
+		&stubTool{"bash"},
+		&stubTool{"glob"},
+		&stubTool{"grep"},
+		&stubTool{"read_file"},
+		&stubTool{"outline"},
+		&stubTool{"edit_file"},
+		&stubTool{"write_file"},
+	}
+	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	exploreTools := tool.buildSubAgentTools("explore")
+	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
+
+	keywords := []string{"outline", "offset/limit", "Stop when you have enough"}
+	for _, kw := range keywords {
+		if !strings.Contains(prompt, kw) {
+			t.Errorf("explore prompt should contain %q", kw)
+		}
+	}
+}

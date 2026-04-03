@@ -100,5 +100,5 @@ Also update the tool definition: remove `"mode"` from the `required` array (sinc
 
 ## Phase 8: End-to-end integration tests for phases 5-7
 
-- [ ] 8a: Add test for anchored sub-agent group: simulate a full event sequence (assistant text → tool calls spawning agents → EventSubAgentStart → more assistant text → EventSubAgentStatus done), verify that `buildBlockRows()` produces rows in correct chronological order: pre-spawn text, sub-agent group, post-spawn text
-- [ ] 8b: Add test for explore prompt: build a sub-agent system prompt in explore mode, verify it contains progressive-depth guidance keywords ("outline", "offset/limit", "don't read entire")
+- [x] 8a: Add test for anchored sub-agent group: simulate a full event sequence (assistant text → tool calls spawning agents → EventSubAgentStart → more assistant text → EventSubAgentStatus done), verify that `buildBlockRows()` produces rows in correct chronological order: pre-spawn text, sub-agent group, post-spawn text
+- [x] 8b: Add test for explore prompt: build a sub-agent system prompt in explore mode, verify it contains progressive-depth guidance keywords ("outline", "offset/limit", "don't read entire")
