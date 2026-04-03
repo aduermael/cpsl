@@ -2339,3 +2339,34 @@ func TestBackgroundToolResultContainsSuppressionGuidance(t *testing.T) {
 	agentID := extractAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 }
+
+func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
+	allTools := []Tool{
+		&testTool{name: "bash", result: "ok"},
+		&testTool{name: "glob", result: "ok"},
+		&testTool{name: "grep", result: "ok"},
+		&testTool{name: "read_file", result: "ok"},
+		&testTool{name: "outline", result: "ok"},
+		&testTool{name: "edit_file", result: "ok"},
+		&testTool{name: "write_file", result: "ok"},
+	}
+	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+
+	// Explore mode: no edit/write tools → should include exploration strategy.
+	exploreTools := tool.buildSubAgentTools("explore")
+	explorePrompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
+
+	for _, keyword := range []string{"Exploration strategy", "offset/limit", "Stop when you have enough"} {
+		if !strings.Contains(explorePrompt, keyword) {
+			t.Errorf("explore prompt should contain %q", keyword)
+		}
+	}
+
+	// Implement mode: has edit/write tools → should NOT include exploration strategy.
+	implTools := tool.buildSubAgentTools("implement")
+	implPrompt := buildSubAgentSystemPrompt(implTools, nil, "/workspace", "alpine:latest", nil)
+
+	if strings.Contains(implPrompt, "Exploration strategy") {
+		t.Error("implement prompt should NOT contain exploration strategy section")
+	}
+}
