@@ -52,9 +52,9 @@ The 5-second `forwardBlockingTimeout` is too short when the channel is sustained
 
 **Approach:** Add a dedicated timeout constant for the "done" event specifically, longer than the general `forwardBlockingTimeout`. Use this longer timeout in the two places where `EventSubAgentStatus "done"` is sent via `forwardBlocking` (the `EventDone` handler in `runBackground` and the fallback path).
 
-- [ ] 3a: Add a `forwardBlockingDoneTimeout` constant (e.g., 30 seconds) in `subagent.go`. Add a `forwardBlockingWithTimeout(e AgentEvent, timeout time.Duration)` method that works like `forwardBlocking` but accepts a custom timeout
-- [ ] 3b: In `runBackground()`, change the two `forwardBlocking(AgentEvent{..., Text: "done", ...})` calls (the `EventDone` handler at line ~731 and the fallback at line ~819) to use `forwardBlockingWithTimeout(..., forwardBlockingDoneTimeout)`. Leave `EventUsage` forwards using the standard 5-second `forwardBlocking`
-- [ ] 3c: Add test: create a `SubAgentTool` with a 1-slot `parentEvents` channel, fill it. Call `forwardBlockingWithTimeout` with a "done" event and a 100ms test timeout. Verify it blocks for the timeout duration and logs the timeout. Then repeat with a concurrent drain — verify the event is delivered
+- [x] 3a: Add a `forwardBlockingDoneTimeout` constant (e.g., 30 seconds) in `subagent.go`. Add a `forwardBlockingWithTimeout(e AgentEvent, timeout time.Duration)` method that works like `forwardBlocking` but accepts a custom timeout
+- [x] 3b: In `runBackground()`, change the two `forwardBlocking(AgentEvent{..., Text: "done", ...})` calls (the `EventDone` handler at line ~731 and the fallback at line ~819) to use `forwardBlockingWithTimeout(..., forwardBlockingDoneTimeout)`. Leave `EventUsage` forwards using the standard 5-second `forwardBlocking`
+- [x] 3c: Add test: create a `SubAgentTool` with a 1-slot `parentEvents` channel, fill it. Call `forwardBlockingWithTimeout` with a "done" event and a 100ms test timeout. Verify it blocks for the timeout duration and logs the timeout. Then repeat with a concurrent drain — verify the event is delivered
 
 ## Phase 4: Reduce channel pressure from non-critical events
 

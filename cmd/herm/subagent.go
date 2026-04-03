@@ -156,6 +156,11 @@ type subAgentInput struct {
 // parent channel to accept a critical event before giving up.
 const forwardBlockingTimeout = 5 * time.Second
 
+// forwardBlockingDoneTimeout is a longer timeout used specifically for "done"
+// status events. With 3+ concurrent sub-agents, the 4096-slot channel can stay
+// near capacity for several seconds — 30s gives ample drain time.
+const forwardBlockingDoneTimeout = 30 * time.Second
+
 // forward sends a sub-agent event to the parent's event channel if set.
 // Non-blocking: drops the event if the channel is full. Use for high-frequency
 // display events (EventSubAgentDelta, EventSubAgentStatus with tool/text updates)
@@ -194,6 +199,25 @@ func (t *SubAgentTool) forwardBlocking(e AgentEvent) {
 	case <-time.After(forwardBlockingTimeout):
 		debugLog("sub-agent critical event TIMED OUT after %v: parent channel full (type=%d, agentID=%s)",
 			forwardBlockingTimeout, e.Type, e.AgentID)
+	}
+}
+
+// forwardBlockingWithTimeout is like forwardBlocking but accepts a custom timeout.
+// Used for "done" status events that need a longer delivery window.
+func (t *SubAgentTool) forwardBlockingWithTimeout(e AgentEvent, timeout time.Duration) {
+	if t.parentEvents == nil {
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			debugLog("sub-agent critical event dropped: parent channel closed (type=%d)", e.Type)
+		}
+	}()
+	select {
+	case t.parentEvents <- e:
+	case <-time.After(timeout):
+		debugLog("sub-agent critical event TIMED OUT after %v: parent channel full (type=%d, agentID=%s)",
+			timeout, e.Type, e.AgentID)
 	}
 }
 
@@ -728,7 +752,7 @@ drainLoop:
 			case EventDone:
 				subTC.Finalize()
 				subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-				t.forwardBlocking(AgentEvent{
+				t.forwardBlockingWithTimeout(AgentEvent{
 					Type:     EventSubAgentStatus,
 					AgentID:  agentID,
 					Text:     "done",
@@ -739,7 +763,7 @@ drainLoop:
 						OutputTokens: totalOutputTokens,
 					},
 					Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
-				})
+				}, forwardBlockingDoneTimeout)
 				if event.NodeID != "" {
 					t.saveNodeID(agentID, event.NodeID, in.Mode)
 				}
@@ -816,7 +840,7 @@ drainLoop:
 	// Fallback: channel closed or doneCh fired without EventDone.
 	subTC.Finalize()
 	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, turns, t.maxTurns)
-	t.forwardBlocking(AgentEvent{
+	t.forwardBlockingWithTimeout(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
 		Text:     "done",
@@ -827,7 +851,7 @@ drainLoop:
 			OutputTokens: totalOutputTokens,
 		},
 		Task: fmt.Sprintf("turns:%d/%d", turns, t.maxTurns),
-	})
+	}, forwardBlockingDoneTimeout)
 	select {
 	case <-done:
 	case <-time.After(t.doneTimeout):

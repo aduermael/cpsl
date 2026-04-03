@@ -2370,3 +2370,60 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 		t.Error("implement prompt should NOT contain exploration strategy section")
 	}
 }
+
+func TestForwardBlockingWithTimeout(t *testing.T) {
+	t.Run("timeout_when_channel_full", func(t *testing.T) {
+		parentCh := make(chan AgentEvent, 1)
+		parentCh <- AgentEvent{Type: EventToolCallDone} // fill channel
+
+		tool := &SubAgentTool{parentEvents: parentCh}
+		timeout := 100 * time.Millisecond
+
+		start := time.Now()
+		tool.forwardBlockingWithTimeout(AgentEvent{
+			Type: EventSubAgentStatus, Text: "done",
+		}, timeout)
+		elapsed := time.Since(start)
+
+		if elapsed < timeout/2 {
+			t.Errorf("expected to block for ~%v, but returned in %v", timeout, elapsed)
+		}
+	})
+
+	t.Run("delivers_when_drained", func(t *testing.T) {
+		parentCh := make(chan AgentEvent, 1)
+		parentCh <- AgentEvent{Type: EventToolCallDone} // fill channel
+
+		tool := &SubAgentTool{parentEvents: parentCh}
+		doneEvent := AgentEvent{Type: EventSubAgentStatus, Text: "done", AgentID: "test-agent"}
+
+		// Drain after a short delay so the send can succeed.
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			<-parentCh
+		}()
+
+		delivered := make(chan struct{})
+		go func() {
+			tool.forwardBlockingWithTimeout(doneEvent, 2*time.Second)
+			close(delivered)
+		}()
+
+		select {
+		case <-delivered:
+			// OK — delivered after drain.
+		case <-time.After(1 * time.Second):
+			t.Fatal("forwardBlockingWithTimeout did not return after channel was drained")
+		}
+
+		// The "done" event should now be in the channel.
+		select {
+		case ev := <-parentCh:
+			if ev.Text != "done" || ev.AgentID != "test-agent" {
+				t.Errorf("got event Text=%q AgentID=%q, want done/test-agent", ev.Text, ev.AgentID)
+			}
+		default:
+			t.Error("expected done event in channel")
+		}
+	})
+}
