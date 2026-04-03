@@ -227,6 +227,13 @@ func isSleepWaitCommand(toolName string, input json.RawMessage) bool {
 	return sleepWaitRe.MatchString(in.Command)
 }
 
+// isBackgroundAgentCall returns true if the tool call is a background sub-agent
+// spawn. These are suppressed from the UI because the sub-agent group display
+// already shows all active/completed agents with richer information.
+func isBackgroundAgentCall(toolName string, input json.RawMessage) bool {
+	return toolName == "agent" && isBackgroundAgentInput(input)
+}
+
 // ─── Tool result helpers ───
 
 func toolCallSummary(toolName string, input json.RawMessage) string {

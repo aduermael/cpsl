@@ -221,6 +221,7 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 	// keyed by ID so we can pair them with results.
 	var pendingToolUses []types.ContentBlock
 	groupInserted := false
+	skipNextToolResult := false
 
 	for _, n := range nodes {
 		switch {
@@ -247,12 +248,19 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 			// Pair tool results with pending tool_use blocks from the assistant.
 			results := parseToolResultBlocks(n.Content)
 			for _, r := range results {
+				// Find the matching pending tool_use.
+				var matchedTC *types.ContentBlock
 				title := "~ tool"
-				for _, tc := range pendingToolUses {
+				for i, tc := range pendingToolUses {
 					if tc.ID == r.ToolUseID {
 						title = toolCallSummary(tc.Name, tc.Input)
+						matchedTC = &pendingToolUses[i]
 						break
 					}
+				}
+				// Skip background agent tool calls — shown via the sub-agent group display.
+				if matchedTC != nil && matchedTC.Name == "agent" && isBackgroundAgentInput(matchedTC.Input) {
+					continue
 				}
 				msgs = append(msgs, chatMessage{kind: msgToolCall, content: title, leadBlank: true})
 				msgs = append(msgs, chatMessage{kind: msgToolResult, content: collapseToolResult(r.Content), isError: r.IsError, duration: time.Duration(r.DurationMs) * time.Millisecond})
@@ -262,16 +270,23 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 		case n.NodeType == types.NodeTypeToolCall:
 			name := extractToolName(n.Content)
 			input := extractToolCallInput(n.Content)
-			// Detect background agent tool calls and insert group marker.
-			if !groupInserted && name == "agent" && isBackgroundAgentInput(input) {
-				msgs = append(msgs, chatMessage{kind: msgSubAgentGroup})
-				groupInserted = true
-				a.reconstructSubAgentFromInput(input)
+			// Suppress background agent tool calls — shown via the sub-agent group display.
+			if name == "agent" && isBackgroundAgentInput(input) {
+				if !groupInserted {
+					msgs = append(msgs, chatMessage{kind: msgSubAgentGroup})
+					groupInserted = true
+					a.reconstructSubAgentFromInput(input)
+				}
+				skipNextToolResult = true
 			} else {
 				msgs = append(msgs, chatMessage{kind: msgToolCall, content: toolCallSummary(name, input), leadBlank: true})
 			}
 
 		case n.NodeType == types.NodeTypeToolResult:
+			if skipNextToolResult {
+				skipNextToolResult = false
+				break
+			}
 			isErr := strings.Contains(n.Content, `"is_error":true`)
 			var dur time.Duration
 			var block types.ContentBlock

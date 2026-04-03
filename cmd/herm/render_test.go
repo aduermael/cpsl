@@ -2632,7 +2632,7 @@ func TestAgentStatusCheckSuppression(t *testing.T) {
 		}
 	})
 
-	t.Run("agent spawn is NOT suppressed", func(t *testing.T) {
+	t.Run("foreground agent spawn is NOT suppressed", func(t *testing.T) {
 		app := &App{headless: true, width: 80}
 		app.handleAgentEvent(AgentEvent{
 			Type:      EventToolCallStart,
@@ -2647,10 +2647,45 @@ func TestAgentStatusCheckSuppression(t *testing.T) {
 			}
 		}
 		if !found {
-			t.Error("agent spawn should produce a msgToolCall")
+			t.Error("foreground agent spawn should produce a msgToolCall")
 		}
 		if app.suppressedToolIDs["tool-spawn-1"] {
-			t.Error("agent spawn should NOT be in suppressedToolIDs")
+			t.Error("foreground agent spawn should NOT be in suppressedToolIDs")
+		}
+	})
+
+	t.Run("background agent spawn IS suppressed", func(t *testing.T) {
+		app := &App{headless: true, width: 80}
+		// Spawn a background agent.
+		app.handleAgentEvent(AgentEvent{
+			Type:      EventToolCallStart,
+			ToolName:  "agent",
+			ToolID:    "tool-bg-1",
+			ToolInput: json.RawMessage(`{"task":"Explore auth module","mode":"explore","background":true}`),
+		})
+		// The tool call should be suppressed — no msgToolCall in messages.
+		for _, m := range app.messages {
+			if m.kind == msgToolCall {
+				t.Error("background agent spawn should NOT produce a msgToolCall")
+			}
+		}
+		if !app.suppressedToolIDs["tool-bg-1"] {
+			t.Error("background agent tool ID should be in suppressedToolIDs")
+		}
+		// The matching tool result should also be suppressed.
+		app.handleAgentEvent(AgentEvent{
+			Type:       EventToolResult,
+			ToolName:   "agent",
+			ToolID:     "tool-bg-1",
+			ToolResult: "[agent_id: abc123] Sub-agent started in background.",
+		})
+		for _, m := range app.messages {
+			if m.kind == msgToolResult {
+				t.Error("background agent result should NOT produce a msgToolResult")
+			}
+		}
+		if app.suppressedToolIDs["tool-bg-1"] {
+			t.Error("tool ID should be removed from suppressedToolIDs after result")
 		}
 	})
 
@@ -3154,21 +3189,35 @@ func TestSessionRestoreInsertsSubAgentGroupMarker(t *testing.T) {
 		t.Fatal("expected msgSubAgentGroup marker in rebuilt messages")
 	}
 
-	// Verify the marker comes after the assistant text and before the tool result.
-	var textIdx, resultIdx int = -1, -1
+	// Verify the marker comes after the assistant text ("explore that")
+	// and before the post-spawn text ("analysis is complete").
+	var preTextIdx, postTextIdx int = -1, -1
 	for i, m := range msgs {
 		if m.kind == msgAssistant && strings.Contains(m.content, "explore that") {
-			textIdx = i
+			preTextIdx = i
+		}
+		if m.kind == msgAssistant && strings.Contains(m.content, "analysis is complete") {
+			postTextIdx = i
+		}
+	}
+	if preTextIdx == -1 || postTextIdx == -1 {
+		t.Fatalf("missing expected messages: preTextIdx=%d, postTextIdx=%d", preTextIdx, postTextIdx)
+	}
+	if groupIdx <= preTextIdx {
+		t.Errorf("group marker (idx %d) should come after pre-spawn text (idx %d)", groupIdx, preTextIdx)
+	}
+	if groupIdx >= postTextIdx {
+		t.Errorf("group marker (idx %d) should come before post-spawn text (idx %d)", groupIdx, postTextIdx)
+	}
+
+	// Background agent tool call/result should be suppressed — not shown as msgToolCall/msgToolResult.
+	for _, m := range msgs {
+		if m.kind == msgToolCall {
+			t.Error("background agent tool call should be suppressed in session restore")
 		}
 		if m.kind == msgToolResult {
-			resultIdx = i
+			t.Error("background agent tool result should be suppressed in session restore")
 		}
-	}
-	if textIdx == -1 || resultIdx == -1 {
-		t.Fatalf("missing expected messages: textIdx=%d, resultIdx=%d", textIdx, resultIdx)
-	}
-	if groupIdx <= textIdx {
-		t.Errorf("group marker (idx %d) should come after assistant text (idx %d)", groupIdx, textIdx)
 	}
 
 	// Verify subAgentGroupInserted flag was set.
@@ -3189,6 +3238,154 @@ func TestSessionRestoreInsertsSubAgentGroupMarker(t *testing.T) {
 	if !found {
 		t.Error("reconstructed sub-agent entry should have task, mode='explore', and done=true")
 	}
+}
+
+func TestSessionRestoreSuppressesBackgroundAgentToolMessages(t *testing.T) {
+	// 9c: Verify that rebuildChatMessages does not produce msgToolCall/msgToolResult
+	// for background agent tool_use blocks. The sub-agent group display replaces them.
+
+	t.Run("new format with mixed tools", func(t *testing.T) {
+		app := &App{width: 80}
+
+		// Assistant node with a regular tool call AND a background agent call.
+		assistantContent, _ := json.Marshal([]types.ContentBlock{
+			{Type: "text", Text: "Let me check."},
+			{Type: "tool_use", ID: "tc-read", Name: "read", Input: json.RawMessage(`{"path":"main.go"}`)},
+			{Type: "tool_use", ID: "tc-agent", Name: "agent", Input: json.RawMessage(`{"task":"Explore auth","mode":"explore","background":true}`)},
+		})
+		toolResultContent, _ := json.Marshal([]types.ContentBlock{
+			{Type: "tool_result", ToolUseID: "tc-read", Content: "package main"},
+			{Type: "tool_result", ToolUseID: "tc-agent", Content: "[agent_id: abc] Sub-agent started."},
+		})
+
+		nodes := []*types.Node{
+			{NodeType: types.NodeTypeUser, Content: "Check the code"},
+			{NodeType: types.NodeTypeAssistant, Content: string(assistantContent)},
+			{NodeType: types.NodeTypeUser, Content: string(toolResultContent)},
+		}
+
+		msgs := app.rebuildChatMessages(nodes)
+
+		// The "read" tool call and result should be present.
+		var hasReadCall, hasReadResult bool
+		// The background "agent" tool call and result should NOT be present.
+		var hasAgentCall, hasAgentResult bool
+		for _, m := range msgs {
+			if m.kind == msgToolCall && strings.Contains(m.content, "read") {
+				hasReadCall = true
+			}
+			if m.kind == msgToolResult && strings.Contains(m.content, "package main") {
+				hasReadResult = true
+			}
+			if m.kind == msgToolCall && strings.Contains(m.content, "agent") {
+				hasAgentCall = true
+			}
+			if m.kind == msgToolResult && strings.Contains(m.content, "Sub-agent started") {
+				hasAgentResult = true
+			}
+		}
+		if !hasReadCall {
+			t.Error("expected read tool call to be present")
+		}
+		if !hasReadResult {
+			t.Error("expected read tool result to be present")
+		}
+		if hasAgentCall {
+			t.Error("background agent tool call should be suppressed")
+		}
+		if hasAgentResult {
+			t.Error("background agent tool result should be suppressed")
+		}
+
+		// Group marker should be present.
+		var hasGroup bool
+		for _, m := range msgs {
+			if m.kind == msgSubAgentGroup {
+				hasGroup = true
+			}
+		}
+		if !hasGroup {
+			t.Error("expected msgSubAgentGroup marker")
+		}
+	})
+
+	t.Run("old format background agent suppressed", func(t *testing.T) {
+		app := &App{width: 80}
+
+		nodes := []*types.Node{
+			{NodeType: types.NodeTypeUser, Content: "Check the code"},
+			{NodeType: types.NodeTypeToolCall, Content: `{"name":"agent","input":{"task":"Explore auth","mode":"explore","background":true}}`},
+			{NodeType: types.NodeTypeToolResult, Content: `[agent_id: abc] Sub-agent started.`},
+			{NodeType: types.NodeTypeToolCall, Content: `{"name":"read","input":{"path":"main.go"}}`},
+			{NodeType: types.NodeTypeToolResult, Content: `package main`},
+		}
+
+		msgs := app.rebuildChatMessages(nodes)
+
+		var hasAgentCall, hasAgentResult bool
+		var hasReadCall, hasReadResult bool
+		for _, m := range msgs {
+			if m.kind == msgToolCall && strings.Contains(m.content, "agent") {
+				hasAgentCall = true
+			}
+			if m.kind == msgToolResult && strings.Contains(m.content, "Sub-agent started") {
+				hasAgentResult = true
+			}
+			if m.kind == msgToolCall && strings.Contains(m.content, "read") {
+				hasReadCall = true
+			}
+			if m.kind == msgToolResult && strings.Contains(m.content, "package main") {
+				hasReadResult = true
+			}
+		}
+		if hasAgentCall {
+			t.Error("background agent tool call should be suppressed (old format)")
+		}
+		if hasAgentResult {
+			t.Error("background agent tool result should be suppressed (old format)")
+		}
+		if !hasReadCall {
+			t.Error("expected read tool call (old format)")
+		}
+		if !hasReadResult {
+			t.Error("expected read tool result (old format)")
+		}
+	})
+
+	t.Run("foreground agent NOT suppressed", func(t *testing.T) {
+		app := &App{width: 80}
+
+		assistantContent, _ := json.Marshal([]types.ContentBlock{
+			{Type: "tool_use", ID: "tc-fg", Name: "agent", Input: json.RawMessage(`{"task":"Implement feature","mode":"implement"}`)},
+		})
+		toolResultContent, _ := json.Marshal([]types.ContentBlock{
+			{Type: "tool_result", ToolUseID: "tc-fg", Content: "Agent completed."},
+		})
+
+		nodes := []*types.Node{
+			{NodeType: types.NodeTypeUser, Content: "Do it"},
+			{NodeType: types.NodeTypeAssistant, Content: string(assistantContent)},
+			{NodeType: types.NodeTypeUser, Content: string(toolResultContent)},
+		}
+
+		msgs := app.rebuildChatMessages(nodes)
+
+		var hasCall, hasResult bool
+		for _, m := range msgs {
+			if m.kind == msgToolCall {
+				hasCall = true
+			}
+			if m.kind == msgToolResult {
+				hasResult = true
+			}
+		}
+		if !hasCall {
+			t.Error("foreground agent tool call should NOT be suppressed")
+		}
+		if !hasResult {
+			t.Error("foreground agent tool result should NOT be suppressed")
+		}
+	})
 }
 
 func TestIntegrationAnchoredGroupWithFrozenTimers(t *testing.T) {

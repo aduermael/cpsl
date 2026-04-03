@@ -387,8 +387,8 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		if a.traceCollector != nil {
 			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
 		}
-		// Suppress internal tool calls (agent status checks, sleep waits) from the UI.
-		if isAgentStatusCheck(event.ToolName, event.ToolInput) || isSleepWaitCommand(event.ToolName, event.ToolInput) {
+		// Suppress internal tool calls (agent status checks, sleep waits, background agent spawns) from the UI.
+		if isAgentStatusCheck(event.ToolName, event.ToolInput) || isSleepWaitCommand(event.ToolName, event.ToolInput) || isBackgroundAgentCall(event.ToolName, event.ToolInput) {
 			if a.suppressedToolIDs == nil {
 				a.suppressedToolIDs = make(map[string]bool)
 			}
