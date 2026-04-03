@@ -499,6 +499,7 @@ type subAgentDisplay struct {
 	inputTokens  int       // total input tokens consumed
 	outputTokens int       // total output tokens consumed
 	failed       bool      // true if the sub-agent failed
+	replacedBy   string    // ID of the retry agent that supersedes this one (empty if not replaced)
 }
 
 // toolGroupOverflowThreshold is the entry count above which tool groups collapse middle entries.
@@ -532,8 +533,12 @@ func (a *App) subAgentDisplayLines() []string {
 	}
 
 	// Collect all visible agents (active + recently completed within the group).
+	// Skip agents that have been replaced by a retry.
 	var visible []*subAgentDisplay
 	for _, sa := range a.subAgents {
+		if sa.replacedBy != "" {
+			continue
+		}
 		visible = append(visible, sa)
 	}
 	if len(visible) == 0 {

@@ -127,6 +127,10 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 				"background": {
 					"type": "boolean",
 					"description": "If true, the sub-agent runs in the background and returns immediately. You will be notified when it completes."
+				},
+				"retry_of": {
+					"type": "string",
+					"description": "Optional: ID of a previously failed sub-agent. The failed entry is replaced in the display by this new agent. Use when retrying a task that a previous agent failed."
 				}
 			},
 			"required": ["task"]
@@ -145,6 +149,7 @@ type subAgentInput struct {
 	Mode       string `json:"mode"`
 	AgentID    string `json:"agent_id,omitempty"`
 	Background bool   `json:"background,omitempty"`
+	RetryOf    string `json:"retry_of,omitempty"`
 }
 
 // forwardBlockingTimeout is the maximum time forwardBlocking will wait for the
@@ -427,7 +432,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	subTC.SetMainAgentID(agentID)
 
 	// Notify the TUI that a sub-agent is starting, with its task label and mode.
-	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode})
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode, RetryOf: in.RetryOf})
 
 	// Run the sub-agent in a goroutine and drain events.
 	done := make(chan struct{})
@@ -645,11 +650,11 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	t.bgAgents[agentID] = state
 	t.mu.Unlock()
 
-	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode})
+	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode, RetryOf: in.RetryOf})
 
 	go t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
 
-	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes. Do not narrate progress — the user sees live sub-agent status in the UI. Move on to your next action or stop.", agentID, in.Task), nil
+	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes. Do not narrate progress — the user sees live sub-agent status in the UI. Move on to your next action or stop. If an agent fails, you can retry by spawning a new agent with retry_of set to the failed agent's ID.", agentID, in.Task), nil
 }
 
 // runBackground runs a background sub-agent to completion, draining events

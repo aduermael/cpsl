@@ -185,8 +185,9 @@ type AgentEvent struct {
 	NodeID string // assistant node ID
 
 	// EventSubAgentStart
-	Task string // sub-agent task description
-	Mode string // sub-agent mode ("explore" or "implement")
+	Task    string // sub-agent task description
+	Mode    string // sub-agent mode ("explore" or "implement")
+	RetryOf string // ID of the failed agent being retried (empty for new agents)
 
 	// EventSubAgentStatus (done)
 	SubTrace *TraceSubAgent // nested trace for the sub-agent

@@ -551,6 +551,15 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		sa.task = truncateTaskLabel(event.Task)
 		sa.mode = event.Mode
 		sa.startTime = time.Now()
+		// If this is a retry, mark the old agent as replaced and inherit its task label.
+		if event.RetryOf != "" {
+			if old, ok := a.subAgents[event.RetryOf]; ok {
+				old.replacedBy = event.AgentID
+				if sa.task == "" {
+					sa.task = old.task
+				}
+			}
+		}
 		// Insert a positional anchor for the sub-agent display group in the
 		// message flow so that it renders between pre-spawn and post-spawn text.
 		if !a.subAgentGroupInserted {

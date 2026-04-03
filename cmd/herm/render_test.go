@@ -3388,6 +3388,88 @@ func TestSessionRestoreSuppressesBackgroundAgentToolMessages(t *testing.T) {
 	})
 }
 
+func TestRetryReplacesFailedAgent(t *testing.T) {
+	// 10f: Verify that subAgentDisplayLines hides replaced agents.
+	now := time.Now()
+	app := &App{width: 80}
+	app.subAgents = map[string]*subAgentDisplay{
+		"old-agent": {
+			task:        "Check auth module",
+			mode:        "explore",
+			done:        true,
+			failed:      true,
+			startTime:   now.Add(-30 * time.Second),
+			completedAt: now.Add(-10 * time.Second),
+			replacedBy:  "new-agent",
+		},
+		"new-agent": {
+			task:      "Check auth module",
+			mode:      "explore",
+			done:      false,
+			startTime: now.Add(-5 * time.Second),
+		},
+	}
+
+	lines := app.subAgentDisplayLines()
+	joined := strings.Join(lines, "\n")
+
+	// The failed agent should be hidden (replaced).
+	if strings.Contains(joined, "✗") {
+		t.Error("replaced failed agent should not appear in display lines")
+	}
+	// The retry agent should appear as running (spinner).
+	if !strings.Contains(joined, "Check auth module") {
+		t.Error("retry agent should appear in display lines")
+	}
+}
+
+func TestRetryEventSetsReplacedBy(t *testing.T) {
+	// 10g: Verify EventSubAgentStart with RetryOf marks old agent and inherits task.
+	now := time.Now()
+	app := &App{headless: true, width: 80}
+	app.subAgents = map[string]*subAgentDisplay{
+		"old-id": {
+			task:        "Analyze config",
+			mode:        "explore",
+			done:        true,
+			failed:      true,
+			startTime:   now.Add(-60 * time.Second),
+			completedAt: now.Add(-30 * time.Second),
+		},
+	}
+
+	// Simulate EventSubAgentStart with RetryOf.
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventSubAgentStart,
+		AgentID: "new-id",
+		Task:    "", // empty task — should inherit from old agent
+		Mode:    "explore",
+		RetryOf: "old-id",
+	})
+
+	// The old agent should have replacedBy set.
+	old := app.subAgents["old-id"]
+	if old.replacedBy != "new-id" {
+		t.Errorf("old agent replacedBy = %q, want %q", old.replacedBy, "new-id")
+	}
+
+	// The new agent should exist with inherited task.
+	newAgent, ok := app.subAgents["new-id"]
+	if !ok {
+		t.Fatal("expected new agent to be created")
+	}
+	if newAgent.task != "Analyze config" {
+		t.Errorf("new agent task = %q, want %q (inherited from old)", newAgent.task, "Analyze config")
+	}
+
+	// Verify display shows only the retry, not the failed agent.
+	lines := app.subAgentDisplayLines()
+	joined := strings.Join(lines, "\n")
+	if strings.Contains(joined, "✗") {
+		t.Error("replaced failed agent should not appear in display")
+	}
+}
+
 func TestIntegrationAnchoredGroupWithFrozenTimers(t *testing.T) {
 	// 8a: End-to-end integration test exercising anchored sub-agent group display
 	// with frozen timers. Simulates: pre-spawn text → sub-agent group → agents
