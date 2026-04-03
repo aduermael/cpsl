@@ -555,18 +555,6 @@ func (a *App) subAgentDisplayLines() []string {
 		return cmp.Compare(a.startTime.UnixNano(), b.startTime.UnixNano())
 	})
 
-	// Check if any agent is still active — if all done, don't show the group.
-	allDone := true
-	for _, sa := range visible {
-		if !sa.done {
-			allDone = false
-			break
-		}
-	}
-	if allDone {
-		return nil
-	}
-
 	// Group by mode.
 	groups := make(map[string][]*subAgentDisplay)
 	for _, sa := range visible {
@@ -607,14 +595,23 @@ func (a *App) subAgentDisplayLines() []string {
 			}
 		}
 
-		// Header line.
+		// Header line: "Running N Explore agents…" while active,
+		// "N Explore agents" when all done.
 		modeLabel := strings.ToUpper(mode[:1]) + mode[1:]
 		total := len(agents)
 		var header string
-		if total == 1 {
-			header = fmt.Sprintf("\033[2;3mRunning %s agent…\033[0m", modeLabel)
+		if activeCount > 0 {
+			if total == 1 {
+				header = fmt.Sprintf("\033[2;3mRunning %s agent…\033[0m", modeLabel)
+			} else {
+				header = fmt.Sprintf("\033[2;3mRunning %d %s agents…\033[0m", total, modeLabel)
+			}
 		} else {
-			header = fmt.Sprintf("\033[2;3mRunning %d %s agents…\033[0m", total, modeLabel)
+			if total == 1 {
+				header = fmt.Sprintf("\033[2;3m%s agent\033[0m", modeLabel)
+			} else {
+				header = fmt.Sprintf("\033[2;3m%d %s agents\033[0m", total, modeLabel)
+			}
 		}
 		out = append(out, header)
 

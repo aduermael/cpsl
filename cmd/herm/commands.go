@@ -65,6 +65,7 @@ func (a *App) handleCommand(input string) {
 		a.agentElapsed = 0
 		a.shownInitialModel = false
 		a.lastModelID = ""
+		a.subAgents = nil
 		// Finalize old trace and create a new one for the new conversation.
 		if a.traceCollector != nil {
 			a.traceCollector.Finalize()

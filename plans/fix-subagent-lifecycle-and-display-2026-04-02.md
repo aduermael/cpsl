@@ -45,8 +45,8 @@ Two changes: stop deleting completed sub-agents from the display map on `EventDo
 
 **Display lifecycle after fix:** sub-agents appear when started (spinner), update while running (tool count, elapsed time), and persist when done (checkmark or cross with final metrics). They remain visible until the user's *next* message triggers a new agent turn — at which point stale entries from the previous turn can be cleared.
 
-- [ ] 2a: Remove the cleanup loop in `EventDone` handler (`agentui.go:518-523`) that deletes completed sub-agents from `a.subAgents`. Instead, move the cleanup to `startAgent()` — clear all sub-agent entries at the beginning of a new agent turn, so previous turn's agents are shown until a new prompt is submitted
-- [ ] 2b: Remove the `allDone` early-return in `subAgentDisplayLines()` (`render.go:558-568`). When all agents are done, the display should still show them (with checkmarks/crosses). Update the header text: if all agents in a group are done, change "Running N Explore agents..." to "N Explore agents" (no "Running", no ellipsis)
+- [x] 2a: Remove the cleanup loop in `EventDone` handler that deletes completed sub-agents from `a.subAgents`. Sub-agents persist in the display across turns; cleared only on `/clear`
+- [x] 2b: Remove the `allDone` early-return in `subAgentDisplayLines()`. When all agents are done, the display still shows them (with checkmarks/crosses). Header changes from "Running N Explore agents…" to "N Explore agents" when all done
 - [ ] 2c: Update existing tests: `TestSubAgentGroupedDisplay/"all done returns nil"` must be changed to expect output instead of nil. Add a new test verifying that completed agents persist across renders until a new turn starts
 
 ## Phase 3: Continue draining sub-agent events after main agent stops

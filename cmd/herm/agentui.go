@@ -515,12 +515,8 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		if event.NodeID != "" {
 			a.agentNodeID = event.NodeID
 		}
-		// Clean up completed sub-agent display entries.
-		for id, sa := range a.subAgents {
-			if sa.done {
-				delete(a.subAgents, id)
-			}
-		}
+		// Don't delete completed sub-agents here — they persist in the
+		// display until the next agent turn starts (cleared in startAgent).
 		if a.streamingText != "" {
 			a.messages = append(a.messages, chatMessage{
 				kind:      msgAssistant,
