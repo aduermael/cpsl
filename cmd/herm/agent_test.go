@@ -2184,6 +2184,70 @@ func TestDoneChIdempotent(t *testing.T) {
 	}
 }
 
+func TestDoneChBackupFinalizesAgentTurn(t *testing.T) {
+	// When EventDone is dropped (1-slot buffer, pre-filled), the doneCh backup
+	// path in drainAgentEvents must fully finalize the agent turn: stop the
+	// ticker, commit streaming text, freeze elapsed time, and set agentRunning
+	// to false — the same outcome as receiving EventDone directly.
+	client := newTestClient("hello")
+	agent := &Agent{
+		id:                 generateAgentID(),
+		client:             client,
+		tools:              make(map[string]Tool),
+		streamChunkTimeout: defaultStreamChunkTimeout,
+		events:             make(chan AgentEvent, 1),
+		approval:           make(chan ApprovalResponse, 1),
+		doneCh:             make(chan struct{}),
+	}
+
+	// Fill the events channel so EventDone will be dropped.
+	// Use EventToolCallDone (a no-op in handleAgentEvent) to avoid modifying streamingText.
+	agent.events <- AgentEvent{Type: EventToolCallDone}
+
+	// Close doneCh to simulate agent completion with dropped EventDone.
+	agent.doneOnce.Do(func() { close(agent.doneCh) })
+
+	app := &App{
+		headless:       true,
+		width:          80,
+		agent:          agent,
+		agentRunning:   true,
+		agentStartTime: time.Now().Add(-2 * time.Second),
+		streamingText:  "uncommitted text",
+		needsTextSep:   true,
+		resultCh:       make(chan any, 10),
+	}
+	app.agentTicker = time.NewTicker(50 * time.Millisecond)
+
+	// drainAgentEvents should detect doneCh, drain the filler event, then
+	// call finalizeAgentTurn("") which performs the full state transition.
+	app.drainAgentEvents()
+
+	if app.agentRunning {
+		t.Error("agentRunning should be false after doneCh backup path")
+	}
+	if app.agentTicker != nil {
+		t.Error("agentTicker should be nil (no active sub-agents)")
+	}
+	if app.streamingText != "" {
+		t.Errorf("streamingText should be empty (committed), got %q", app.streamingText)
+	}
+	if app.agentElapsed == 0 {
+		t.Error("agentElapsed should be non-zero (frozen at completion)")
+	}
+	// Verify the streaming text was committed as a message.
+	found := false
+	for _, m := range app.messages {
+		if m.kind == msgAssistant && m.content == "uncommitted text" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Error("streaming text should have been committed as an assistant message")
+	}
+}
+
 // --- Phase 3: Stream retry tests ---
 
 // streamFailThenSucceedProvider sends partial chunks then a StreamEventError

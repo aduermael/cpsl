@@ -299,6 +299,52 @@ func (a *App) hasActiveSubAgents() bool {
 	return false
 }
 
+// finalizeAgentTurn performs all state transitions needed when the agent finishes
+// a turn. Called by both the EventDone handler (with the event's nodeID) and the
+// doneCh backup path (with empty nodeID, since EventDone was dropped).
+func (a *App) finalizeAgentTurn(nodeID string) {
+	if !a.agentRunning {
+		return // already finalized
+	}
+	a.agentRunning = false
+	a.cancelSent = false
+	a.traceUsageSeen = false
+	// Keep the ticker running if sub-agents are still active so their
+	// spinners and elapsed times keep updating.
+	if a.agentTicker != nil && !a.hasActiveSubAgents() {
+		a.agentTicker.Stop()
+		a.agentTicker = nil
+	}
+	a.agentElapsed = a.agentElapsedTime()
+	a.agentDisplayInTok = float64(a.mainAgentInputTokens)
+	a.agentDisplayOutTok = float64(a.mainAgentOutputTokens)
+	if nodeID != "" {
+		a.agentNodeID = nodeID
+	}
+	// Don't delete completed sub-agents here — they persist in the
+	// display until the next agent turn starts (cleared in startAgent).
+	if a.streamingText != "" {
+		a.messages = append(a.messages, chatMessage{
+			kind:      msgAssistant,
+			content:   a.streamingText,
+			leadBlank: a.needsTextSep,
+		})
+		a.streamingText = ""
+	}
+	if a.traceCollector != nil {
+		agentID := ""
+		if a.agent != nil {
+			agentID = a.agent.ID()
+		}
+		a.traceCollector.FinalizeTurn(agentID)
+		a.traceCollector.Finalize()
+		if err := a.traceCollector.FlushToFile(a.traceFilePath); err != nil {
+			fmt.Fprintf(os.Stderr, "debug: failed to write trace: %v\n", err)
+		}
+	}
+	a.render()
+}
+
 func (a *App) drainAgentEvents() {
 	if a.agent == nil || (!a.agentRunning && !a.hasActiveSubAgents()) {
 		return
@@ -321,19 +367,17 @@ func (a *App) drainAgentEvents() {
 			select {
 			case <-a.agent.DoneCh():
 				// Agent is done. Drain any final events that arrived between
-				// the default case above and now, then mark as not running.
+				// the default case above and now, then finalize the turn.
 				for {
 					select {
 					case event, ok := <-a.agent.Events():
 						if !ok {
-							a.agentRunning = false
-							a.cancelSent = false
+							a.finalizeAgentTurn("")
 							return
 						}
 						a.handleAgentEvent(event)
 					default:
-						a.agentRunning = false
-						a.cancelSent = false
+						a.finalizeAgentTurn("")
 						return
 					}
 				}
@@ -512,39 +556,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 
 	case EventDone:
 		debugLog("done: nodeID=%s streamingLen=%d", event.NodeID, len(a.streamingText))
-		a.agentRunning = false
-		a.cancelSent = false
-		a.traceUsageSeen = false
-		// Keep the ticker running if sub-agents are still active so their
-		// spinners and elapsed times keep updating.
-		if a.agentTicker != nil && !a.hasActiveSubAgents() {
-			a.agentTicker.Stop()
-			a.agentTicker = nil
-		}
-		a.agentElapsed = a.agentElapsedTime()
-		a.agentDisplayInTok = float64(a.mainAgentInputTokens)
-		a.agentDisplayOutTok = float64(a.mainAgentOutputTokens)
-		if event.NodeID != "" {
-			a.agentNodeID = event.NodeID
-		}
-		// Don't delete completed sub-agents here — they persist in the
-		// display until the next agent turn starts (cleared in startAgent).
-		if a.streamingText != "" {
-			a.messages = append(a.messages, chatMessage{
-				kind:      msgAssistant,
-				content:   a.streamingText,
-				leadBlank: a.needsTextSep,
-			})
-			a.streamingText = ""
-		}
-		if a.traceCollector != nil {
-			a.traceCollector.FinalizeTurn(event.AgentID)
-			a.traceCollector.Finalize()
-			if err := a.traceCollector.FlushToFile(a.traceFilePath); err != nil {
-				fmt.Fprintf(os.Stderr, "debug: failed to write trace: %v\n", err)
-			}
-		}
-		a.render()
+		a.finalizeAgentTurn(event.NodeID)
 
 	case EventSubAgentStart:
 		sa := a.getOrCreateSubAgent(event.AgentID)
