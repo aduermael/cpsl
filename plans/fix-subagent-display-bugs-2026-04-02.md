@@ -102,3 +102,38 @@ Also update the tool definition: remove `"mode"` from the `required` array (sinc
 
 - [x] 8a: Add test for anchored sub-agent group: simulate a full event sequence (assistant text → tool calls spawning agents → EventSubAgentStart → more assistant text → EventSubAgentStatus done), verify that `buildBlockRows()` produces rows in correct chronological order: pre-spawn text, sub-agent group, post-spawn text
 - [x] 8b: Add test for explore prompt: build a sub-agent system prompt in explore mode, verify it contains progressive-depth guidance keywords ("outline", "offset/limit", "don't read entire")
+
+---
+
+## Phase 9: Suppress background agent tool call/result display
+
+**Problem:** When the main agent spawns background sub-agents, the TUI displays `~ agent` tool call boxes and `~ result` boxes for each spawn. These are redundant noise — the sub-agent group display already shows all active/completed agents with richer information (task, status, timer, tokens). The session restore path (`tree.go:236,266`) already skips these for background agents, but the live event path does not.
+
+**Fix:** In the `EventToolCallStart` handler (`agentui.go:391`), add `isBackgroundAgentInput()` to the existing suppression check alongside `isAgentStatusCheck()` and `isSleepWaitCommand()`. This uses the existing `suppressedToolIDs` mechanism — the tool ID is tracked so the matching `EventToolResult` is also suppressed automatically. The `isBackgroundAgentInput()` helper already exists in `tree.go:596`.
+
+**Note:** Only suppress when `toolName == "agent"` AND input has `background: true`. Foreground agent tool calls (`background: false` or absent) should still show `~ agent` since they block the main agent and have no group display.
+
+- [ ] 9a: In `EventToolCallStart` handler (`agentui.go:391`), add `isBackgroundAgentCall(event.ToolName, event.ToolInput)` to the suppression condition. Write a small helper `isBackgroundAgentCall(toolName string, input json.RawMessage) bool` that returns `toolName == "agent" && isBackgroundAgentInput(input)`. This keeps the suppression line readable. Both the `~ agent` tool call and the matching `~ result` will be suppressed via the existing `suppressedToolIDs` mechanism
+- [ ] 9b: Add test: simulate `EventToolCallStart` with `toolName="agent"` and `input={"task":"test","mode":"explore","background":true}`, followed by `EventToolResult` for the same tool ID. Verify neither produces a `msgToolCall` or `msgToolResult` in `a.messages`. Also verify that a foreground agent call (`background` absent) still produces the tool call message
+- [ ] 9c: Add test for session restore consistency: verify that `rebuildChatMessages()` also does not produce `msgToolCall` / `msgToolResult` for background agent tool_use blocks (this should already pass since `tree.go` already handles it, but the test documents the invariant)
+
+## Phase 10: Visual retry of failed sub-agents
+
+**Problem:** When a sub-agent fails (✗), the main agent may retry the task by spawning a new sub-agent. Currently this creates a separate display entry — the failed agent stays as ✗ and the retry appears as a new spinner. This is confusing: the user sees both the failure and the retry as unrelated entries.
+
+**Root cause:** There is no link between a failed agent and its retry. The main agent calls the tool with a new task string, producing a fresh `agentID`. The `subAgentDisplay` struct has no concept of "retrying" or "replaced by".
+
+**Fix:** Add a `retry_of` field to the agent tool input schema. When the main agent wants to retry a failed task, it passes `retry_of: "<failed_agent_id>"`. The system then:
+1. Marks the old `subAgentDisplay` entry as replaced (hidden from the group — the retry supersedes it)
+2. Copies the original task label to the new entry (preserving display continuity)
+3. The new agent shows as a spinner in the same position the failed one occupied
+
+This is a prompt+schema+display change. The LLM must be told to use `retry_of` when retrying a failed task — the tool result for failures already contains the agent_id.
+
+- [ ] 10a: Add `RetryOf string` field to `subAgentInput` struct (`subagent.go:143`). Add `"retry_of"` to the tool definition schema with description: `"Optional: ID of a previously failed sub-agent. The failed entry is replaced in the display by this new agent. Use when retrying a task that a previous agent failed."`
+- [ ] 10b: Add `replacedBy string` field to `subAgentDisplay` struct (`render.go:491`). In `EventSubAgentStart` handler (`agentui.go:549`), when the event has a `RetryOf` agent ID: (1) look up the old `subAgentDisplay`, set `replacedBy = newAgentID`, (2) copy the old agent's task label to the new entry if the new task is empty or similar
+- [ ] 10c: In `subAgentDisplayLines()` (`render.go:529`), skip agents where `replacedBy != ""` — they've been superseded. This removes the ✗ entry and the spinner for the retry takes its place
+- [ ] 10d: In `Execute()` / `executeBackground()` (`subagent.go`), pass `in.RetryOf` through the `EventSubAgentStart` event. Add `RetryOf string` to `AgentEvent` struct
+- [ ] 10e: Update the suppression guidance in `executeBackground()` tool result string to also mention: `"If an agent fails, you can retry by spawning a new agent with retry_of set to the failed agent's ID."`
+- [ ] 10f: Add test: create two sub-agent displays — one failed with ID "old", one running with `replacedBy=""` and the old one with `replacedBy="new"`. Call `subAgentDisplayLines()` and verify the failed agent is hidden and only the retry is shown
+- [ ] 10g: Add test: simulate `EventSubAgentStart` with `RetryOf="old-id"` where "old-id" exists in `subAgents` as a failed agent. Verify the old entry gets `replacedBy` set and the new entry inherits the task label
