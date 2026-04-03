@@ -2748,3 +2748,118 @@ func TestDisplayPolishIntegration(t *testing.T) {
 		prevBlank = blank
 	}
 }
+
+func TestHasActiveSubAgents(t *testing.T) {
+	t.Run("no sub-agents", func(t *testing.T) {
+		app := &App{headless: true}
+		if app.hasActiveSubAgents() {
+			t.Error("expected false with no sub-agents")
+		}
+	})
+
+	t.Run("all done", func(t *testing.T) {
+		app := &App{headless: true}
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {done: true},
+			"a2": {done: true},
+		}
+		if app.hasActiveSubAgents() {
+			t.Error("expected false when all sub-agents are done")
+		}
+	})
+
+	t.Run("one still running", func(t *testing.T) {
+		app := &App{headless: true}
+		app.subAgents = map[string]*subAgentDisplay{
+			"a1": {done: true},
+			"a2": {done: false},
+		}
+		if !app.hasActiveSubAgents() {
+			t.Error("expected true when one sub-agent is still running")
+		}
+	})
+}
+
+func TestSubAgentEventsProcessedAfterMainDone(t *testing.T) {
+	app := &App{headless: true, width: 80}
+
+	// Start a sub-agent.
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStart, AgentID: "bg1", Task: "background task", Mode: "explore",
+	})
+
+	// Main agent is done.
+	app.agentRunning = true
+	app.handleAgentEvent(AgentEvent{Type: EventDone, NodeID: "node-1"})
+
+	if app.agentRunning {
+		t.Fatal("agentRunning should be false after EventDone")
+	}
+
+	// Sub-agent is still active.
+	if !app.hasActiveSubAgents() {
+		t.Fatal("sub-agent should still be active")
+	}
+
+	// Ticker should still be alive since sub-agent is active.
+	// (In production the ticker is created by startAgent, but we can check
+	// the condition would keep it: agentTicker is nil here because we didn't
+	// call startAgent, which is fine — we just test the logic path.)
+
+	// Process sub-agent status events after main agent done.
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStatus, AgentID: "bg1", Text: "tool: grep",
+	})
+	sa := app.subAgents["bg1"]
+	if sa.toolCount != 1 {
+		t.Errorf("toolCount = %d, want 1 — events should still be processed after main done", sa.toolCount)
+	}
+
+	// Complete the sub-agent.
+	app.handleAgentEvent(AgentEvent{
+		Type:    EventSubAgentStatus,
+		AgentID: "bg1",
+		Text:    "done",
+		Usage:   &types.Usage{InputTokens: 100, OutputTokens: 50},
+	})
+
+	if app.hasActiveSubAgents() {
+		t.Error("no active sub-agents should remain after completion")
+	}
+	if !sa.done {
+		t.Error("sub-agent should be marked done")
+	}
+}
+
+func TestTickerKeptAliveForActiveSubAgents(t *testing.T) {
+	app := &App{headless: true, width: 80, resultCh: make(chan any, 10)}
+
+	// Create a ticker like startAgent would.
+	app.agentRunning = true
+	app.agentTicker = time.NewTicker(50 * time.Millisecond)
+	defer func() {
+		if app.agentTicker != nil {
+			app.agentTicker.Stop()
+		}
+	}()
+
+	// Start a sub-agent.
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStart, AgentID: "bg1", Task: "work", Mode: "explore",
+	})
+
+	// Main agent done — ticker should survive because sub-agent is active.
+	app.handleAgentEvent(AgentEvent{Type: EventDone, NodeID: "node-1"})
+	if app.agentTicker == nil {
+		t.Fatal("ticker should not be stopped while sub-agents are active")
+	}
+
+	// Complete the sub-agent — ticker should now stop.
+	app.handleAgentEvent(AgentEvent{
+		Type: EventSubAgentStatus, AgentID: "bg1", Text: "done",
+		Usage: &types.Usage{InputTokens: 100, OutputTokens: 50},
+	})
+	if app.agentTicker != nil {
+		t.Error("ticker should be stopped after last sub-agent completes")
+	}
+}

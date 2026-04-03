@@ -63,7 +63,7 @@ Also, the `agentTicker` is stopped on `EventDone`, which means the 50ms render c
 - [x] 3b: Modify `drainAgentEvents()` to also drain when `hasActiveSubAgents()` returns true, even if `agentRunning` is false
 - [x] 3c: In the main event loop's `else` branch, add `agent.Events()` to the select when `hasActiveSubAgents()` is true. Applied same fix to headless loop
 - [x] 3d: In `EventDone`, don't stop `agentTicker` if `hasActiveSubAgents()`. Stop it when the last sub-agent completes in `EventSubAgentStatus` handler
-- [ ] 3e: Add tests: verify that sub-agent status events are processed after the main agent emits `EventDone`; verify spinner/elapsed time continues updating for active sub-agents
+- [x] 3e: Add tests: verify sub-agent events processed after main EventDone; verify ticker kept alive for active sub-agents and stopped on last completion
 
 ## Phase 4: Integration test — full background lifecycle
 
