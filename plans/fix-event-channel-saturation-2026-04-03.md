@@ -43,8 +43,8 @@ The `doneCh` backup in `drainAgentEvents()` currently only sets `agentRunning = 
 
 **Risk:** A blocked `emit()` delays `Run()` return and `close(a.events)`. This is acceptable — 5 seconds is bounded, and the alternative (dropped EventDone) is worse. The TUI's drain loop processes ~50 events per 50ms tick = 1000 events/second, so a 5-second window drains ~5000 events — more than enough to clear the 4096 buffer.
 
-- [ ] 2a: In `emit()` (`agent.go:620`), replace the unconditional non-blocking send with: if `e.Type == EventDone`, use `select { case a.events <- e: default: select { case a.events <- e: case <-time.After(5 * time.Second): debugLog(...) } }`. For all other event types, keep the existing non-blocking send. Extract `5 * time.Second` as a named constant `eventDoneDeliveryTimeout`
-- [ ] 2b: Add test: create an `Agent` with a small events buffer, fill it completely, emit `EventDone`. Verify the emit blocks briefly while a concurrent goroutine drains events, then `EventDone` is successfully delivered. Verify `doneCh` also closes
+- [x] 2a: In `emit()` (`agent.go:620`), replace the unconditional non-blocking send with: if `e.Type == EventDone`, use `select { case a.events <- e: default: select { case a.events <- e: case <-time.After(5 * time.Second): debugLog(...) } }`. For all other event types, keep the existing non-blocking send. Extract `5 * time.Second` as a named constant `eventDoneDeliveryTimeout`
+- [x] 2b: Add test: create an `Agent` with a small events buffer, fill it completely, emit `EventDone`. Verify the emit blocks briefly while a concurrent goroutine drains events, then `EventDone` is successfully delivered. Verify `doneCh` also closes
 
 ## Phase 3: Increase `forwardBlocking` timeout for "done" events
 

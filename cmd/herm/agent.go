@@ -617,19 +617,37 @@ func (a *Agent) ID() string {
 	return a.id
 }
 
+// eventDoneDeliveryTimeout is the maximum time emit() will block trying to
+// deliver EventDone before falling back to the doneCh backup signal.
+const eventDoneDeliveryTimeout = 5 * time.Second
+
 func (a *Agent) emit(e AgentEvent) {
 	e.AgentID = a.id
-	select {
-	case a.events <- e:
-	default:
-		// Channel full — drop the event to prevent deadlock.
-		debugLog("event dropped: channel full (type=%d)", e.Type)
-	}
-	// Close doneCh as a backup signal for EventDone. The regular channel
-	// send above is non-blocking and may drop — doneCh ensures the TUI
-	// always learns the agent has finished.
 	if e.Type == EventDone {
+		// Critical lifecycle event — try harder to deliver it through the
+		// channel so the TUI gets the nodeID and full state transition.
+		select {
+		case a.events <- e:
+		default:
+			// Channel full on first try. Block with a timeout to give the
+			// TUI time to drain buffered events.
+			select {
+			case a.events <- e:
+			case <-time.After(eventDoneDeliveryTimeout):
+				debugLog("EventDone delivery timed out after %v", eventDoneDeliveryTimeout)
+			}
+		}
+		// Close doneCh as a last-resort backup signal. Even if the channel
+		// send above succeeded, doneCh is harmless and ensures the TUI
+		// always learns the agent has finished.
 		a.doneOnce.Do(func() { close(a.doneCh) })
+	} else {
+		select {
+		case a.events <- e:
+		default:
+			// Channel full — drop non-critical event to prevent deadlock.
+			debugLog("event dropped: channel full (type=%d)", e.Type)
+		}
 	}
 }
 

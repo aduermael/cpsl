@@ -2157,13 +2157,14 @@ func TestDoneChClosedUnderBackpressure(t *testing.T) {
 	// Fill the events channel so EventDone will be dropped.
 	agent.events <- AgentEvent{Type: EventTextDelta, Text: "filler"}
 
-	// Emit EventDone — it will be dropped from events but doneCh should close.
-	agent.emit(AgentEvent{Type: EventDone})
+	// Emit EventDone in a goroutine — it now blocks for eventDoneDeliveryTimeout
+	// before giving up, but doneCh should still close.
+	go agent.emit(AgentEvent{Type: EventDone})
 
 	select {
 	case <-agent.DoneCh():
 		// OK — doneCh closed despite EventDone being dropped.
-	case <-time.After(2 * time.Second):
+	case <-time.After(eventDoneDeliveryTimeout + 2*time.Second):
 		t.Fatal("doneCh was not closed when EventDone was dropped due to backpressure")
 	}
 }
@@ -2245,6 +2246,70 @@ func TestDoneChBackupFinalizesAgentTurn(t *testing.T) {
 	}
 	if !found {
 		t.Error("streaming text should have been committed as an assistant message")
+	}
+}
+
+func TestEventDoneBlockingDelivery(t *testing.T) {
+	// With a full events channel, emit(EventDone) should block while a
+	// concurrent goroutine drains events, then successfully deliver EventDone.
+	client := newTestClient("hello")
+	agent := &Agent{
+		id:                 generateAgentID(),
+		client:             client,
+		tools:              make(map[string]Tool),
+		streamChunkTimeout: defaultStreamChunkTimeout,
+		events:             make(chan AgentEvent, 2),
+		approval:           make(chan ApprovalResponse, 1),
+		doneCh:             make(chan struct{}),
+	}
+
+	// Fill the buffer completely.
+	agent.events <- AgentEvent{Type: EventToolCallDone}
+	agent.events <- AgentEvent{Type: EventToolCallDone}
+
+	// Start draining after a short delay so emit has to block briefly.
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		<-agent.events // free one slot
+	}()
+
+	// emit should block briefly, then deliver EventDone.
+	done := make(chan struct{})
+	go func() {
+		agent.emit(AgentEvent{Type: EventDone})
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// emit returned — EventDone was delivered or timed out.
+	case <-time.After(3 * time.Second):
+		t.Fatal("emit(EventDone) blocked for too long")
+	}
+
+	// Drain remaining events and verify EventDone is in the channel.
+	var foundDone bool
+	for {
+		select {
+		case ev := <-agent.events:
+			if ev.Type == EventDone {
+				foundDone = true
+			}
+		default:
+			goto check
+		}
+	}
+check:
+	if !foundDone {
+		t.Error("EventDone should have been delivered to the events channel")
+	}
+
+	// doneCh should also be closed.
+	select {
+	case <-agent.DoneCh():
+		// OK
+	default:
+		t.Error("doneCh should be closed after EventDone emit")
 	}
 }
 
