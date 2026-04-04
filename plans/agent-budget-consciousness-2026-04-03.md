@@ -125,14 +125,36 @@ The main agent's `systemPromptWithStats()` currently shows "Session: X tokens us
 - [ ] 4c: Add graduated warnings for the main agent too (not just at 30%): at 50% remaining iterations show "past halfway", at 25% show a stronger signal. Reuse the same tier logic from Phase 1
 - [ ] 4d: Tests: verify context window % and cost appear in stats; verify graduated warnings at each threshold
 
-## Phase 5: Integration tests — budget-aware sub-agent lifecycle
+## Phase 5: Centralize budget constants — single source of truth
+
+Budget-related values are scattered across Go code, prompt templates, and tool description files. The default turn count (20) is hardcoded in `prompts/role.md`, `prompts/tools/agent.md`, and `prompts/role_subagent.md`. The config editor uses a different fallback (15) than `subagent.go` (20). Tests assert literal strings like `"20 turns per sub-agent"` that break if the constant changes.
+
+**Goal:** Every budget number is defined once in Go constants, flows into templates and tool descriptions via data fields or placeholders, and tests derive expectations from those same constants.
+
+**Key constants (already in code):**
+- `defaultSubAgentMaxTurns = 20` (`subagent.go:21`)
+- `turnBudgetMidThreshold = 0.50`, `turnBudgetLateThreshold = 0.75`, `turnBudgetFinalThreshold = 0.90` (`agent.go:738-742`)
+
+**What needs to change:**
+1. Prompt templates (`role.md`, `role_subagent.md`) are Go templates — add `DefaultSubAgentMaxTurns` to `PromptData` and use `{{.DefaultSubAgentMaxTurns}}` instead of hardcoded "20".
+2. Tool description `agent.md` uses `__PLACEHOLDER__` substitution — add `__DEFAULT_MAX_TURNS__` and replace it in `loadToolDescriptions()`.
+3. Config editor fallbacks (lines 258, 304) should reference `defaultSubAgentMaxTurns` instead of literal `15`.
+4. Tests should build expected strings from the constants, not assert literal numbers.
+
+- [ ] 5a: Add `DefaultSubAgentMaxTurns int` field to `PromptData` struct. Populate it from `defaultSubAgentMaxTurns` in both `buildSystemPrompt()` and `buildSubAgentSystemPrompt()`. Update `prompts/role.md` to use `{{.DefaultSubAgentMaxTurns}}` instead of hardcoded `20`. Update `prompts/role_subagent.md` similarly if it references specific turn counts
+- [ ] 5b: Add `__DEFAULT_MAX_TURNS__` placeholder to `prompts/tools/agent.md` (replacing the hardcoded `20` and derived `15`). Extend `loadToolDescriptions()` to accept and replace this placeholder using `defaultSubAgentMaxTurns`. Pass the constant through from the call site
+- [ ] 5c: Fix config editor fallbacks — replace the hardcoded `15` on lines 258 and 304 of `configeditor.go` with `defaultSubAgentMaxTurns`
+- [ ] 5d: Make tests dynamic — update `systemprompt_test.go` assertions that check for `"20 turns per sub-agent"` or similar literals to build expected strings from `defaultSubAgentMaxTurns`. Same for `agent_test.go` budget tier tests: use the threshold constants to compute which tier a given turn/max ratio falls into, rather than asserting against magic numbers. Tests should pass unchanged if the default is changed from 20 to any other value
+- [ ] 5e: Tests: temporarily change `defaultSubAgentMaxTurns` (or use a helper) to verify prompts and tool descriptions reflect the new value, confirming no residual hardcoded "20" remains
+
+## Phase 6: Integration tests — budget-aware sub-agent lifecycle
 
 End-to-end tests that verify the complete budget-aware sub-agent flow, including the wrap-up phase.
 
-- [ ] 5a: Test: sub-agent with `maxTurns=5` — use a scripted LLM that makes tool calls for 4 turns, then on turn 5 (seeing "FINAL TURN" in system prompt) produces text output. Verify: budget shown on each turn, wrap-up message appears, synthesis produced, result includes full output
-- [ ] 5b: Test: sub-agent that ignores budget warnings — scripted LLM that keeps requesting tools past `maxTurns`. Verify: tools-disabled final call is made, text output is forced, error indicates synthesis was attempted, agent terminates cleanly
-- [ ] 5c: Test: background sub-agent with budget awareness — same as 5a but via `runBackground()`. Verify event forwarding includes budget-aware system prompts
-- [ ] 5d: Test: main agent delegates scoped task to sub-agent — verify the sub-agent's system prompt includes turn budget on every LLM call, and the main agent's prompt mentions the sub-agent turn budget
+- [ ] 6a: Test: sub-agent with `maxTurns=5` — use a scripted LLM that makes tool calls for 4 turns, then on turn 5 (seeing "FINAL TURN" in system prompt) produces text output. Verify: budget shown on each turn, wrap-up message appears, synthesis produced, result includes full output
+- [ ] 6b: Test: sub-agent that ignores budget warnings — scripted LLM that keeps requesting tools past `maxTurns`. Verify: tools-disabled final call is made, text output is forced, error indicates synthesis was attempted, agent terminates cleanly
+- [ ] 6c: Test: background sub-agent with budget awareness — same as 6a but via `runBackground()`. Verify event forwarding includes budget-aware system prompts
+- [ ] 6d: Test: main agent delegates scoped task to sub-agent — verify the sub-agent's system prompt includes turn budget on every LLM call, and the main agent's prompt mentions the sub-agent turn budget
 
 ---
 
