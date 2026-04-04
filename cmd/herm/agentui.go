@@ -530,6 +530,10 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			cost := computeCost(a.models, event.Model, *event.Usage)
 			a.sessionCostUSD += cost
 			a.lastInputTokens = event.Usage.InputTokens + event.Usage.CacheReadInputTokens + event.Usage.CacheCreationInputTokens
+			// Propagate cost to the main agent for system prompt budget display.
+			if a.agent != nil {
+				a.agent.SetSessionCost(a.sessionCostUSD)
+			}
 			a.sessionInputTokens += event.Usage.InputTokens
 			a.sessionOutputTokens += event.Usage.OutputTokens
 			a.sessionCacheRead += event.Usage.CacheReadInputTokens

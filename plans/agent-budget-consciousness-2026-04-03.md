@@ -120,10 +120,10 @@ The main agent's `systemPromptWithStats()` currently shows "Session: X tokens us
 2. Show context window utilization percentage
 3. Lower the warning threshold from 30% to include a graduated scale (like sub-agents get)
 
-- [ ] 4a: Extend `systemPromptWithStats()` for the main agent to include context window utilization when `contextWindow > 0`. Format: "Context: ~X% full (Y/Z tokens)". This helps the model anticipate compaction and scope its work. Use the input tokens from the last LLM call as the estimate (already available as `lastInputTokens` on the agent or computable from the usage event)
-- [ ] 4b: Add cost estimate to the stats line when `sessionCostUSD` is available. Requires passing cost info into the agent (currently only tracked in the TUI). Add a `SetSessionCost(cost float64)` method on Agent, called from the TUI's `EventUsage` handler. Format: "Session: X tokens, Y agent calls, ~$Z.ZZ"
-- [ ] 4c: Add graduated warnings for the main agent too (not just at 30%): at 50% remaining iterations show "past halfway", at 25% show a stronger signal. Reuse the same tier logic from Phase 1
-- [ ] 4d: Tests: verify context window % and cost appear in stats; verify graduated warnings at each threshold
+- [x] 4a: Extend `systemPromptWithStats()` for the main agent to include context window utilization when `contextWindow > 0`. Format: "Context: ~X% full (Y/Z tokens)". This helps the model anticipate compaction and scope its work. Use the input tokens from the last LLM call as the estimate (already available as `lastInputTokens` on the agent or computable from the usage event)
+- [x] 4b: Add cost estimate to the stats line when `sessionCostUSD` is available. Requires passing cost info into the agent (currently only tracked in the TUI). Add a `SetSessionCost(cost float64)` method on Agent, called from the TUI's `EventUsage` handler. Format: "Session: X tokens, Y agent calls, ~$Z.ZZ"
+- [x] 4c: Add graduated warnings for the main agent too (not just at 30%): at 50% remaining iterations show "past halfway", at 25% show a stronger signal. Reuse the same tier logic from Phase 1
+- [x] 4d: Tests: verify context window % and cost appear in stats; verify graduated warnings at each threshold
 
 ## Phase 5: Centralize budget constants — single source of truth
 

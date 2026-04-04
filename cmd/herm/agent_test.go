@@ -1216,30 +1216,50 @@ func TestSystemPromptWithStatsIncludesStats(t *testing.T) {
 	}
 }
 
-func TestSystemPromptIterationWarningBelowThreshold(t *testing.T) {
+func TestSystemPromptIterationWarningLowThreshold(t *testing.T) {
 	client := newTestClient("ok")
 	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(25),
+		WithMaxToolIterations(20),
 	)
-	// Simulate being at iteration 20 of 25 (20% remaining < 30% threshold).
-	agent.currentIteration = 20
+	// Simulate being at iteration 16 of 20 (20% remaining < 25% low threshold).
+	agent.currentIteration = 16
 
 	got := agent.systemPromptWithStats()
-	if !strings.Contains(got, "5 tool iterations remaining out of 25") {
-		t.Errorf("expected iteration warning, got: %q", got)
+	if !strings.Contains(got, "4 tool iterations remaining out of 20") {
+		t.Errorf("expected low-threshold iteration warning, got: %q", got)
+	}
+	if !strings.Contains(got, "⚠️") {
+		t.Errorf("expected warning emoji for low threshold, got: %q", got)
+	}
+}
+
+func TestSystemPromptIterationWarningMidThreshold(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
+		WithMaxToolIterations(20),
+	)
+	// Simulate being at iteration 12 of 20 (40% remaining < 50% mid threshold).
+	agent.currentIteration = 12
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "past halfway") {
+		t.Errorf("expected mid-threshold 'past halfway' warning, got: %q", got)
+	}
+	if !strings.Contains(got, "8/20 remaining") {
+		t.Errorf("expected remaining count in mid warning, got: %q", got)
 	}
 }
 
 func TestSystemPromptNoIterationWarningAboveThreshold(t *testing.T) {
 	client := newTestClient("ok")
 	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(25),
+		WithMaxToolIterations(20),
 	)
-	// Simulate being at iteration 5 of 25 (80% remaining > 30% threshold).
+	// Simulate being at iteration 5 of 20 (75% remaining > 50% mid threshold).
 	agent.currentIteration = 5
 
 	got := agent.systemPromptWithStats()
-	if strings.Contains(got, "tool iterations remaining") {
+	if strings.Contains(got, "tool iterations remaining") || strings.Contains(got, "past halfway") {
 		t.Errorf("should not show iteration warning when above threshold, got: %q", got)
 	}
 }
@@ -5164,4 +5184,133 @@ func TestSetTurnProgressThreadSafe(t *testing.T) {
 	}
 	wg.Wait()
 	// If we get here without a race detector complaint, the test passes.
+}
+
+// --- Phase 4: Main agent budget visibility ---
+
+func TestContextWindowUtilizationShown(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 200000)
+	agent.lastInputTokens = 80000
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "Context: ~40% full (80000/200000 tokens)") {
+		t.Errorf("expected context window utilization, got: %q", got)
+	}
+}
+
+func TestContextWindowNotShownWhenZero(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent.lastInputTokens = 80000
+
+	got := agent.systemPromptWithStats()
+	if strings.Contains(got, "Context:") {
+		t.Errorf("should not show context window when contextWindow=0, got: %q", got)
+	}
+}
+
+func TestContextWindowNotShownWhenNoInputTokens(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 200000)
+	// lastInputTokens defaults to 0
+
+	got := agent.systemPromptWithStats()
+	if strings.Contains(got, "Context:") {
+		t.Errorf("should not show context window when lastInputTokens=0, got: %q", got)
+	}
+}
+
+func TestSessionCostShownInStats(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent.sessionInputTokens = 50000
+	agent.sessionOutputTokens = 5000
+	agent.sessionAgentCalls = 2
+	agent.SetSessionCost(0.15)
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "~$0.15") {
+		t.Errorf("expected cost in stats, got: %q", got)
+	}
+	if !strings.Contains(got, "55000 tokens used") {
+		t.Errorf("expected tokens in stats, got: %q", got)
+	}
+}
+
+func TestSessionCostNotShownWhenZero(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent.sessionInputTokens = 50000
+	agent.sessionOutputTokens = 5000
+
+	got := agent.systemPromptWithStats()
+	if strings.Contains(got, "$") {
+		t.Errorf("should not show cost when zero, got: %q", got)
+	}
+}
+
+func TestGraduatedIterationWarningLow(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
+		WithMaxToolIterations(100),
+	)
+	// 20% remaining — below 25% low threshold.
+	agent.currentIteration = 80
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "⚠️") {
+		t.Errorf("expected warning emoji at low threshold, got: %q", got)
+	}
+	if !strings.Contains(got, "20 tool iterations remaining out of 100") {
+		t.Errorf("expected low-threshold message, got: %q", got)
+	}
+}
+
+func TestGraduatedIterationWarningMid(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
+		WithMaxToolIterations(100),
+	)
+	// 40% remaining — below 50% mid threshold but above 25% low.
+	agent.currentIteration = 60
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "past halfway") {
+		t.Errorf("expected 'past halfway' at mid threshold, got: %q", got)
+	}
+	if strings.Contains(got, "⚠️") {
+		t.Errorf("should not show urgent warning at mid threshold, got: %q", got)
+	}
+}
+
+func TestGraduatedIterationWarningNone(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
+		WithMaxToolIterations(100),
+	)
+	// 70% remaining — above all thresholds.
+	agent.currentIteration = 30
+
+	got := agent.systemPromptWithStats()
+	if strings.Contains(got, "past halfway") || strings.Contains(got, "iterations remaining") {
+		t.Errorf("should not show iteration warnings above thresholds, got: %q", got)
+	}
+}
+
+func TestSetSessionCostThreadSafe(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent.sessionInputTokens = 1000
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(v int) {
+			defer wg.Done()
+			agent.SetSessionCost(float64(v) * 0.01)
+			_ = agent.systemPromptWithStats()
+		}(i)
+	}
+	wg.Wait()
 }

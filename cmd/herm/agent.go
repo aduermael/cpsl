@@ -234,6 +234,8 @@ type Agent struct {
 	sessionInputTokens  int
 	sessionOutputTokens int
 	sessionAgentCalls   int
+	lastInputTokens     int     // input tokens from most recent LLM call (context usage estimate)
+	sessionCostUSD      float64 // cumulative session cost, set by TUI via SetSessionCost
 
 	// Tool iteration tracking for budget awareness (9a).
 	currentIteration int
@@ -301,6 +303,14 @@ func (a *Agent) SetTokenProgress(inputTokens, outputTokens int) {
 	a.turnTokensIn = inputTokens
 	a.turnTokensOut = outputTokens
 	a.turnMu.Unlock()
+}
+
+// SetSessionCost updates the agent's cumulative session cost.
+// Thread-safe — called by the TUI's EventUsage handler after computing cost.
+func (a *Agent) SetSessionCost(cost float64) {
+	a.mu.Lock()
+	a.sessionCostUSD = cost
+	a.mu.Unlock()
 }
 
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
@@ -723,14 +733,21 @@ func (a *Agent) emitUsage(ctx context.Context, nodeID, stopReason string) int {
 		},
 	})
 	// Accumulate session-level stats for budget awareness.
-	a.sessionInputTokens += node.TokensIn + node.TokensCacheRead
+	inputTokens := node.TokensIn + node.TokensCacheRead
+	a.sessionInputTokens += inputTokens
 	a.sessionOutputTokens += node.TokensOut
-	return node.TokensIn + node.TokensCacheRead
+	a.lastInputTokens = inputTokens
+	return inputTokens
 }
 
-// iterationWarningThreshold is the fraction of max tool iterations below which
-// the system prompt includes a remaining-iterations warning (30%).
-const iterationWarningThreshold = 0.30
+// Graduated iteration warning thresholds for the main agent.
+// These are fractions of remaining iterations (not used iterations).
+const (
+	// iterationMidThreshold: past halfway (< 50% remaining) — start focusing.
+	iterationMidThreshold = 0.50
+	// iterationLowThreshold: running low (< 25% remaining) — plan efficiently.
+	iterationLowThreshold = 0.25
+)
 
 // Turn budget thresholds for tiered pacing messages in sub-agent system prompts.
 const (
@@ -750,11 +767,26 @@ const (
 func (a *Agent) systemPromptWithStats() string {
 	var extra []string
 
+	// Session stats line: tokens, agent calls, and cost.
 	totalTokens := a.sessionInputTokens + a.sessionOutputTokens
+	a.mu.Lock()
+	cost := a.sessionCostUSD
+	a.mu.Unlock()
 	if totalTokens > 0 || a.sessionAgentCalls > 0 {
-		extra = append(extra, fmt.Sprintf("Session: %d tokens used, %d agent calls", totalTokens, a.sessionAgentCalls))
+		statsLine := fmt.Sprintf("Session: %d tokens used, %d agent calls", totalTokens, a.sessionAgentCalls)
+		if cost > 0 {
+			statsLine += fmt.Sprintf(", ~%s", formatCost(cost))
+		}
+		extra = append(extra, statsLine)
 	}
 
+	// Context window utilization for the main agent.
+	if a.contextWindow > 0 && a.lastInputTokens > 0 {
+		pct := float64(a.lastInputTokens) * 100 / float64(a.contextWindow)
+		extra = append(extra, fmt.Sprintf("Context: ~%.0f%% full (%d/%d tokens)", pct, a.lastInputTokens, a.contextWindow))
+	}
+
+	// Graduated iteration warnings for the main agent.
 	maxIter := a.maxToolIterations
 	if maxIter <= 0 {
 		maxIter = defaultMaxToolIterations
@@ -763,8 +795,12 @@ func (a *Agent) systemPromptWithStats() string {
 	if remaining < 0 {
 		remaining = 0
 	}
-	if float64(remaining) < float64(maxIter)*iterationWarningThreshold {
-		extra = append(extra, fmt.Sprintf("You have %d tool iterations remaining out of %d. Plan your remaining work efficiently.", remaining, maxIter))
+	remainingFraction := float64(remaining) / float64(maxIter)
+	switch {
+	case remainingFraction < iterationLowThreshold:
+		extra = append(extra, fmt.Sprintf("⚠️ You have %d tool iterations remaining out of %d. Plan your remaining work efficiently.", remaining, maxIter))
+	case remainingFraction < iterationMidThreshold:
+		extra = append(extra, fmt.Sprintf("You're past halfway through your tool iterations (%d/%d remaining). Start focusing on your most important tasks.", remaining, maxIter))
 	}
 
 	// Turn budget display for sub-agents.
