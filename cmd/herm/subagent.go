@@ -961,8 +961,10 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 	defer synthCancel()
 
 	model := agent.model
+	// Note: WithSystemPrompt is ignored by PromptFrom (langdag uses the root
+	// node's stored prompt), but included for documentation and forward compat.
 	opts := []langdag.PromptOption{
-		langdag.WithSystemPrompt(agent.systemPromptWithStats()),
+		langdag.WithSystemPrompt(agent.systemPrompt),
 		langdag.WithMaxTokens(defaultMaxOutputTokens),
 		langdag.WithMaxOutputGroupTokens(defaultMaxOutputGroupTokens),
 		// No WithTools — forces a text-only response.

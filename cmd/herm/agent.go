@@ -593,8 +593,10 @@ func (a *Agent) gracefulExhaustion(ctx context.Context, lastNodeID string) strin
 	}
 
 	// Make one final LLM call without tools so the model can only produce text.
+	// Note: WithSystemPrompt is ignored by PromptFrom (langdag uses the root
+	// node's stored prompt), but included for documentation and forward compat.
 	finalOpts := []langdag.PromptOption{
-		langdag.WithSystemPrompt(a.systemPromptWithStats()),
+		langdag.WithSystemPrompt(a.systemPrompt),
 		langdag.WithMaxTokens(defaultMaxOutputTokens),
 		langdag.WithMaxOutputGroupTokens(defaultMaxOutputGroupTokens),
 		// Deliberately no WithTools — forces a text-only response.
@@ -771,15 +773,6 @@ const (
 	turnBudgetFinalThreshold = 0.90
 )
 
-// systemPromptWithStats returns the static system prompt. Dynamic stats
-// (session tokens, context window %, iteration warnings, turn budget) are
-// now injected via budgetReminderBlock() as a user-message <system-reminder>,
-// keeping the system prompt identical across turns for prompt caching.
-// TODO: rename to systemPrompt() once callers are cleaned up (Phase 8).
-func (a *Agent) systemPromptWithStats() string {
-	return a.systemPrompt
-}
-
 // turnBudgetLine returns the turn budget status line for the system prompt.
 // Returns "" when no turn budget is set (main agent).
 func (a *Agent) turnBudgetLine() string {
@@ -820,10 +813,9 @@ func (a *Agent) turnBudgetLine() string {
 }
 
 // budgetReminderBlock returns a text ContentBlock wrapped in <system-reminder>
-// tags containing the same dynamic stats that were previously in
-// systemPromptWithStats(): session stats, context window %, iteration warnings,
-// and turn budget. Returns a zero-value ContentBlock when there's nothing to
-// show (e.g. first call before any stats exist).
+// tags containing dynamic per-turn stats: session stats, context window %,
+// iteration warnings, and turn budget. Returns a zero-value ContentBlock when
+// there's nothing to show (e.g. first call before any stats exist).
 //
 // This block is prepended to the user message (tool results) on follow-up LLM
 // calls, keeping the system prompt fully static for prompt caching.
@@ -1007,11 +999,15 @@ func (a *Agent) maybeCompact(ctx context.Context, nodeID string, inputTokens int
 	return result.NewNodeID
 }
 
-// buildPromptOpts returns LLM call options with the current system prompt
-// (including session stats when available).
+// buildPromptOpts returns LLM call options with the static system prompt.
+// Note: WithSystemPrompt is required for the initial Prompt() call (sets the
+// root node's system prompt). On follow-up PromptFrom() calls, langdag ignores
+// it (always uses the root node's stored prompt), but it's harmless to include
+// and documents intent. Dynamic per-turn stats are injected via
+// budgetReminderBlock() as a user-message <system-reminder> instead.
 func (a *Agent) buildPromptOpts() []langdag.PromptOption {
 	opts := []langdag.PromptOption{
-		langdag.WithSystemPrompt(a.systemPromptWithStats()),
+		langdag.WithSystemPrompt(a.systemPrompt),
 		langdag.WithMaxTokens(defaultMaxOutputTokens),
 		langdag.WithMaxOutputGroupTokens(defaultMaxOutputGroupTokens),
 		langdag.WithTools(a.toolDefs),

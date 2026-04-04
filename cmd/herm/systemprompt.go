@@ -43,7 +43,7 @@ type PromptData struct {
 	RecentCommits   string
 	GitStatus       string
 
-	// Tool iteration budget (injected dynamically via systemPromptWithStats).
+	// Tool iteration budget (injected dynamically via budgetReminderBlock).
 	RemainingToolIterations int
 	MaxToolIterations       int
 

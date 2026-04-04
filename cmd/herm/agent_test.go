@@ -1187,18 +1187,17 @@ func TestRunParallelAgentEventIDs(t *testing.T) {
 
 // --- Phase 5: Token budget awareness ---
 
-func TestSystemPromptWithStatsReturnsStaticPrompt(t *testing.T) {
+func TestSystemPromptIsStatic(t *testing.T) {
 	client := newTestClient("ok")
 	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
 	agent.sessionInputTokens = 10000
 	agent.sessionOutputTokens = 2000
 	agent.sessionAgentCalls = 3
 
-	// systemPromptWithStats() should always return the static prompt now —
+	// The system prompt should always be the static base prompt —
 	// dynamic stats are in budgetReminderBlock().
-	got := agent.systemPromptWithStats()
-	if got != "base prompt" {
-		t.Errorf("systemPromptWithStats should return static base prompt, got: %q", got)
+	if agent.systemPrompt != "base prompt" {
+		t.Errorf("systemPrompt should be static base prompt, got: %q", agent.systemPrompt)
 	}
 }
 

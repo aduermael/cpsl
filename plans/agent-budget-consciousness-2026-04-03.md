@@ -21,23 +21,24 @@ Observed in `debug-20260403-182556.json`: sub-agent `00046725` (explore mode, ha
 
 **Architecture flexibility:** We are not married to the current code structure. There are no backward compatibility concerns. If a phase would be cleaner, more stable, or more efficient by restructuring or refactoring existing code, do it. The goal is a codebase that is dead simple to maintain. For each phase, it's fine to spin up 3 agents to study the relevant code and answer architectural questions before implementing.
 
-**Our approach:** Since we don't have access to the task_budget API beta, we'll inject budget progress directly into the system prompt on every LLM call (extending the existing `systemPromptWithStats()` pattern). We'll also add a "wrap-up" phase that gives the agent a chance to synthesize before the hard kill.
+**Our approach:** Since we don't have access to the task_budget API beta, we inject budget progress as a `<system-reminder>` text block prepended to the user message (tool results) on each follow-up LLM call, via `budgetReminderBlock()`. The system prompt is fully static (set once at agent creation, never modified), preserving prompt caching. We also add a "wrap-up" phase that gives the agent a chance to synthesize before the hard kill.
 
 **Key files:**
-- `cmd/herm/agent.go` — `Agent` struct, `systemPromptWithStats()` (line 703), `runLoop()` (line 1066), `emitUsage()` (line 672)
-- `cmd/herm/subagent.go` — `SubAgentTool`, `Execute()` (line 410), turn counting (lines 502-536), `runBackground()` (line 715)
-- `cmd/herm/systemprompt.go` — `buildSubAgentSystemPrompt()` (line 123), `PromptData` (line 18)
+- `cmd/herm/agent.go` — `Agent` struct, `budgetReminderBlock()`, `buildPromptOpts()`, `runLoop()`, `gracefulExhaustion()`
+- `cmd/herm/subagent.go` — `SubAgentTool`, `Execute()`, turn counting, `runBackground()`, `gracefulSubAgentSynthesis()`
+- `cmd/herm/systemprompt.go` — `buildSubAgentSystemPrompt()`, `PromptData`
 - `prompts/role_subagent.md` — sub-agent role instructions
 - `prompts/tools/agent.md` — agent tool description (main agent sees this)
 - `prompts/role.md` — main agent role instructions
 
 **Success criteria:**
 - A sub-agent that would previously hit max_turns and die now produces a synthesis in its final turns
-- Sub-agents see "Turn 5/20 | 12,400 tokens used" in their system prompt on every LLM call
-- At 75% of turns (turn 15/20), the system prompt gains an urgent "wrap up" notice
+- Sub-agents see "Turn 5/20 | 12,400 tokens used" in a `<system-reminder>` user message on every follow-up LLM call
+- At 75% of turns (turn 15/20), the reminder gains an urgent "wrap up" notice
 - At 90% of turns (turn 18/20), a hard "synthesize NOW" instruction is injected
+- The system prompt remains identical across all turns (prompt caching preserved)
 - The main agent's delegation prompt mentions the sub-agent turn budget
-- Tests verify budget injection and wrap-up behavior
+- Tests verify budget injection, wrap-up behavior, and prompt caching
 
 ---
 
@@ -200,9 +201,9 @@ The `<system-reminder>` text block is part of the user message, not the system p
 
 After Phase 7, some code is vestigial — it was built for a system-prompt injection model that no longer applies.
 
-- [ ] 8a: Rename `systemPromptWithStats()` → delete the function entirely if `buildPromptOpts()` can just use `a.systemPrompt` directly. If other callers exist (gracefulExhaustion, gracefulSubAgentSynthesis), refactor them to use `a.systemPrompt`. Remove the intermediate function — it no longer does anything
-- [ ] 8b: Audit `buildPromptOpts()` — after Phase 7, the only purpose of `WithSystemPrompt()` is to pass the static system prompt. Since langdag's `PromptFrom()` ignores it anyway (uses root node), evaluate whether the option is needed on follow-up calls at all. If removing it is clean, do so; if it matters for the initial `Prompt()` call, keep it only there. Document the intent with a comment
-- [ ] 8c: Update plan's "Our approach" section (line 24) and success criteria (lines 36-38) to reflect the new architecture: budget info is injected via user messages, not the system prompt. This keeps the plan accurate as a historical record
+- [x] 8a: Rename `systemPromptWithStats()` → delete the function entirely if `buildPromptOpts()` can just use `a.systemPrompt` directly. If other callers exist (gracefulExhaustion, gracefulSubAgentSynthesis), refactor them to use `a.systemPrompt`. Remove the intermediate function — it no longer does anything
+- [x] 8b: Audit `buildPromptOpts()` — after Phase 7, the only purpose of `WithSystemPrompt()` is to pass the static system prompt. Since langdag's `PromptFrom()` ignores it anyway (uses root node), evaluate whether the option is needed on follow-up calls at all. If removing it is clean, do so; if it matters for the initial `Prompt()` call, keep it only there. Document the intent with a comment
+- [x] 8c: Update plan's "Our approach" section (line 24) and success criteria (lines 36-38) to reflect the new architecture: budget info is injected via user messages, not the system prompt. This keeps the plan accurate as a historical record
 
 ---
 
