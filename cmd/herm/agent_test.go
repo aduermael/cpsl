@@ -5106,13 +5106,21 @@ func TestTurnBudgetNotShownWhenMaxTurnsZero(t *testing.T) {
 }
 
 func TestTurnBudgetEarlyTier(t *testing.T) {
+	maxT := defaultSubAgentMaxTurns
+	// Pick a turn safely in the early range (below mid threshold).
+	turn := int(float64(maxT)*turnBudgetMidThreshold) - 1
+	if turn < 1 {
+		turn = 1
+	}
+
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(3, 20)
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
+	agent.SetTurnProgress(turn, maxT)
 	agent.SetTokenProgress(6000, 2200)
 
 	got := agent.systemPromptWithStats()
-	if !strings.Contains(got, "Budget: Turn 3/20 | 8200 tokens used") {
+	expected := fmt.Sprintf("Budget: Turn %d/%d | 8200 tokens used", turn, maxT)
+	if !strings.Contains(got, expected) {
 		t.Errorf("early tier should show basic budget, got: %q", got)
 	}
 	if strings.Contains(got, "halfway") || strings.Contains(got, "Wrap up") || strings.Contains(got, "FINAL") {
@@ -5121,13 +5129,18 @@ func TestTurnBudgetEarlyTier(t *testing.T) {
 }
 
 func TestTurnBudgetMidTier(t *testing.T) {
+	maxT := defaultSubAgentMaxTurns
+	// Pick a turn in the mid range (>= midThreshold, < lateThreshold).
+	turn := int(float64(maxT)*turnBudgetMidThreshold) + 1
+
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(12, 20)
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
+	agent.SetTurnProgress(turn, maxT)
 	agent.SetTokenProgress(25000, 9100)
 
 	got := agent.systemPromptWithStats()
-	if !strings.Contains(got, "Budget: Turn 12/20") {
+	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
+	if !strings.Contains(got, expected) {
 		t.Errorf("mid tier should show turn progress, got: %q", got)
 	}
 	if !strings.Contains(got, "past halfway") {
@@ -5136,13 +5149,18 @@ func TestTurnBudgetMidTier(t *testing.T) {
 }
 
 func TestTurnBudgetLateTier(t *testing.T) {
+	maxT := defaultSubAgentMaxTurns
+	// Pick a turn in the late range (>= lateThreshold, < finalThreshold).
+	turn := int(float64(maxT)*turnBudgetLateThreshold) + 1
+
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(16, 20)
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
+	agent.SetTurnProgress(turn, maxT)
 	agent.SetTokenProgress(40000, 12300)
 
 	got := agent.systemPromptWithStats()
-	if !strings.Contains(got, "Budget: Turn 16/20") {
+	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
+	if !strings.Contains(got, expected) {
 		t.Errorf("late tier should show turn progress, got: %q", got)
 	}
 	if !strings.Contains(got, "Wrap up") {
@@ -5151,13 +5169,21 @@ func TestTurnBudgetLateTier(t *testing.T) {
 }
 
 func TestTurnBudgetFinalTier(t *testing.T) {
+	maxT := defaultSubAgentMaxTurns
+	// Pick a turn in the final range (>= finalThreshold).
+	turn := int(float64(maxT)*turnBudgetFinalThreshold) + 1
+	if turn > maxT {
+		turn = maxT
+	}
+
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(19, 20)
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
+	agent.SetTurnProgress(turn, maxT)
 	agent.SetTokenProgress(50000, 11800)
 
 	got := agent.systemPromptWithStats()
-	if !strings.Contains(got, "Budget: Turn 19/20") {
+	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
+	if !strings.Contains(got, expected) {
 		t.Errorf("final tier should show turn progress, got: %q", got)
 	}
 	if !strings.Contains(got, "FINAL TURN") {
@@ -5169,15 +5195,16 @@ func TestTurnBudgetFinalTier(t *testing.T) {
 }
 
 func TestSetTurnProgressThreadSafe(t *testing.T) {
+	maxT := defaultSubAgentMaxTurns
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(turn int) {
 			defer wg.Done()
-			agent.SetTurnProgress(turn, 20)
+			agent.SetTurnProgress(turn, maxT)
 			agent.SetTokenProgress(turn*1000, turn*200)
 			_ = agent.systemPromptWithStats()
 		}(i)

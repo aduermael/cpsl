@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -1013,7 +1014,8 @@ func TestAgentToolDescriptionTurnBudget(t *testing.T) {
 	if !strings.Contains(td.Full, "Turn budget:") {
 		t.Error("agent tool description should mention turn budget")
 	}
-	if !strings.Contains(td.Full, "20 turns per sub-agent") {
-		t.Error("agent tool description should state default 20 turns")
+	expected := fmt.Sprintf("%d turns per sub-agent", defaultSubAgentMaxTurns)
+	if !strings.Contains(td.Full, expected) {
+		t.Errorf("agent tool description should state default turns, want %q in description", expected)
 	}
 }
