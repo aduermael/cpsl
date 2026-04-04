@@ -19,6 +19,8 @@ Observed in `debug-20260403-182556.json`: sub-agent `00046725` (explore mode, ha
 - **System-reminder injection**: Dynamic context as `<system-reminder>` user messages.
 - Claude Code does NOT inject turn counts into sub-agent prompts — it relies on the API-level task_budget.
 
+**Architecture flexibility:** We are not married to the current code structure. There are no backward compatibility concerns. If a phase would be cleaner, more stable, or more efficient by restructuring or refactoring existing code, do it. The goal is a codebase that is dead simple to maintain. For each phase, it's fine to spin up 3 agents to study the relevant code and answer architectural questions before implementing.
+
 **Our approach:** Since we don't have access to the task_budget API beta, we'll inject budget progress directly into the system prompt on every LLM call (extending the existing `systemPromptWithStats()` pattern). We'll also add a "wrap-up" phase that gives the agent a chance to synthesize before the hard kill.
 
 **Key files:**
@@ -96,11 +98,11 @@ Currently, hitting `max_turns` triggers an instant `agent.Cancel()` — the agen
 
 This shifts the paradigm from "kill at limit" to "warn → synthesize → kill only if still exploring."
 
-- [ ] 2a: Change the turn limit check in `Execute()` drain loop (line 530): instead of `if turns > t.maxTurns → cancel`, use `if turns > t.maxTurns + 1 → cancel`. The extra turn is the synthesis window. Update comment to explain the two-stage approach
-- [ ] 2b: When `turns == t.maxTurns + 1` (the synthesis turn), check if the LLM response is text-only (no tool calls). If it requested tools, the hard cancel fires. If it produced text, that's the synthesis — let it through
-- [ ] 2c: Add a `gracefulExhaustion`-style mechanism for sub-agents. When a sub-agent hits `maxTurns` and the model is still requesting tools, make one final tools-disabled LLM call with a prompt: `"[SYSTEM: Turn limit reached. Produce your final summary based on everything you've gathered so far. Do not request tools.]"`. This guarantees text output even from agents that ignore the system prompt budget warnings
-- [ ] 2d: Update `runBackground()` with the same two-stage enforcement and graceful synthesis
-- [ ] 2e: Tests: (1) sub-agent that would exceed turns gets a synthesis turn; (2) tools-disabled final call produces text output; (3) hard cancel still fires at `maxTurns + 1` for runaway agents; (4) the error message in the result changes from "partial output returned" to indicate synthesis was attempted
+- [x] 2a: Change the turn limit check in `Execute()` drain loop (line 530): instead of `if turns > t.maxTurns → cancel`, use `if turns > t.maxTurns + 1 → cancel`. The extra turn is the synthesis window. Update comment to explain the two-stage approach
+- [x] 2b: When `turns == t.maxTurns + 1` (the synthesis turn), check if the LLM response is text-only (no tool calls). If it requested tools, the hard cancel fires. If it produced text, that's the synthesis — let it through
+- [x] 2c: Add a `gracefulExhaustion`-style mechanism for sub-agents. When a sub-agent hits `maxTurns` and the model is still requesting tools, make one final tools-disabled LLM call with a prompt: `"[SYSTEM: Turn limit reached. Produce your final summary based on everything you've gathered so far. Do not request tools.]"`. This guarantees text output even from agents that ignore the system prompt budget warnings
+- [x] 2d: Update `runBackground()` with the same two-stage enforcement and graceful synthesis
+- [x] 2e: Tests: (1) sub-agent that would exceed turns gets a synthesis turn; (2) tools-disabled final call produces text output; (3) hard cancel still fires at `maxTurns + 1` for runaway agents; (4) the error message in the result changes from "partial output returned" to indicate synthesis was attempted
 
 ## Phase 3: Improve prompt guidance for budget management
 

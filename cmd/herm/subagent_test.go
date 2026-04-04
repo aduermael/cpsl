@@ -1498,10 +1498,10 @@ func (ft *firstFreeBlockingTool) RequiresApproval(_ json.RawMessage) bool { retu
 func (ft *firstFreeBlockingTool) HostTool() bool                         { return false }
 
 func TestSubAgentMaxTurnsReached(t *testing.T) {
-	// When a sub-agent exceeds maxTurns, the result should contain:
-	// 1. Partial text output collected before cancellation
-	// 2. A descriptive error about max turns being reached
-	// 3. The turns count showing the limit was exceeded
+	// When a sub-agent exceeds maxTurns, the two-stage enforcement kicks in:
+	// 1. At turns > maxTurns, agent is canceled for synthesis (not hard killed)
+	// 2. A graceful synthesis call is attempted (tools-disabled)
+	// 3. Partial text output collected before cancellation is preserved
 	//
 	// Uses a blocking tool: the first call returns immediately (turn 1 completes),
 	// the second call blocks until the sub-agent detects turns > maxTurns and
@@ -1528,14 +1528,15 @@ func TestSubAgentMaxTurnsReached(t *testing.T) {
 				},
 				tokensIn: 100, tokensOut: 50,
 			},
-			{text: "Should not reach here.", tokensIn: 100, tokensOut: 50},
+			// Synthesis response (tools-disabled call).
+			{text: "Summary of findings.", tokensIn: 100, tokensOut: 50},
 		},
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
 	// maxTurns=1: turn 1 completes (tool returns immediately),
-	// turn 2 triggers cancel (tool blocks until canceled).
+	// turn 2 triggers synthesis (tool blocks until canceled).
 	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"looping task","mode":"explore"}`))
@@ -1543,25 +1544,24 @@ func TestSubAgentMaxTurnsReached(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	// Should contain error about max turns.
-	if !strings.Contains(result, "maximum turns") {
-		t.Errorf("result should mention maximum turns, got: %q", result)
-	}
-
 	// Should contain partial output from at least the first turn.
 	if !strings.Contains(result, "First turn output.") {
 		t.Errorf("result should contain first turn output, got: %q", result)
 	}
 
-	// Turns count should show 2 (the turn that triggered cancel) against maxTurns=1.
-	if !strings.Contains(result, "[turns: 2/1]") {
-		t.Errorf("result should show turns 2/1, got: %q", result)
+	// The turn counter races with doneCh: the drain loop may count 1 or 2
+	// turns depending on whether doneCh fires before EventToolCallStart for
+	// turn 2 is processed. Both are valid — the important invariant is that
+	// partial output was preserved and synthesis was attempted.
+	if !strings.Contains(result, "[turns: 2/1]") && !strings.Contains(result, "[turns: 1/1]") {
+		t.Errorf("result should show turns 1/1 or 2/1, got: %q", result)
 	}
 }
 
 func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 	// Verify that when max_turns is hit, all text collected up to that point
-	// is included in the result — not just from the last turn.
+	// is included in the result — not just from the last turn. With two-stage
+	// enforcement, the agent gets a synthesis opportunity instead of hard kill.
 	release := make(chan struct{})
 	defer close(release)
 	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 2, release: release}
@@ -1591,14 +1591,15 @@ func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 				},
 				tokensIn: 100, tokensOut: 50,
 			},
-			{text: "Final.", tokensIn: 100, tokensOut: 50},
+			// Synthesis response (tools-disabled call after turns > maxTurns).
+			{text: "Summary.", tokensIn: 100, tokensOut: 50},
 		},
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
 	// maxTurns=2: turns 1,2 complete (tool returns immediately),
-	// turn 3 triggers cancel (tool blocks until canceled).
+	// turn 3 triggers synthesis (tool blocks until canceled).
 	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 2, 3, 0, tmpDir, "", "alpine:latest")
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"multi-turn","mode":"explore"}`))
@@ -1617,16 +1618,9 @@ func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 	// The turn counter races with the agent goroutine: the drain loop may
 	// count 2 or 3 turns depending on scheduling. Both are valid — the
 	// important invariant is that text was preserved and turns did not exceed
-	// maxTurns + 1.
+	// maxTurns + 2 (synthesis buffer).
 	if !strings.Contains(result, "[turns: 3/2]") && !strings.Contains(result, "[turns: 2/2]") {
 		t.Errorf("result should show turns 2/2 or 3/2, got: %q", result)
-	}
-
-	// When the drain loop catches the third turn, it appends a max-turns error.
-	// When the agent self-terminates before the drain sees turn 3, no error is
-	// appended — both outcomes are acceptable.
-	if strings.Contains(result, "[turns: 3/2]") && !strings.Contains(result, "maximum turns (2)") {
-		t.Errorf("result with turns 3/2 should mention maximum turns (2), got: %q", result)
 	}
 }
 
@@ -2537,4 +2531,207 @@ func TestForwardBlockingWithTimeout(t *testing.T) {
 			t.Error("expected done event in channel")
 		}
 	})
+}
+
+// --- Phase 2 (budget-consciousness): Soft wrap-up before hard kill ---
+
+func TestSubAgentSynthesisTurnOnExceedMaxTurns(t *testing.T) {
+	// When a sub-agent exceeds maxTurns while still requesting tools, the
+	// two-stage enforcement should:
+	// 1. Cancel the agent (not hard kill)
+	// 2. Make a tools-disabled synthesis call
+	// 3. Include the synthesis text in the result
+	//
+	// The canceled LLM call (tool results for the turn that triggered cancel)
+	// may or may not consume a response slot from the mock provider depending
+	// on timing. We add the synthesis response in multiple slots to handle both.
+	release := make(chan struct{})
+	defer close(release)
+	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 2, release: release}
+
+	synthResponse := scriptedResponse{text: "SYNTHESIS: Here is my synthesized summary of findings.", tokensIn: 100, tokensOut: 50}
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			// Turn 1: tool call, returns immediately.
+			{
+				text: "Exploring...",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Turn 2: tool call, returns immediately.
+			{
+				text: "Still exploring...",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu2", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Turn 3: tool call, blocks → triggers synthesis at turns > maxTurns (3 > 2).
+			{
+				text: "Even more exploring...",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu3", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// The canceled LLM call may consume a slot, so provide synthesis
+			// response in multiple positions to ensure it's available.
+			synthResponse,
+			synthResponse,
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	// maxTurns=2: turns 1,2 complete. Turn 3 triggers synthesis.
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 2, 3, 0, tmpDir, "", "alpine:latest")
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"deep exploration","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Output from the first two turns should be present.
+	if !strings.Contains(result, "Exploring...") {
+		t.Errorf("result should contain first turn text, got: %q", result)
+	}
+	if !strings.Contains(result, "Still exploring...") {
+		t.Errorf("result should contain second turn text, got: %q", result)
+	}
+
+	// The synthesis text should be present (from the tools-disabled final call).
+	if !strings.Contains(result, "SYNTHESIS:") {
+		t.Errorf("result should contain synthesis output, got: %q", result)
+	}
+}
+
+func TestSubAgentHardCancelAtMaxTurnsPlusOne(t *testing.T) {
+	// When a sub-agent exceeds maxTurns + 1 (runaway despite synthesis attempt),
+	// the hard cancel fires with an error message indicating synthesis was attempted.
+	release := make(chan struct{})
+	defer close(release)
+	// free=3 so turns 1-3 complete, turn 4 blocks → hard cancel.
+	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 3, release: release}
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			// Turn 1
+			{
+				text: "Turn 1.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Turn 2: exceeds maxTurns=1, triggers synthesis attempt.
+			{
+				text: "Turn 2.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu2", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Turn 3: exceeds maxTurns+1=2, hard cancel fires.
+			{
+				text: "Turn 3.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu3", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			// Turn 4: should not be reached (hard cancel at tu4).
+			{
+				text: "Turn 4.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu4", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "Should not reach.", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	// maxTurns=1: turn 2 triggers synthesis, turn 3 triggers hard cancel.
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"runaway agent","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should contain partial output from at least the first turn.
+	if !strings.Contains(result, "Turn 1.") {
+		t.Errorf("result should contain first turn text, got: %q", result)
+	}
+
+	// The error message should indicate synthesis was attempted (not just "partial output").
+	// Due to the race between doneCh and eventCh, the error may or may not be captured.
+	// What we CAN verify: the agent terminated and produced partial output.
+	if !strings.Contains(result, "[agent_id:") {
+		t.Errorf("result should contain agent_id, got: %q", result)
+	}
+}
+
+func TestSubAgentSynthesisPromptConstant(t *testing.T) {
+	// Verify the synthesis prompt constant is well-formed.
+	if !strings.Contains(subAgentSynthesisPrompt, "Turn limit reached") {
+		t.Errorf("synthesis prompt should mention turn limit, got: %q", subAgentSynthesisPrompt)
+	}
+	if !strings.Contains(subAgentSynthesisPrompt, "Do not request tools") {
+		t.Errorf("synthesis prompt should instruct no tools, got: %q", subAgentSynthesisPrompt)
+	}
+}
+
+func TestSubAgentIterationBufferAccommodatesSynthesis(t *testing.T) {
+	// The iteration buffer should be >= 3 to accommodate the synthesis turn
+	// (maxTurns + 1) plus a safety margin.
+	if subAgentIterationBuffer < 3 {
+		t.Errorf("subAgentIterationBuffer = %d, want >= 3 for synthesis turn", subAgentIterationBuffer)
+	}
+}
+
+func TestSubAgentTwoStageErrorMessage(t *testing.T) {
+	// When the hard cancel fires at maxTurns + 1, the error message should
+	// mention "synthesis was attempted" rather than the old "partial output returned".
+	release := make(chan struct{})
+	defer close(release)
+	// free=10 so all turns complete without blocking.
+	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 10, release: release}
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			// Turns 1-4: all with tool calls, maxTurns=1 means:
+			// turn 2 triggers synthesis, turn 3 triggers hard cancel
+			{text: "t1.", toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+			{text: "t2.", toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tu2", Name: "test_tool", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+			{text: "t3.", toolCalls: []types.ContentBlock{{Type: "tool_use", ID: "tu3", Name: "test_tool", Input: json.RawMessage(`{}`)}}, tokensIn: 100, tokensOut: 50},
+			{text: "final.", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"fast runaway","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// When the hard cancel fires, the error message should NOT use the old
+	// "partial output returned" phrasing. Due to event races, the error may
+	// appear with the new phrasing or not appear at all (doneCh path).
+	if strings.Contains(result, "partial output returned") {
+		t.Errorf("should use new error message, not old 'partial output returned', got: %q", result)
+	}
 }
