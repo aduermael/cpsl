@@ -156,6 +156,54 @@ End-to-end tests that verify the complete budget-aware sub-agent flow, including
 - [x] 6c: Test: background sub-agent with budget awareness — same as 6a but via `runBackground()`. Verify event forwarding includes budget-aware system prompts
 - [x] 6d: Test: main agent delegates scoped task to sub-agent — verify the sub-agent's system prompt includes turn budget on every LLM call, and the main agent's prompt mentions the sub-agent turn budget
 
+## Phase 7: Move dynamic stats from system prompt to user messages (prompt caching fix)
+
+**Problem:** Phases 1-4 inject per-turn dynamic content (turn counters, token usage, session stats, iteration warnings) into the system prompt via `systemPromptWithStats()`. This has two issues:
+
+1. **Prompt caching breaks.** The Anthropic provider marks the entire system prompt with `cache_control: ephemeral` (`protocol.go:33`). Changing even one character of the system prompt between turns invalidates the cache, causing every turn to pay full input token cost instead of the 10% cache-hit rate. Claude Code avoids this — it never puts per-turn counters in the system prompt.
+2. **Updates are silently discarded.** langdag's `PromptFrom()` uses the root node's stored `SystemPrompt` for all follow-up calls (`conversation.go:131`), ignoring the `WithSystemPrompt()` option. So `systemPromptWithStats()` rebuilds the prompt every turn for nothing — the provider always sees the original system prompt.
+
+**Root cause:** Dynamic content was put in the wrong layer. The system prompt is cached and static; per-turn info belongs in user messages.
+
+**How Claude Code handles this (reference: `notes/claude-code/src/`):**
+- Static content → system prompt array, split at `SYSTEM_PROMPT_DYNAMIC_BOUNDARY`, static half cached at `scope: 'global'`
+- Per-conversation context (date, CLAUDE.md) → `<system-reminder>` **user message** via `prependUserContext()` (`api.ts:449-474`)
+- Per-turn budget → `output_config.task_budget` API parameter (Anthropic beta, completely separate from prompt)
+- Per-turn counters → **never in the system prompt at all**
+
+**Our approach:** Move all dynamic stats from the system prompt into a `<system-reminder>` text block prepended to the tool-results user message on each follow-up LLM call. The system prompt becomes fully static (set once at agent creation, never modified). This preserves prompt caching while delivering the same budget visibility to the model.
+
+**What the model sees on each follow-up call (user message content):**
+```json
+[
+  {"type": "text", "text": "<system-reminder>\nBudget: Turn 3/20 | 8,200 tokens used\n</system-reminder>"},
+  {"type": "tool_result", "tool_use_id": "tu_abc", "content": "file contents..."},
+  ...
+]
+```
+
+The `<system-reminder>` text block is part of the user message, not the system prompt. It changes freely each turn without affecting prompt caching.
+
+**Key files:**
+- `cmd/herm/agent.go` — `systemPromptWithStats()` (line 767), `buildPromptOpts()` (line 985), `runLoop()` (line 1190), `backgroundCompletion()` (line 400), `gracefulExhaustion()` (line 563)
+- `cmd/herm/subagent.go` — `gracefulSubAgentSynthesis()` (line 954)
+
+- [ ] 7a: Create `budgetReminderBlock()` method on `Agent` that returns a `types.ContentBlock{Type: "text", Text: "<system-reminder>\n...\n</system-reminder>"}` containing the same dynamic stats currently built by `systemPromptWithStats()`: session stats, context window %, iteration warnings, and turn budget line. Returns a zero-value `ContentBlock` when there's nothing to show (first call, no stats yet). This is a new function — don't modify `systemPromptWithStats()` yet
+- [ ] 7b: Simplify `systemPromptWithStats()` to return just `a.systemPrompt` — remove all dynamic content (session stats line, context window utilization, graduated iteration warnings, and turn budget line). The function body becomes a one-liner. Keep the function name temporarily to avoid a noisy rename diff; add a `// TODO: rename to systemPrompt()` comment. Update `buildPromptOpts()` accordingly (it still calls `systemPromptWithStats()`, which now returns the static prompt — this is correct because `WithSystemPrompt()` should pass the static prompt)
+- [ ] 7c: In `runLoop()`, before the follow-up `PromptFrom` calls (line 1445), check `budgetReminderBlock()`. If non-empty, prepend it to the `toolResults` slice as the first element so the LLM sees the budget reminder at the start of the user message. Do the same in the tool loop within `backgroundCompletion()` (line 444-447). **Do not** inject on the initial `Prompt()` call (line 1195) — no stats exist yet and the system prompt already contains the static budget guidance
+- [ ] 7d: Update `gracefulExhaustion()` (line 584): it currently passes `systemPromptWithStats()` as the system prompt for the synthesis call. After 7b this is already the static prompt, which is correct. But the dynamic stats (iteration count, urgency) should now be part of the synthesis **user message**, not the system prompt. Prepend the `<system-reminder>` content to the `msg` string builder before the `[SYSTEM: Tool iteration limit reached...]` text
+- [ ] 7e: Update `gracefulSubAgentSynthesis()` (line 964): same pattern as 7d. The `opts` already use `systemPromptWithStats()` (now static, correct). Prepend the budget reminder to `subAgentSynthesisPrompt` when building the user message for the synthesis call. The model needs to see its budget state to produce a well-scoped summary
+- [ ] 7f: Tests — update all tests that assert budget/stats content in `req.System` (provider's CompletionRequest) to instead assert it in `req.Messages` (the last user message content). Key tests to update: `TestTurnBudgetEarlyTier` and siblings (agent_test.go), `TestIntegrationBudgetAwareSubAgentLifecycle` and siblings (subagent_test.go, Phase 6), and any `systemPromptWithStats()` unit tests. The `systemPromptWithStats()` tests should now verify it returns the static prompt unchanged. New tests should verify `budgetReminderBlock()` generates correct tiered content
+- [ ] 7g: Test — verify prompt caching is preserved: create a `budgetCapturingProvider` test that makes 3+ LLM calls and asserts `req.System` is **identical** across all calls (proving the system prompt never changes). Also verify the `<system-reminder>` content appears in the **last user message** of each call and progresses correctly (Turn 0 → Turn 1 → Turn 2)
+
+## Phase 8: Clean up dead code from the system-prompt injection approach
+
+After Phase 7, some code is vestigial — it was built for a system-prompt injection model that no longer applies.
+
+- [ ] 8a: Rename `systemPromptWithStats()` → delete the function entirely if `buildPromptOpts()` can just use `a.systemPrompt` directly. If other callers exist (gracefulExhaustion, gracefulSubAgentSynthesis), refactor them to use `a.systemPrompt`. Remove the intermediate function — it no longer does anything
+- [ ] 8b: Audit `buildPromptOpts()` — after Phase 7, the only purpose of `WithSystemPrompt()` is to pass the static system prompt. Since langdag's `PromptFrom()` ignores it anyway (uses root node), evaluate whether the option is needed on follow-up calls at all. If removing it is clean, do so; if it matters for the initial `Prompt()` call, keep it only there. Document the intent with a comment
+- [ ] 8c: Update plan's "Our approach" section (line 24) and success criteria (lines 36-38) to reflect the new architecture: budget info is injected via user messages, not the system prompt. This keeps the plan accurate as a historical record
+
 ---
 
 **Open questions:**
