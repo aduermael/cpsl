@@ -942,3 +942,78 @@ func TestToolsMDCrossToolGuidanceOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestSubAgentPromptBudgetManagement(t *testing.T) {
+	// Sub-agent prompt (explore mode: no write tools) should include budget management section.
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+	}
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+
+	if !strings.Contains(prompt, "Budget management") {
+		t.Error("sub-agent prompt missing Budget management section")
+	}
+	if !strings.Contains(prompt, "reserve at least 1-2 turns") {
+		t.Error("sub-agent prompt missing budget pacing guidance")
+	}
+}
+
+func TestSubAgentPromptBudgetManagementWithWriteTools(t *testing.T) {
+	// Implement-mode sub-agent (with write tools) should also include budget management.
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"glob"},
+		stubTool{"grep"},
+		stubTool{"read_file"},
+		stubTool{"edit_file"},
+		stubTool{"write_file"},
+	}
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+
+	if !strings.Contains(prompt, "Budget management") {
+		t.Error("implement-mode sub-agent prompt missing Budget management section")
+	}
+}
+
+func TestMainAgentPromptDelegationBudget(t *testing.T) {
+	// Main agent prompt with agent tool should mention sub-agent turn budget.
+	tools := []Tool{
+		stubTool{"bash"},
+		stubTool{"agent"},
+	}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+
+	if !strings.Contains(prompt, "limited turn budget") {
+		t.Error("main agent prompt should mention sub-agent turn budget in delegation section")
+	}
+	if !strings.Contains(prompt, "Scope delegated tasks") {
+		t.Error("main agent prompt should include task scoping guidance")
+	}
+}
+
+func TestMainAgentPromptNoDelegationBudgetWithoutAgentTool(t *testing.T) {
+	// Without agent tool, delegation budget guidance should be absent.
+	tools := []Tool{stubTool{"bash"}}
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+
+	if strings.Contains(prompt, "limited turn budget") {
+		t.Error("main agent prompt without agent tool should not mention turn budget")
+	}
+}
+
+func TestAgentToolDescriptionTurnBudget(t *testing.T) {
+	descs := loadToolDescriptions("alpine:latest", "/workspace")
+	td, ok := descs["agent"]
+	if !ok {
+		t.Fatal("missing agent tool description")
+	}
+	if !strings.Contains(td.Full, "Turn budget:") {
+		t.Error("agent tool description should mention turn budget")
+	}
+	if !strings.Contains(td.Full, "20 turns per sub-agent") {
+		t.Error("agent tool description should state default 20 turns")
+	}
+}

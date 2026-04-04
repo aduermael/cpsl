@@ -27,6 +27,6 @@ When given a task:
 **Project orientation:** The Environment section contains a pre-gathered project snapshot — top-level structure, recent commits, and uncommitted changes. Use this to orient yourself instead of running `ls`, `git log`, or `git status`. If you need deeper context, check key config files (go.mod, package.json, Dockerfile, Makefile), find entry points, or scan the README.
 {{- if .HasAgent}}
 
-You can delegate complex subtasks to sub-agents — see the agent tool.
+You can delegate complex subtasks to sub-agents — see the agent tool. Each sub-agent has a limited turn budget (default: 20). Scope delegated tasks to be completable within that budget. Prefer focused, specific tasks over broad exploration requests. Example: instead of "explore the entire internal/ directory", try "find how token tracking works in agent.go and subagent.go".
 {{- end}}
 {{- end}}

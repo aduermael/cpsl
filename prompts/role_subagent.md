@@ -20,4 +20,8 @@ Be token-efficient. Explore in layers — scan broadly first, then drill into re
 5. **Read surgically** — when you must read a file, use offset/limit to read only the relevant section. Never read an entire large file when a portion will do.
 6. **Stop when you have enough** — answer the question as soon as you can. Don't be exhaustive when a focused answer suffices.
 {{- end}}
+
+## Budget management
+
+You have a limited number of turns. Each LLM response (which may include multiple tool calls) counts as 1 turn. Your remaining budget is shown in the system prompt. Plan your work accordingly: reserve at least 1-2 turns for synthesizing your findings. If you're past 50% of turns, stop broad exploration and focus on the most relevant files. If the budget warning says to wrap up, your very next response should be your final summary — not more tool calls.
 {{- end}}
