@@ -593,6 +593,38 @@ func (a *App) tryAttachFile(s string) (string, bool) {
 	return fmt.Sprintf("[File #%d]", a.attachmentCount), true
 }
 
+// tryAttachPaths checks if val is one or more file paths (e.g. from
+// drag-and-drop in terminals that don't use bracketed paste) and attaches
+// them. Returns the modified string with attachment placeholders, or the
+// original string unchanged if no paths were detected.
+func (a *App) tryAttachPaths(val string) string {
+	// Single file path.
+	if placeholder, ok := a.tryAttachFile(val); ok {
+		return placeholder
+	}
+	// Multiple newline-separated file paths.
+	lines := strings.Split(val, "\n")
+	if len(lines) <= 1 {
+		return val
+	}
+	var placeholders []string
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		p, ok := a.tryAttachFile(line)
+		if !ok {
+			return val // not all lines are file paths — return unchanged
+		}
+		placeholders = append(placeholders, p)
+	}
+	if len(placeholders) > 0 {
+		return strings.Join(placeholders, " ")
+	}
+	return val
+}
+
 // attachmentDir returns the host path for this session's attachment files.
 func (a *App) attachmentDir() string {
 	return filepath.Join(a.worktreePath, ".herm", "attachments", a.sessionID)
@@ -755,6 +787,11 @@ func (a *App) handleEnter() {
 	if a.history != nil {
 		a.history.Add(val)
 	}
+
+	// Try to attach file paths that weren't caught by bracketed paste.
+	// Some terminals (e.g. Zed) send drag-and-drop paths as regular input
+	// instead of wrapping them in paste markers.
+	val = a.tryAttachPaths(val)
 
 	if strings.HasPrefix(val, "/") {
 		a.resetInput()

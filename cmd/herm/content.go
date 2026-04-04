@@ -27,6 +27,9 @@ type Attachment struct {
 
 var pasteplaceholderRe = regexp.MustCompile(`\[pasted #(\d+) \| \d+ chars\]`)
 
+// unicodeEscapeRe matches \u{XXXX} escapes emitted by some terminals (e.g. Zed).
+var unicodeEscapeRe = regexp.MustCompile(`\\u\{([0-9a-fA-F]+)\}`)
+
 func expandPastes(s string, store map[int]string) string {
 	return pasteplaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		sub := pasteplaceholderRe.FindStringSubmatch(match)
@@ -65,6 +68,19 @@ func isFilePath(s string) (string, bool) {
 	s = strings.TrimSpace(s)
 	// Unescape backslash-spaces (common in terminal drag-drop).
 	p := strings.ReplaceAll(s, "\\ ", " ")
+	// Unescape \u{XXXX} Unicode escapes (Zed's terminal uses this for
+	// non-ASCII characters in drag-and-drop paths, e.g. the narrow
+	// no-break space U+202F in macOS screenshot filenames).
+	if strings.Contains(p, `\u{`) {
+		p = unicodeEscapeRe.ReplaceAllStringFunc(p, func(match string) string {
+			hex := match[3 : len(match)-1] // strip \u{ and }
+			cp, err := strconv.ParseInt(hex, 16, 32)
+			if err != nil {
+				return match
+			}
+			return string(rune(cp))
+		})
+	}
 	// Expand tilde.
 	if strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {

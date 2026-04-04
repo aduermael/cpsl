@@ -222,6 +222,26 @@ func TestIsFilePath_DoubleQuotedMultiline(t *testing.T) {
 	}
 }
 
+func TestIsFilePath_UnicodeEscapes(t *testing.T) {
+	// Zed's terminal escapes non-ASCII characters in dropped paths as \u{XXXX}.
+	// e.g. the narrow no-break space (U+202F) in macOS screenshot filenames.
+	dir := t.TempDir()
+	// Create a file with U+202F (narrow no-break space) in the name.
+	tmp := filepath.Join(dir, "Screenshot 2026-03-31 at 8.02.54\u202fPM.png")
+	if err := os.WriteFile(tmp, []byte("img"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Simulate Zed's drag-drop: double-quoted path with \u{202f} escape.
+	input := `"` + filepath.Join(dir, `Screenshot 2026-03-31 at 8.02.54\u{202f}PM.png`) + `"`
+	resolved, ok := isFilePath(input)
+	if !ok {
+		t.Fatalf("expected isFilePath to accept Zed-style Unicode-escaped path %q", input)
+	}
+	if resolved != tmp {
+		t.Fatalf("expected resolved=%q, got %q", tmp, resolved)
+	}
+}
+
 func TestIsFilePath_QuotedWithSpaces(t *testing.T) {
 	// Some terminals drop paths as: ` "/path/to/img.png " `
 	// (double quotes AND spaces on both sides).
