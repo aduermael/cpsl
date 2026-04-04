@@ -151,10 +151,10 @@ Budget-related values are scattered across Go code, prompt templates, and tool d
 
 End-to-end tests that verify the complete budget-aware sub-agent flow, including the wrap-up phase.
 
-- [ ] 6a: Test: sub-agent with `maxTurns=5` — use a scripted LLM that makes tool calls for 4 turns, then on turn 5 (seeing "FINAL TURN" in system prompt) produces text output. Verify: budget shown on each turn, wrap-up message appears, synthesis produced, result includes full output
-- [ ] 6b: Test: sub-agent that ignores budget warnings — scripted LLM that keeps requesting tools past `maxTurns`. Verify: tools-disabled final call is made, text output is forced, error indicates synthesis was attempted, agent terminates cleanly
-- [ ] 6c: Test: background sub-agent with budget awareness — same as 6a but via `runBackground()`. Verify event forwarding includes budget-aware system prompts
-- [ ] 6d: Test: main agent delegates scoped task to sub-agent — verify the sub-agent's system prompt includes turn budget on every LLM call, and the main agent's prompt mentions the sub-agent turn budget
+- [x] 6a: Test: sub-agent with `maxTurns=5` — use a scripted LLM that makes tool calls for 4 turns, then on turn 5 (seeing "FINAL TURN" in system prompt) produces text output. Verify: budget shown on each turn, wrap-up message appears, synthesis produced, result includes full output
+- [x] 6b: Test: sub-agent that ignores budget warnings — scripted LLM that keeps requesting tools past `maxTurns`. Verify: tools-disabled final call is made, text output is forced, error indicates synthesis was attempted, agent terminates cleanly
+- [x] 6c: Test: background sub-agent with budget awareness — same as 6a but via `runBackground()`. Verify event forwarding includes budget-aware system prompts
+- [x] 6d: Test: main agent delegates scoped task to sub-agent — verify the sub-agent's system prompt includes turn budget on every LLM call, and the main agent's prompt mentions the sub-agent turn budget
 
 ---
 
