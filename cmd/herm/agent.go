@@ -530,7 +530,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 
 			opts = a.buildPromptOpts()
 			if reminder := a.budgetReminderBlock(); reminder.Text != "" {
-				toolResults = append([]types.ContentBlock{reminder}, toolResults...)
+				toolResults = append(toolResults, reminder)
 			}
 			toolResultJSON, marshalErr := json.Marshal(toolResults)
 			if marshalErr != nil {
@@ -1459,7 +1459,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		a.currentIteration = iteration
 		opts = a.buildPromptOpts()
 		if reminder := a.budgetReminderBlock(); reminder.Text != "" {
-			toolResults = append([]types.ContentBlock{reminder}, toolResults...)
+			toolResults = append(toolResults, reminder)
 		}
 		toolResultJSON, marshalErr := json.Marshal(toolResults)
 		if marshalErr != nil {
