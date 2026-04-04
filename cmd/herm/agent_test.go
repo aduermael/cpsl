@@ -5072,3 +5072,96 @@ func TestE2EChannelSaturationThreeAgents(t *testing.T) {
 	t.Logf("processed %d events with 64-slot buffer; %d/%d sub-agents done",
 		len(events), subDoneCount, len(app.subAgents))
 }
+
+// --- Turn budget tests ---
+
+func TestTurnBudgetNotShownWhenMaxTurnsZero(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	// Main agent: maxTurns == 0, no turn budget should appear.
+	got := agent.systemPromptWithStats()
+	if strings.Contains(got, "Budget:") {
+		t.Errorf("main agent (maxTurns=0) should not show budget, got: %q", got)
+	}
+}
+
+func TestTurnBudgetEarlyTier(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(3, 20)
+	agent.SetTokenProgress(6000, 2200)
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "Budget: Turn 3/20 | 8200 tokens used") {
+		t.Errorf("early tier should show basic budget, got: %q", got)
+	}
+	if strings.Contains(got, "halfway") || strings.Contains(got, "Wrap up") || strings.Contains(got, "FINAL") {
+		t.Errorf("early tier should not show pacing warnings, got: %q", got)
+	}
+}
+
+func TestTurnBudgetMidTier(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(12, 20)
+	agent.SetTokenProgress(25000, 9100)
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "Budget: Turn 12/20") {
+		t.Errorf("mid tier should show turn progress, got: %q", got)
+	}
+	if !strings.Contains(got, "past halfway") {
+		t.Errorf("mid tier should include 'past halfway', got: %q", got)
+	}
+}
+
+func TestTurnBudgetLateTier(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(16, 20)
+	agent.SetTokenProgress(40000, 12300)
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "Budget: Turn 16/20") {
+		t.Errorf("late tier should show turn progress, got: %q", got)
+	}
+	if !strings.Contains(got, "Wrap up") {
+		t.Errorf("late tier should include wrap-up warning, got: %q", got)
+	}
+}
+
+func TestTurnBudgetFinalTier(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(19, 20)
+	agent.SetTokenProgress(50000, 11800)
+
+	got := agent.systemPromptWithStats()
+	if !strings.Contains(got, "Budget: Turn 19/20") {
+		t.Errorf("final tier should show turn progress, got: %q", got)
+	}
+	if !strings.Contains(got, "FINAL TURN") {
+		t.Errorf("final tier should include FINAL TURN message, got: %q", got)
+	}
+	if !strings.Contains(got, "Do not make any more tool calls") {
+		t.Errorf("final tier should instruct no more tool calls, got: %q", got)
+	}
+}
+
+func TestSetTurnProgressThreadSafe(t *testing.T) {
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func(turn int) {
+			defer wg.Done()
+			agent.SetTurnProgress(turn, 20)
+			agent.SetTokenProgress(turn*1000, turn*200)
+			_ = agent.systemPromptWithStats()
+		}(i)
+	}
+	wg.Wait()
+	// If we get here without a race detector complaint, the test passes.
+}

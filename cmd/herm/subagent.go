@@ -468,6 +468,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),
+		WithMaxTurns(t.maxTurns),
 	}
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
@@ -525,6 +526,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				if !responseCounted {
 					turns++
 					responseCounted = true
+					agent.SetTurnProgress(turns, t.maxTurns)
 				}
 				currentTool = event.ToolName
 				if turns > t.maxTurns {
@@ -547,6 +549,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 				if event.Usage != nil {
 					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 					totalOutputTokens += event.Usage.OutputTokens
+					agent.SetTokenProgress(totalInputTokens, totalOutputTokens)
 				}
 				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true
@@ -676,6 +679,7 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),
+		WithMaxTurns(t.maxTurns),
 	}
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
@@ -770,6 +774,7 @@ drainLoop:
 				if !responseCounted {
 					turns++
 					responseCounted = true
+					agent.SetTurnProgress(turns, t.maxTurns)
 				}
 				currentTool = event.ToolName
 				if turns > t.maxTurns {
@@ -790,6 +795,7 @@ drainLoop:
 				if event.Usage != nil {
 					totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 					totalOutputTokens += event.Usage.OutputTokens
+					agent.SetTokenProgress(totalInputTokens, totalOutputTokens)
 				}
 				subTC.SetUsage(agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
 				usageSeen = true

@@ -238,6 +238,14 @@ type Agent struct {
 	// Tool iteration tracking for budget awareness (9a).
 	currentIteration int
 
+	// Turn budget tracking for sub-agent budget consciousness.
+	// Updated by the drain loop in SubAgentTool via SetTurnProgress.
+	turnMu       sync.Mutex
+	maxTurns     int // 0 = no turn budget (main agent); >0 = sub-agent turn limit
+	turnsUsed    int
+	turnTokensIn int // cumulative input tokens reported via SetTokenProgress
+	turnTokensOut int // cumulative output tokens reported via SetTokenProgress
+
 	// Background sub-agent completions, injected into the next LLM call.
 	bgMu          sync.Mutex
 	bgCompletions []string
@@ -269,6 +277,30 @@ func WithStreamChunkTimeout(d time.Duration) AgentOption {
 // WithThinking controls extended thinking for LLM calls.
 func WithThinking(think *bool) AgentOption {
 	return func(a *Agent) { a.thinking = think }
+}
+
+// WithMaxTurns sets the turn budget for the agent. When maxTurns > 0, the
+// system prompt includes turn progress and pacing guidance. Used for sub-agents.
+func WithMaxTurns(n int) AgentOption {
+	return func(a *Agent) { a.maxTurns = n }
+}
+
+// SetTurnProgress updates the agent's turn progress from the external drain loop.
+// Thread-safe — called by the SubAgentTool drain loop on each turn boundary.
+func (a *Agent) SetTurnProgress(used, max int) {
+	a.turnMu.Lock()
+	a.turnsUsed = used
+	a.maxTurns = max
+	a.turnMu.Unlock()
+}
+
+// SetTokenProgress updates the agent's cumulative token counts from the external drain loop.
+// Thread-safe — called by the SubAgentTool drain loop on each EventUsage.
+func (a *Agent) SetTokenProgress(inputTokens, outputTokens int) {
+	a.turnMu.Lock()
+	a.turnTokensIn = inputTokens
+	a.turnTokensOut = outputTokens
+	a.turnMu.Unlock()
 }
 
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
@@ -700,9 +732,21 @@ func (a *Agent) emitUsage(ctx context.Context, nodeID, stopReason string) int {
 // the system prompt includes a remaining-iterations warning (30%).
 const iterationWarningThreshold = 0.30
 
+// Turn budget thresholds for tiered pacing messages in sub-agent system prompts.
+const (
+	// turnBudgetMidThreshold: past 50% of turns — start narrowing focus.
+	turnBudgetMidThreshold = 0.50
+	// turnBudgetLateThreshold: past 75% of turns — wrap up, stop exploring.
+	turnBudgetLateThreshold = 0.75
+	// turnBudgetFinalThreshold: past 90% of turns — synthesize NOW.
+	turnBudgetFinalThreshold = 0.90
+)
+
 // systemPromptWithStats returns the system prompt with session usage stats
 // appended when non-zero. This gives the model visibility into cumulative
 // token consumption so it can self-regulate delegation decisions.
+// For sub-agents (maxTurns > 0), it also includes turn budget progress with
+// tiered pacing messages at 50%, 75%, and 90% thresholds.
 func (a *Agent) systemPromptWithStats() string {
 	var extra []string
 
@@ -723,10 +767,54 @@ func (a *Agent) systemPromptWithStats() string {
 		extra = append(extra, fmt.Sprintf("You have %d tool iterations remaining out of %d. Plan your remaining work efficiently.", remaining, maxIter))
 	}
 
+	// Turn budget display for sub-agents.
+	if budget := a.turnBudgetLine(); budget != "" {
+		extra = append(extra, budget)
+	}
+
 	if len(extra) == 0 {
 		return a.systemPrompt
 	}
 	return a.systemPrompt + "\n\n---\n" + strings.Join(extra, "\n")
+}
+
+// turnBudgetLine returns the turn budget status line for the system prompt.
+// Returns "" when no turn budget is set (main agent).
+func (a *Agent) turnBudgetLine() string {
+	a.turnMu.Lock()
+	maxT := a.maxTurns
+	used := a.turnsUsed
+	tokIn := a.turnTokensIn
+	tokOut := a.turnTokensOut
+	a.turnMu.Unlock()
+
+	if maxT <= 0 {
+		return ""
+	}
+
+	totalTokens := tokIn + tokOut
+	remaining := maxT - used
+	if remaining < 0 {
+		remaining = 0
+	}
+	progress := float64(used) / float64(maxT)
+
+	switch {
+	case progress >= turnBudgetFinalThreshold:
+		return fmt.Sprintf("Budget: Turn %d/%d — %d turn remaining | %d tokens used\n"+
+			"🛑 FINAL TURN: Produce your complete summary NOW. Do not make any more tool calls. Write your findings as a final response.",
+			used, maxT, remaining, totalTokens)
+	case progress >= turnBudgetLateThreshold:
+		return fmt.Sprintf("Budget: Turn %d/%d — %d turns remaining | %d tokens used\n"+
+			"⚠️ Wrap up: You're running low on turns. Stop exploring and begin synthesizing your findings. Your next response should start producing output.",
+			used, maxT, remaining, totalTokens)
+	case progress >= turnBudgetMidThreshold:
+		return fmt.Sprintf("Budget: Turn %d/%d | %d tokens used — you're past halfway. Start narrowing your focus.",
+			used, maxT, totalTokens)
+	default:
+		return fmt.Sprintf("Budget: Turn %d/%d | %d tokens used",
+			used, maxT, totalTokens)
+	}
 }
 
 // clearThresholdFraction is the fraction of context window at which old tool

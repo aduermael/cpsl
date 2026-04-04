@@ -79,11 +79,11 @@ Budget: Turn 19/20 — 1 turn remaining | 61,800 tokens used
 🛑 FINAL TURN: Produce your complete summary NOW. Do not make any more tool calls. Write your findings as a final response.
 ```
 
-- [ ] 1a: Add `turnBudget` fields to `Agent` struct — `maxTurns int` and `turnsUsed atomic.Int32` (or mutex-protected). Add `SetTurnProgress(used, max int)` method and `WithMaxTurns(n int)` agent option. These are zero-valued by default (no budget display for main agent unless explicitly set)
-- [ ] 1b: Extend `systemPromptWithStats()` to include turn budget info when `maxTurns > 0`. Use the tiered messaging described above (thresholds at 50%, 75%, 90%). Include cumulative token count. Extract threshold constants as named values
-- [ ] 1c: In `SubAgentTool.Execute()` drain loop, after incrementing `turns` on `EventToolCallStart` (line 526), call `agent.SetTurnProgress(turns, t.maxTurns)`. Do the same in `runBackground()`. Pass `WithMaxTurns(t.maxTurns)` when creating the agent
-- [ ] 1d: Add token accumulation to the agent-level budget display. The drain loop already tracks `totalInputTokens`/`totalOutputTokens` — propagate these to the agent via `SetTokenProgress(input, output int)` so `systemPromptWithStats()` can display them
-- [ ] 1e: Tests: (1) verify `systemPromptWithStats()` includes turn budget at each tier (early/mid/late/final); (2) verify `SetTurnProgress` is thread-safe; (3) verify budget not shown when `maxTurns == 0` (main agent case)
+- [x] 1a: Add `turnBudget` fields to `Agent` struct — `maxTurns int` and `turnsUsed atomic.Int32` (or mutex-protected). Add `SetTurnProgress(used, max int)` method and `WithMaxTurns(n int)` agent option. These are zero-valued by default (no budget display for main agent unless explicitly set)
+- [x] 1b: Extend `systemPromptWithStats()` to include turn budget info when `maxTurns > 0`. Use the tiered messaging described above (thresholds at 50%, 75%, 90%). Include cumulative token count. Extract threshold constants as named values
+- [x] 1c: In `SubAgentTool.Execute()` drain loop, after incrementing `turns` on `EventToolCallStart` (line 526), call `agent.SetTurnProgress(turns, t.maxTurns)`. Do the same in `runBackground()`. Pass `WithMaxTurns(t.maxTurns)` when creating the agent
+- [x] 1d: Add token accumulation to the agent-level budget display. The drain loop already tracks `totalInputTokens`/`totalOutputTokens` — propagate these to the agent via `SetTokenProgress(input, output int)` so `systemPromptWithStats()` can display them
+- [x] 1e: Tests: (1) verify `systemPromptWithStats()` includes turn budget at each tier (early/mid/late/final); (2) verify `SetTurnProgress` is thread-safe; (3) verify budget not shown when `maxTurns == 0` (main agent case)
 
 ## Phase 2: Soft wrap-up before hard kill
 
