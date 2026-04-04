@@ -299,6 +299,24 @@ func (a *App) hasActiveSubAgents() bool {
 	return false
 }
 
+// forceCompleteSubAgents marks all active sub-agents as done. Called when the
+// parent event channel is closed while sub-agents are still tracked as active,
+// which means their "done" events were lost or the channel closed before they
+// could be forwarded.
+func (a *App) forceCompleteSubAgents() {
+	for _, sa := range a.subAgents {
+		if !sa.done {
+			sa.done = true
+			sa.completedAt = time.Now()
+		}
+	}
+	if a.agentTicker != nil {
+		a.agentTicker.Stop()
+		a.agentTicker = nil
+	}
+	a.render()
+}
+
 // finalizeAgentTurn performs all state transitions needed when the agent finishes
 // a turn. Called by both the EventDone handler (with the event's nodeID) and the
 // doneCh backup path (with empty nodeID, since EventDone was dropped).
@@ -358,6 +376,9 @@ func (a *App) drainAgentEvents() {
 			if !ok {
 				a.agentRunning = false
 				a.cancelSent = false
+				if a.hasActiveSubAgents() {
+					a.forceCompleteSubAgents()
+				}
 				return
 			}
 			a.handleAgentEvent(event)
@@ -373,6 +394,9 @@ func (a *App) drainAgentEvents() {
 					case event, ok := <-a.agent.Events():
 						if !ok {
 							a.finalizeAgentTurn("")
+							if a.hasActiveSubAgents() {
+								a.forceCompleteSubAgents()
+							}
 							return
 						}
 						a.handleAgentEvent(event)

@@ -77,6 +77,7 @@ type SubAgentTool struct {
 	mu         sync.Mutex
 	agentNodes map[string]agentNodeState // agentID → state (nodeID + mode for resume)
 	bgAgents   map[string]*bgAgentState // background sub-agents
+	bgWg       sync.WaitGroup           // tracks running background goroutines
 }
 
 func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
@@ -282,6 +283,24 @@ func (t *SubAgentTool) HasPendingBackgroundAgents() bool {
 		}
 	}
 	return false
+}
+
+// DrainGoroutines blocks until all background sub-agent goroutines have exited
+// or the timeout expires. Call this before closing the parent event channel to
+// ensure all "done" events are forwarded. Returns true if all goroutines exited.
+func (t *SubAgentTool) DrainGoroutines(timeout time.Duration) bool {
+	done := make(chan struct{})
+	go func() {
+		t.bgWg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return true
+	case <-time.After(timeout):
+		debugLog("DrainGoroutines timed out after %v — some sub-agent goroutines still running", timeout)
+		return false
+	}
 }
 
 // bgWaitPollInterval is the polling interval for WaitForBackgroundAgents.
@@ -681,7 +700,11 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 
 	t.forward(AgentEvent{Type: EventSubAgentStart, AgentID: agentID, Task: in.Task, Mode: in.Mode, RetryOf: in.RetryOf})
 
-	go t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
+	t.bgWg.Add(1)
+	go func() {
+		defer t.bgWg.Done()
+		t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
+	}()
 
 	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes. Do not narrate progress — the user sees live sub-agent status in the UI. Move on to your next action or stop. If an agent fails, you can retry by spawning a new agent with retry_of set to the failed agent's ID.", agentID, in.Task), nil
 }

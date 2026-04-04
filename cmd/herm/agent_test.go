@@ -4335,6 +4335,10 @@ func (t *testBgWaiterTool) HasPendingBackgroundAgents() bool {
 	return t.pending
 }
 
+func (t *testBgWaiterTool) DrainGoroutines(_ time.Duration) bool {
+	return true
+}
+
 func (t *testBgWaiterTool) wasCalled() bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -127,6 +127,10 @@ type Tool interface {
 type BackgroundWaiter interface {
 	WaitForBackgroundAgents(timeout time.Duration) []string
 	HasPendingBackgroundAgents() bool
+	// DrainGoroutines blocks until all background goroutines have exited or
+	// the timeout expires. Called before closing the event channel to ensure
+	// all sub-agent "done" events are forwarded. Returns true if all exited.
+	DrainGoroutines(timeout time.Duration) bool
 }
 
 // AgentEventType identifies the kind of agent event.
@@ -587,8 +591,14 @@ func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string
 	a.mu.Unlock()
 
 	// Close the event channel last (first defer = last to execute in LIFO order).
-	// This unblocks any `range agent.Events()` readers after all events are emitted.
-	defer close(a.events)
+	// Wait for background sub-agent goroutines to finish forwarding their final
+	// events before closing, so "done" status events are not lost.
+	defer func() {
+		if bw := a.findBackgroundWaiter(); bw != nil {
+			bw.DrainGoroutines(drainGoroutinesTimeout)
+		}
+		close(a.events)
+	}()
 
 	defer func() {
 		a.mu.Lock()
@@ -616,6 +626,11 @@ func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string
 func (a *Agent) ID() string {
 	return a.id
 }
+
+// drainGoroutinesTimeout is the maximum time Run() will wait for background
+// sub-agent goroutines to finish before closing the event channel. This ensures
+// "done" status events are forwarded even when backgroundCompletion() timed out.
+const drainGoroutinesTimeout = 60 * time.Second
 
 // eventDoneDeliveryTimeout is the maximum time emit() will block trying to
 // deliver EventDone before falling back to the doneCh backup signal.

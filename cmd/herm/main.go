@@ -416,6 +416,11 @@ func (a *App) Run() error {
 			case event, ok := <-a.agent.Events():
 				if ok {
 					a.handleAgentEvent(event)
+				} else {
+					// Channel closed while sub-agents are tracked as active.
+					// Their "done" events were lost — force-complete them so
+					// the UI stops showing spinners.
+					a.forceCompleteSubAgents()
 				}
 				a.drainResults()
 				a.drainAgentEvents()
