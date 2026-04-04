@@ -41,4 +41,4 @@ When spawning multiple implement-mode sub-agents, ensure they work on separate f
 - `[errors: ...]` — sub-agent hit errors; review and consider retrying with a narrower task.
 - `[turns: N/M]` — turns count LLM response cycles, not individual tool calls (one response with 5 tool calls = 1 turn). N=M means the sub-agent hit its turn limit and may have incomplete results.
 
-**Turn budget:** Default is 20 turns per sub-agent. Scope tasks to fit within ~15 turns of exploration + a few turns for synthesis. If a task requires more depth, consider splitting it into multiple focused sub-agents rather than one broad one.
+**Turn budget:** Default is __DEFAULT_MAX_TURNS__ turns per sub-agent. Scope tasks to fit within ~__EXPLORATION_TURNS__ turns of exploration + a few turns for synthesis. If a task requires more depth, consider splitting it into multiple focused sub-agents rather than one broad one.
