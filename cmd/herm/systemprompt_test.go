@@ -73,7 +73,7 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 		stubTool{"write_file"},
 	}
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, serverTools, nil, "/workspace", "", "", "alpine:latest", "", nil)
 
 	// Structural sections that must always be present.
 	sections := []string{
@@ -108,7 +108,7 @@ func TestBuildSystemPromptAllTools(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoTools(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	// Should still have the structural sections.
 	if !strings.Contains(prompt, "## Tools") {
@@ -139,8 +139,8 @@ func TestBuildSystemPromptCrossToolGuidanceRequiresGlob(t *testing.T) {
 	toolsWithGlob := []Tool{stubTool{"glob"}}
 	toolsWithoutGlob := []Tool{stubTool{"bash"}}
 
-	promptWith := buildSystemPrompt(toolsWithGlob, nil, nil, "/work", "", "alpine:latest", "", nil)
-	promptWithout := buildSystemPrompt(toolsWithoutGlob, nil, nil, "/work", "", "alpine:latest", "", nil)
+	promptWith := buildSystemPrompt(toolsWithGlob, nil, nil, "/work", "", "", "alpine:latest", "", nil)
+	promptWithout := buildSystemPrompt(toolsWithoutGlob, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(promptWith, "Explore in layers") {
 		t.Error("prompt with glob should contain exploration guidance")
@@ -155,7 +155,7 @@ func TestBuildSystemPromptWithSkills(t *testing.T) {
 		{Name: "Testing", Description: "How to test", Content: "Write table-driven tests."},
 		{Name: "Style", Description: "Code style", Content: "Use gofmt."},
 	}
-	prompt := buildSystemPrompt(nil, nil, skills, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, skills, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "## Skills") {
 		t.Error("prompt missing Skills section")
@@ -178,7 +178,7 @@ func TestBuildSystemPromptWithSkills(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoSkills(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(prompt, "## Skills") {
 		t.Error("prompt should not contain Skills section when no skills loaded")
@@ -186,7 +186,7 @@ func TestBuildSystemPromptNoSkills(t *testing.T) {
 }
 
 func TestBuildSystemPromptEnvironment(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/my/project", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/my/project", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "/my/project") {
 		t.Error("prompt missing working directory")
@@ -203,7 +203,7 @@ func TestBuildSystemPromptContainerEnv(t *testing.T) {
 	os.MkdirAll(hermDir, 0o755)
 	os.WriteFile(filepath.Join(hermDir, "environment.md"), []byte("Runtimes: go 1.22.5, python3 3.11.2\nSystem tools: git, rg, tree\n"), 0o644)
 
-	prompt := buildSystemPrompt(nil, nil, nil, dir, "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, dir, "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "Runtimes: go 1.22.5, python3 3.11.2") {
 		t.Error("prompt missing container environment runtimes")
@@ -215,7 +215,7 @@ func TestBuildSystemPromptContainerEnv(t *testing.T) {
 
 func TestBuildSystemPromptContainerEnvFallsBackToBase(t *testing.T) {
 	dir := t.TempDir() // no .herm/environment.md
-	prompt := buildSystemPrompt(nil, nil, nil, dir, "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, dir, "", "", "alpine:latest", "", nil)
 
 	// Should fall back to base manifest.
 	if !strings.Contains(prompt, "Pre-installed:") {
@@ -227,7 +227,7 @@ func TestBuildSystemPromptContainerEnvFallsBackToBase(t *testing.T) {
 }
 
 func TestBuildSystemPromptPersonality(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "You are a pirate. Respond with nautical flair.", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "You are a pirate. Respond with nautical flair.", "", "alpine:latest", "", nil)
 	if !strings.Contains(prompt, "## Personality") {
 		t.Error("prompt missing Personality section")
 	}
@@ -237,7 +237,7 @@ func TestBuildSystemPromptPersonality(t *testing.T) {
 }
 
 func TestBuildSystemPromptNoPersonality(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 	if strings.Contains(prompt, "## Personality") {
 		t.Error("prompt should not contain Personality section when empty")
 	}
@@ -256,7 +256,7 @@ func TestPromptTemplateParsing(t *testing.T) {
 
 func TestBuildSystemPromptGitAbsent(t *testing.T) {
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(prompt, "Host tools") {
 		t.Error("prompt should not contain Host tools info when no host tools present")
@@ -265,7 +265,7 @@ func TestBuildSystemPromptGitAbsent(t *testing.T) {
 
 func TestBuildSystemPromptWorktreeBranch(t *testing.T) {
 	tools := []Tool{stubHostTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "herm-feature-x", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "herm-feature-x", nil)
 
 	if !strings.Contains(prompt, "herm-feature-x") {
 		t.Error("prompt missing worktree branch name")
@@ -277,7 +277,7 @@ func TestBuildSystemPromptWorktreeBranch(t *testing.T) {
 
 func TestBuildSystemPromptWorktreeBranchEmpty(t *testing.T) {
 	tools := []Tool{stubHostTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "Host tools") {
 		t.Error("prompt missing Host tools in environment section")
@@ -286,7 +286,7 @@ func TestBuildSystemPromptWorktreeBranchEmpty(t *testing.T) {
 
 func TestBuildSystemPromptHostToolsMention(t *testing.T) {
 	tools := []Tool{stubHostTool{"git"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "Host exceptions:") {
 		t.Error("role section missing host exceptions when git tool is present")
@@ -301,7 +301,7 @@ func TestBuildSystemPromptHostToolsMention(t *testing.T) {
 
 func TestBuildSystemPromptHostToolsAbsent(t *testing.T) {
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(prompt, "Host exceptions") {
 		t.Error("role section should not mention host exceptions when no host tools")
@@ -314,7 +314,7 @@ func TestHostToolsSlicePopulatedFromInterface(t *testing.T) {
 		stubHostTool{"git"},
 		stubTool{"glob"},
 	}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	// git should appear as a host tool.
 	if !strings.Contains(prompt, "Host exceptions:") {
@@ -333,7 +333,7 @@ func TestSubAgentPromptHostToolsOmittedWhenAbsent(t *testing.T) {
 		stubTool{"grep"},
 		stubTool{"read_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if strings.Contains(prompt, "Host exceptions") {
 		t.Error("sub-agent prompt without host tools should not contain Host exceptions")
@@ -417,7 +417,7 @@ func TestWebSearchToolDef(t *testing.T) {
 }
 
 func TestBuildSystemPromptEmptyToolsList(t *testing.T) {
-	prompt := buildSystemPrompt([]Tool{}, []types.ToolDefinition{}, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt([]Tool{}, []types.ToolDefinition{}, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	for _, section := range []string{"## Tools", "## Practices", "## Communication"} {
 		if !strings.Contains(prompt, section) {
@@ -427,8 +427,8 @@ func TestBuildSystemPromptEmptyToolsList(t *testing.T) {
 }
 
 func TestBuildSystemPromptNilSkillsVsEmpty(t *testing.T) {
-	promptNil := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
-	promptEmpty := buildSystemPrompt(nil, nil, []Skill{}, "/work", "", "alpine:latest", "", nil)
+	promptNil := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
+	promptEmpty := buildSystemPrompt(nil, nil, []Skill{}, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(promptNil, "## Skills") {
 		t.Error("nil skills: prompt should not contain Skills section")
@@ -443,7 +443,7 @@ func TestBuildSystemPromptNilSkillsVsEmpty(t *testing.T) {
 
 func TestBuildSystemPromptPersonalitySpecialChars(t *testing.T) {
 	personality := `You like "quotes" & <angle brackets> and {{curly braces}}`
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", personality, "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", personality, "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "## Personality") {
 		t.Error("prompt missing Personality section")
@@ -456,7 +456,7 @@ func TestBuildSystemPromptPersonalitySpecialChars(t *testing.T) {
 }
 
 func TestBuildSystemPromptRetryGuidance(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "retried automatically") {
 		t.Error("practices section should contain automatic retry guidance")
@@ -470,7 +470,7 @@ func TestBuildSystemPromptMultipleSkills(t *testing.T) {
 		{Name: "LongSkill", Description: "A skill with a very long body", Content: longContent},
 		{Name: "NormalSkill", Description: "A typical skill", Content: "Keep functions small and focused."},
 	}
-	prompt := buildSystemPrompt(nil, nil, skills, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, skills, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "## Skills") {
 		t.Error("prompt missing Skills section")
@@ -500,7 +500,7 @@ func TestBuildSubAgentSystemPrompt(t *testing.T) {
 		stubTool{"grep"},
 		stubTool{"read_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if !strings.Contains(prompt, "You are a sub-agent") {
 		t.Error("sub-agent prompt missing preamble")
@@ -543,7 +543,7 @@ func TestSubAgentPromptWithWriteToolsIncludesModify(t *testing.T) {
 		stubTool{"edit_file"},
 		stubTool{"write_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if !strings.Contains(prompt, "modify any files") {
 		t.Error("sub-agent prompt with write tools should include 'modify any files'")
@@ -557,7 +557,7 @@ func TestSubAgentPromptWithoutWriteToolsExcludesModify(t *testing.T) {
 		stubTool{"grep"},
 		stubTool{"read_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if strings.Contains(prompt, "modify any files") {
 		t.Error("sub-agent prompt without write tools should NOT include 'modify any files'")
@@ -583,7 +583,7 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 		{Name: "Style", Description: "Code style", Content: "Use gofmt."},
 	}
 
-	mainPrompt := buildSystemPrompt(tools, serverTools, skills, "/work", "Be helpful.", "alpine:latest", "feature-branch", nil)
+	mainPrompt := buildSystemPrompt(tools, serverTools, skills, "/work", "Be helpful.", "", "alpine:latest", "feature-branch", nil)
 
 	subTools := []Tool{
 		stubTool{"bash"},
@@ -593,7 +593,7 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 		stubTool{"grep"},
 		stubTool{"read_file"},
 	}
-	subPrompt := buildSubAgentSystemPrompt(subTools, serverTools, "/work", "alpine:latest", nil)
+	subPrompt := buildSubAgentSystemPrompt(subTools, serverTools, "/work", "", "alpine:latest", nil)
 
 	ratio := float64(len(subPrompt)) / float64(len(mainPrompt))
 	t.Logf("main prompt: %d bytes, sub-agent prompt: %d bytes, ratio: %.1f%%", len(mainPrompt), len(subPrompt), ratio*100)
@@ -893,7 +893,7 @@ func TestRoleMdDelegationMention(t *testing.T) {
 		stubTool{"bash"},
 		stubTool{"agent"},
 	}
-	promptWith := buildSystemPrompt(toolsWithAgent, nil, nil, "/work", "", "alpine:latest", "", nil)
+	promptWith := buildSystemPrompt(toolsWithAgent, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(promptWith, "delegate complex subtasks to sub-agents") {
 		t.Error("role should mention delegation when agent tool is available")
@@ -901,7 +901,7 @@ func TestRoleMdDelegationMention(t *testing.T) {
 
 	// Without agent tool, no delegation mention.
 	toolsNoAgent := []Tool{stubTool{"bash"}}
-	promptWithout := buildSystemPrompt(toolsNoAgent, nil, nil, "/work", "", "alpine:latest", "", nil)
+	promptWithout := buildSystemPrompt(toolsNoAgent, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(promptWithout, "delegate complex subtasks") {
 		t.Error("role should not mention delegation when agent tool is absent")
@@ -923,7 +923,7 @@ func TestToolsMDCrossToolGuidanceOnly(t *testing.T) {
 		stubTool{"agent"},
 	}
 	serverTools := []types.ToolDefinition{WebSearchToolDef()}
-	prompt := buildSystemPrompt(tools, serverTools, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, serverTools, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	// Cross-tool guidance should be present.
 	if !strings.Contains(prompt, "Prefer dedicated tools over bash") {
@@ -953,7 +953,7 @@ func TestSubAgentPromptBudgetManagement(t *testing.T) {
 		stubTool{"grep"},
 		stubTool{"read_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if !strings.Contains(prompt, "Budget management") {
 		t.Error("sub-agent prompt missing Budget management section")
@@ -973,7 +973,7 @@ func TestSubAgentPromptBudgetManagementWithWriteTools(t *testing.T) {
 		stubTool{"edit_file"},
 		stubTool{"write_file"},
 	}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if !strings.Contains(prompt, "Budget management") {
 		t.Error("implement-mode sub-agent prompt missing Budget management section")
@@ -986,7 +986,7 @@ func TestMainAgentPromptDelegationBudget(t *testing.T) {
 		stubTool{"bash"},
 		stubTool{"agent"},
 	}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if !strings.Contains(prompt, "limited turn budget") {
 		t.Error("main agent prompt should mention sub-agent turn budget in delegation section")
@@ -999,7 +999,7 @@ func TestMainAgentPromptDelegationBudget(t *testing.T) {
 func TestMainAgentPromptNoDelegationBudgetWithoutAgentTool(t *testing.T) {
 	// Without agent tool, delegation budget guidance should be absent.
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(tools, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(prompt, "limited turn budget") {
 		t.Error("main agent prompt without agent tool should not mention turn budget")
@@ -1074,5 +1074,45 @@ func TestBudgetConstantsFlowIntoAllOutputs(t *testing.T) {
 		if strings.Contains(role, residual) {
 			t.Errorf("role template still contains default %d — template not using .DefaultSubAgentMaxTurns", defaultSubAgentMaxTurns)
 		}
+	}
+}
+
+// --- Project Instructions integration tests ---
+
+func TestBuildSystemPromptProjectInstructionsPresent(t *testing.T) {
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "Follow the style guide.", "alpine:latest", "", nil)
+
+	if !strings.Contains(prompt, "## Project Instructions") {
+		t.Error("prompt should contain '## Project Instructions' section when instructions are provided")
+	}
+	if !strings.Contains(prompt, "Follow the style guide.") {
+		t.Error("prompt should contain the instructions content")
+	}
+}
+
+func TestBuildSystemPromptProjectInstructionsAbsent(t *testing.T) {
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
+
+	if strings.Contains(prompt, "## Project Instructions") {
+		t.Error("prompt should NOT contain '## Project Instructions' when instructions are empty")
+	}
+}
+
+func TestBuildSubAgentSystemPromptProjectInstructionsPresent(t *testing.T) {
+	prompt := buildSubAgentSystemPrompt(nil, nil, "/work", "Use gofmt for formatting.", "alpine:latest", nil)
+
+	if !strings.Contains(prompt, "## Project Instructions") {
+		t.Error("sub-agent prompt should contain '## Project Instructions' section when instructions are provided")
+	}
+	if !strings.Contains(prompt, "Use gofmt for formatting.") {
+		t.Error("sub-agent prompt should contain the instructions content")
+	}
+}
+
+func TestBuildSubAgentSystemPromptProjectInstructionsAbsent(t *testing.T) {
+	prompt := buildSubAgentSystemPrompt(nil, nil, "/work", "", "alpine:latest", nil)
+
+	if strings.Contains(prompt, "## Project Instructions") {
+		t.Error("sub-agent prompt should NOT contain '## Project Instructions' when instructions are empty")
 	}
 }

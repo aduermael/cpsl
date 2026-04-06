@@ -152,7 +152,7 @@ func TestBuildSystemPromptWithSnapshot(t *testing.T) {
 		GitStatus:     "M main.go",
 	}
 
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", snap)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", snap)
 
 	if !strings.Contains(prompt, "## Project context") {
 		t.Error("prompt should contain Project context section when snapshot is provided")
@@ -178,7 +178,7 @@ func TestBuildSystemPromptWithSnapshot(t *testing.T) {
 }
 
 func TestBuildSystemPromptWithoutSnapshot(t *testing.T) {
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", nil)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", nil)
 
 	if strings.Contains(prompt, "## Project context") {
 		t.Error("prompt should NOT contain Project context section when snapshot is nil")
@@ -192,7 +192,7 @@ func TestBuildSystemPromptCleanRepo(t *testing.T) {
 		GitStatus:     "", // clean
 	}
 
-	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "alpine:latest", "", snap)
+	prompt := buildSystemPrompt(nil, nil, nil, "/work", "", "", "alpine:latest", "", snap)
 
 	if !strings.Contains(prompt, "## Project context") {
 		t.Error("prompt should contain Project context section")
@@ -212,7 +212,7 @@ func TestBuildSubAgentSystemPromptWithSnapshot(t *testing.T) {
 	}
 
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", snap)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", snap)
 
 	if !strings.Contains(prompt, "## Project context") {
 		t.Error("sub-agent prompt should contain Project context when snapshot is provided")
@@ -227,7 +227,7 @@ func TestBuildSubAgentSystemPromptWithSnapshot(t *testing.T) {
 
 func TestBuildSubAgentSystemPromptWithoutSnapshot(t *testing.T) {
 	tools := []Tool{stubTool{"bash"}}
-	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(tools, nil, "/work", "", "alpine:latest", nil)
 
 	if strings.Contains(prompt, "## Project context") {
 		t.Error("sub-agent prompt should NOT contain Project context when snapshot is nil")

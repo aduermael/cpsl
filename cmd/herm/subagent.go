@@ -74,6 +74,7 @@ type SubAgentTool struct {
 	currentDepth   int    // current nesting depth (0 = spawned by main agent)
 	workDir        string
 	personality    string
+	instructions   ProjectInstructions
 	containerImage string
 	doneTimeout    time.Duration    // max time to wait for goroutine after stream ends
 	streamTimeout  time.Duration    // stream chunk inactivity timeout for inner agents; 0 = default
@@ -86,7 +87,7 @@ type SubAgentTool struct {
 	bgWg       sync.WaitGroup           // tracks running background goroutines
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
+func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, instructions ProjectInstructions, containerImage string) *SubAgentTool {
 	if maxTurns <= 0 {
 		maxTurns = defaultSubAgentMaxTurns
 	}
@@ -104,6 +105,7 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		currentDepth:     currentDepth,
 		workDir:          workDir,
 		personality:      personality,
+		instructions:     instructions,
 		containerImage:   containerImage,
 		doneTimeout:      subAgentDoneTimeout,
 		agentNodes:       make(map[string]agentNodeState),
@@ -404,7 +406,7 @@ func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
 	nextDepth := t.currentDepth + 1
 	if nextDepth < t.maxDepth {
 		// Sub-agent is allowed to spawn its own sub-agents.
-		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.mainModel, t.explorationModel, t.maxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage)
+		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.mainModel, t.explorationModel, t.maxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.instructions, t.containerImage)
 		child.parentEvents = t.parentEvents
 		tools = append(tools, child)
 	}
@@ -470,7 +472,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	// Build a lean sub-agent system prompt: skips communication, personality,
 	// skills, and uses a compact role section instead of the full orchestrator framing.
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
+	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.instructions.ContentForMode(in.Mode), t.containerImage, &snap.snapshot)
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),
@@ -697,7 +699,7 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 
 	subTools := t.buildSubAgentTools(in.Mode)
 	snap := fetchProjectSnapshot(t.workDir)
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
+	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.instructions.ContentForMode(in.Mode), t.containerImage, &snap.snapshot)
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),

@@ -188,6 +188,12 @@ func (a *App) startAgent(userMessage string) {
 
 	workDir := a.worktreePath
 
+	// If CLAUDE.md exists but .herm/instructions.md does not, import it.
+	importCLAUDEmd(workDir)
+
+	// Load project instructions (.herm/instructions.md) once at startup.
+	instructions := loadProjectInstructions(workDir)
+
 	containerImage := a.containerImage
 	if containerImage == "" {
 		containerImage = defaultContainerImage
@@ -211,14 +217,14 @@ func (a *App) startAgent(userMessage string) {
 	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
 		subAgentServerTools = nil
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, instructions, containerImage)
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string
 	if a.worktreePath != "" {
 		wtBranch = worktreeBranch(a.worktreePath)
 	}
-	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage, wtBranch, a.projectSnap)
+	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, instructions.Content, containerImage, wtBranch, a.projectSnap)
 
 	// Feed system prompt, tool definitions, and user message to trace collector.
 	if a.traceCollector != nil {
