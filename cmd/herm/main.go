@@ -923,8 +923,10 @@ func (a *App) handleResult(result any) {
 				matchSWEScores(a.models, a.sweScores)
 			}
 			a.maybeShowInitialModels()
-			// Fetch Ollama models asynchronously if configured
-			if a.config.OllamaBaseURL != "" {
+			// Fetch Ollama models asynchronously if configured. catalogMsg can
+			// arrive twice (once from local cache, once from network refresh),
+			// so ollamaFetched ensures we only start one probe per session.
+			if a.config.OllamaBaseURL != "" && !a.ollamaFetched {
 				go func() { a.resultCh <- fetchOllamaModelsCmd(a.config.OllamaBaseURL) }()
 			}
 		}
@@ -938,11 +940,12 @@ func (a *App) handleResult(result any) {
 				matchSWEScores(a.models, a.sweScores)
 			}
 		}
+		alreadyShown := a.shownInitialModel
 		a.maybeShowInitialModels()
-		// If the initial model was already shown before the Ollama fetch
-		// completed, check now whether the active model is offline and
-		// display the warning that was deferred earlier.
-		if a.shownInitialModel {
+		// Once Ollama responds, show the offline warning if the model line
+		// was already displayed. If maybeShowInitialModels runs here for the
+		// first time, showModelChange handles the warning directly.
+		if alreadyShown {
 			activeID := a.config.resolveActiveModel(a.models)
 			if a.config.OllamaBaseURL != "" && a.isOllamaOffline(activeID) {
 				msg := fmt.Sprintf("\033[33m⚠\033[34;3m Ollama unreachable at \033[36m%s\033[34;3m — run '\033[32;3mollama serve\033[34;3m' to continue", a.config.OllamaBaseURL)
