@@ -43,7 +43,8 @@ type containerReadyMsg struct {
 }
 
 type containerErrMsg struct {
-	err error
+	err      error
+	retrying bool // when true, don't show in chat (status bar is enough)
 }
 
 type containerStatusMsg struct {
@@ -154,7 +155,7 @@ func resolveWorkspaceCmd(cfg Config) workspaceMsg {
 	return workspaceMsg{worktreePath: cwd, repoRoot: repoRoot}
 }
 
-func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
+func bootContainerCmd(workspace string, sessionID string, ch chan<- any, stop <-chan struct{}) {
 	ch <- containerStatusMsg{text: "checking docker…"}
 
 	client := NewContainerClient(ContainerConfig{Image: defaultContainerImage})
@@ -165,9 +166,22 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 		} else {
 			ch <- containerStatusMsg{text: "docker not running"}
 		}
-		ch <- containerErrMsg{err: err}
-		return
+		ch <- containerErrMsg{err: err, retrying: true}
+		// Retry until Docker becomes available or app exits.
+		ticker := time.NewTicker(3 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				if client.CheckDocker() == nil {
+					goto dockerOK
+				}
+			}
+		}
 	}
+dockerOK:
 
 	// Build from .herm/Dockerfile (write base template if none exists).
 	imageName := buildContainerImage(workspace, ch)
