@@ -435,16 +435,16 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		if a.hasPendingBackgroundAgents() {
 			break
 		}
-		a.streamingText += event.Text
-		if idx := strings.LastIndex(a.streamingText, "\n"); idx >= 0 {
-			a.messages = append(a.messages, chatMessage{
-				kind:      msgAssistant,
-				content:   a.streamingText[:idx],
-				leadBlank: a.needsTextSep,
-			})
-			a.needsTextSep = false
-			a.streamingText = a.streamingText[idx+1:]
-		}
+			a.streamingText += event.Text
+			if idx := strings.LastIndex(a.streamingText, "\n"); idx >= 0 {
+				a.messages = append(a.messages, chatMessage{
+					kind:      msgAssistant,
+					content:   a.streamingText[:idx+1],
+					leadBlank: a.needsTextSep,
+				})
+				a.needsTextSep = false
+				a.streamingText = a.streamingText[idx+1:]
+			}
 		a.render()
 
 	case EventToolCallStart:

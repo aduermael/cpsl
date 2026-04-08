@@ -194,6 +194,7 @@ type App struct {
 	cfgActive     bool
 	cfgTab        int
 	cfgCursor     int
+	cfgTabCursor  [3]int // remembered cursor per config tab (API Keys/Global/Project)
 	cfgEditing    bool
 	cfgEditBuf    []rune
 	cfgEditCursor int

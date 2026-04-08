@@ -143,6 +143,28 @@ func TestSubAgentDisplayStateTransitions(t *testing.T) {
 	})
 }
 
+func TestEventTextDeltaFlushPreservesTrailingNewline(t *testing.T) {
+	app := &App{headless: true, width: 80}
+
+	app.handleAgentEvent(AgentEvent{
+		Type: EventTextDelta,
+		Text: "Hi\nHow",
+	})
+
+	if len(app.messages) != 1 {
+		t.Fatalf("messages = %d, want 1", len(app.messages))
+	}
+	if app.messages[0].kind != msgAssistant {
+		t.Fatalf("message kind = %v, want %v", app.messages[0].kind, msgAssistant)
+	}
+	if app.messages[0].content != "Hi\n" {
+		t.Fatalf("flushed content = %q, want %q", app.messages[0].content, "Hi\n")
+	}
+	if app.streamingText != "How" {
+		t.Fatalf("streamingText = %q, want %q", app.streamingText, "How")
+	}
+}
+
 func TestSubAgentGroupedDisplay(t *testing.T) {
 	stripANSI := func(s string) string {
 		return ansiEscRe.ReplaceAllString(s, "")

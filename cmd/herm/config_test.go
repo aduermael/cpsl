@@ -500,6 +500,90 @@ func TestBuildConfigRowsProjectOverrideShown(t *testing.T) {
 	}
 }
 
+func TestBuildConfigRowsAPIKeysShowsEffectiveProviderFromMergedActiveModel(t *testing.T) {
+	cases := []struct {
+		name         string
+		provider     string
+		globalModel  string
+		projectModel string
+		configure    func(*Config)
+	}{
+		{name: "anthropic", provider: ProviderAnthropic, globalModel: "anthropic-global", projectModel: "anthropic-project", configure: func(c *Config) { c.AnthropicAPIKey = "k" }},
+		{name: "openai", provider: ProviderOpenAI, globalModel: "openai-global", projectModel: "openai-project", configure: func(c *Config) { c.OpenAIAPIKey = "k" }},
+		{name: "grok", provider: ProviderGrok, globalModel: "grok-global", projectModel: "grok-project", configure: func(c *Config) { c.GrokAPIKey = "k" }},
+		{name: "gemini", provider: ProviderGemini, globalModel: "gemini-global", projectModel: "gemini-project", configure: func(c *Config) { c.GeminiAPIKey = "k" }},
+		{name: "ollama", provider: ProviderOllama, globalModel: "ollama-global", projectModel: "ollama-project", configure: func(c *Config) { c.OllamaBaseURL = "http://localhost:11434" }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{ActiveModel: tc.globalModel}
+			tc.configure(&cfg)
+
+			a := &App{
+				cfgTab:          0, // API Keys tab
+				cfgDraft:        cfg,
+				cfgProjectDraft: ProjectConfig{ActiveModel: tc.projectModel},
+				models: []ModelDef{
+					{Provider: tc.provider, ID: tc.globalModel},
+					{Provider: tc.provider, ID: tc.projectModel},
+				},
+			}
+
+			rows := a.buildConfigRows()
+			found := false
+			for _, row := range rows {
+				if strings.Contains(row, "Effective provider: "+tc.provider) && strings.Contains(row, "active model: "+tc.projectModel) {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("expected effective provider row for merged project active model, got: %v", rows)
+			}
+		})
+	}
+}
+
+func TestEnterConfigModeSetsPreferredAPIKeyCursorFromEffectiveProvider(t *testing.T) {
+	cases := []struct {
+		name      string
+		provider  string
+		modelID   string
+		configure func(*Config)
+	}{
+		{name: "anthropic", provider: ProviderAnthropic, modelID: "anthropic-model", configure: func(c *Config) { c.AnthropicAPIKey = "k" }},
+		{name: "openai", provider: ProviderOpenAI, modelID: "openai-model", configure: func(c *Config) { c.OpenAIAPIKey = "k" }},
+		{name: "grok", provider: ProviderGrok, modelID: "grok-model", configure: func(c *Config) { c.GrokAPIKey = "k" }},
+		{name: "gemini", provider: ProviderGemini, modelID: "gemini-model", configure: func(c *Config) { c.GeminiAPIKey = "k" }},
+		{name: "ollama", provider: ProviderOllama, modelID: "ollama-model", configure: func(c *Config) { c.OllamaBaseURL = "http://localhost:11434" }},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := Config{ActiveModel: tc.modelID}
+			tc.configure(&cfg)
+
+			a := &App{
+				config: cfg,
+				models: []ModelDef{
+					{Provider: tc.provider, ID: tc.modelID},
+				},
+			}
+
+			a.enterConfigMode()
+
+			want := apiKeyRowForProvider(tc.provider)
+			if a.cfgCursor != want {
+				t.Fatalf("cfgCursor = %d, want %d", a.cfgCursor, want)
+			}
+			if a.cfgTabCursor[0] != want {
+				t.Fatalf("cfgTabCursor[0] = %d, want %d", a.cfgTabCursor[0], want)
+			}
+		})
+	}
+}
+
 func TestExitConfigModeSavesBothConfigs(t *testing.T) {
 	globalDir := t.TempDir()
 	repoDir := t.TempDir()

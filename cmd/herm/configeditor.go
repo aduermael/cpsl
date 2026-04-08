@@ -71,10 +71,59 @@ var cfgAPIKeyFields = []cfgField{
 	}},
 }
 
+func apiKeyRowForProvider(provider string) int {
+	switch provider {
+	case ProviderAnthropic:
+		return 0
+	case ProviderOpenAI:
+		return 1
+	case ProviderGrok:
+		return 2
+	case ProviderGemini:
+		return 3
+	case ProviderOllama:
+		return 4
+	default:
+		return 0
+	}
+}
+
+// effectiveProviderForConfig returns the provider implied by the effective
+// active model. Falls back to the default configured provider when no active
+// model can be resolved.
+func (a *App) effectiveProviderForConfig(cfg Config) (provider string, modelID string) {
+	modelID = cfg.resolveActiveModel(a.models)
+	if modelID != "" {
+		if model := findModelByID(a.models, modelID); model != nil {
+			return model.Provider, modelID
+		}
+		// For unknown model IDs, keep the existing offline-Ollama assumption.
+		return ollamaModelProvider(modelID, a.models, cfg.OllamaBaseURL), modelID
+	}
+	return cfg.defaultLangdagProvider(), ""
+}
+
+// preferredAPIKeyCursor chooses the initial cursor row in the API Keys tab:
+// 1) active model provider, 2) first configured provider, 3) Anthropic.
+func (a *App) preferredAPIKeyCursor(cfg Config) int {
+	if p, _ := a.effectiveProviderForConfig(cfg); p != "" {
+		return apiKeyRowForProvider(p)
+	}
+	ordered := []string{ProviderAnthropic, ProviderOpenAI, ProviderGrok, ProviderGemini, ProviderOllama}
+	configured := cfg.configuredProviders()
+	for _, p := range ordered {
+		if configured[p] {
+			return apiKeyRowForProvider(p)
+		}
+	}
+	return 0
+}
+
 func (a *App) enterConfigMode() {
 	a.cfgActive = true
 	a.cfgTab = 0
-	a.cfgCursor = 0
+	a.cfgTabCursor = [3]int{a.preferredAPIKeyCursor(a.config), 0, 0}
+	a.cfgCursor = a.cfgTabCursor[a.cfgTab]
 	a.cfgEditing = false
 	a.cfgEditBuf = nil
 	a.cfgEditCursor = 0
@@ -248,10 +297,20 @@ func (a *App) cfgCurrentFields() []cfgField {
 	return nil
 }
 
+func (a *App) resolvedExplorationDisplay(c Config) string {
+	if c.ExplorationModel != "" {
+		return c.ExplorationModel
+	}
+	if len(c.configuredProviders()) == 0 {
+		return ""
+	}
+	return c.resolveExplorationModel(a.models)
+}
+
 func (a *App) settingsTabFields() []cfgField {
 	return []cfgField{
 		{label: "Active Model", get: func(c Config) string { return c.ActiveModel }, set: func(c *Config, v string) { c.ActiveModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ActiveModel }, func(id string) { a.cfgDraft.ActiveModel = id }) }},
-		{label: "Exploration Model", get: func(c Config) string { return c.ExplorationModel }, set: func(c *Config, v string) { c.ExplorationModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ExplorationModel }, func(id string) { a.cfgDraft.ExplorationModel = id }) }},
+		{label: "Exploration Model", get: func(c Config) string { return c.ExplorationModel }, display: func(c Config) string { return a.resolvedExplorationDisplay(c) }, set: func(c *Config, v string) { c.ExplorationModel = v }, picker: func(a *App) { a.openConfigModelPicker(func() string { return a.cfgDraft.ExplorationModel }, func(id string) { a.cfgDraft.ExplorationModel = id }) }},
 		{label: "Paste Collapse", get: func(c Config) string { return strconv.Itoa(c.PasteCollapseMinChars) }, set: func(c *Config, v string) { if n, err := strconv.Atoi(v); err == nil { c.PasteCollapseMinChars = n } }},
 		{label: "Debug Mode", get: func(c Config) string { if c.DebugMode { return "on" }; return "off" }, toggle: func(c *Config) { c.DebugMode = !c.DebugMode }},
 		{label: "Thinking", get: func(c Config) string { if c.effectiveThinking() { return "on" }; return "off" }, toggle: func(c *Config) { if c.Thinking == nil { t := true; c.Thinking = &t } else { v := !*c.Thinking; c.Thinking = &v } }},
@@ -274,7 +333,7 @@ func (a *App) projectTabFields() []cfgField {
 			label:      "Exploration Model",
 			get:        func(_ Config) string { return a.cfgProjectDraft.ExplorationModel },
 			set:        func(_ *Config, v string) { a.cfgProjectDraft.ExplorationModel = v },
-			globalHint: func(c Config) string { return c.ExplorationModel },
+			globalHint: func(c Config) string { return a.resolvedExplorationDisplay(c) },
 			picker:     func(a *App) { a.openConfigModelPicker(func() string { return a.cfgProjectDraft.ExplorationModel }, func(id string) { a.cfgProjectDraft.ExplorationModel = id }) },
 		},
 		{
@@ -338,6 +397,9 @@ func (a *App) projectTabFields() []cfgField {
 
 func (a *App) buildConfigRows() []string {
 	var rows []string
+	configured := a.cfgDraft.configuredProviders()
+	hasProvider := len(configured) > 0
+	isProjectTab := a.cfgTab == 2
 
 	// Tab bar
 	var tabParts []string
@@ -349,6 +411,18 @@ func (a *App) buildConfigRows() []string {
 		}
 	}
 	rows = append(rows, strings.Join(tabParts, " "))
+
+	if a.cfgTab == 0 {
+		effective := mergeConfigs(a.cfgDraft, a.cfgProjectDraft)
+		provider, modelID := a.effectiveProviderForConfig(effective)
+		if provider == "" {
+			rows = append(rows, "\033[2mEffective provider: (none)\033[0m")
+		} else if modelID != "" {
+			rows = append(rows, fmt.Sprintf("\033[2mEffective provider: %s  (active model: %s)\033[0m", provider, modelID))
+		} else {
+			rows = append(rows, fmt.Sprintf("\033[2mEffective provider: %s\033[0m", provider))
+		}
+	}
 
 	// No-project message for Project tab
 	if a.cfgTab == 2 && a.repoRoot == "" {
@@ -401,14 +475,30 @@ func (a *App) buildConfigRows() []string {
 			} else {
 				val = f.get(a.cfgDraft)
 			}
+			if f.picker != nil && val != "" {
+				p := ollamaModelProvider(val, a.models, a.cfgDraft.OllamaBaseURL)
+				// Hide model values when no providers are configured, or when this
+				// model's provider is not currently configured.
+				if !isProjectTab && (!hasProvider || p == "" || !configured[p]) {
+					val = ""
+				}
+			}
 			// If the value is an Ollama model and Ollama is offline, show indicator.
 			// Only applies to model picker fields, not API key or other fields.
 			if val != "" && f.picker != nil && a.cfgDraft.OllamaBaseURL != "" && a.isOllamaOffline(val) {
 				val = val + " \033[33m(offline)\033[0m"
 			}
 			if val == "" {
-				if f.globalHint != nil {
+				if f.picker != nil && !hasProvider && !isProjectTab {
+					val = "(not set)"
+				} else if f.globalHint != nil {
 					hint := f.globalHint(a.cfgDraft)
+					if f.picker != nil && !isProjectTab {
+						p := ollamaModelProvider(hint, a.models, a.cfgDraft.OllamaBaseURL)
+						if hint == "" || p == "" || !configured[p] {
+							hint = "not set"
+						}
+					}
 					if hint == "" {
 						hint = "not set"
 					}
@@ -472,6 +562,7 @@ func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte
 					a.cfgCursor = len(fields) - 1
 				}
 			}
+			a.cfgTabCursor[a.cfgTab] = a.cfgCursor
 			a.renderInput()
 		case 'B': // Down
 			fields := a.cfgCurrentFields()
@@ -480,20 +571,37 @@ func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte
 			} else {
 				a.cfgCursor = 0
 			}
+			a.cfgTabCursor[a.cfgTab] = a.cfgCursor
 			a.renderInput()
 		case 'C': // Right - next tab
+			a.cfgTabCursor[a.cfgTab] = a.cfgCursor
 			a.cfgTab++
 			if a.cfgTab >= len(cfgTabNames) {
 				a.cfgTab = 0
 			}
-			a.cfgCursor = 0
+			fields := a.cfgCurrentFields()
+			if len(fields) == 0 {
+				a.cfgCursor = 0
+			} else if a.cfgTabCursor[a.cfgTab] < len(fields) {
+				a.cfgCursor = a.cfgTabCursor[a.cfgTab]
+			} else {
+				a.cfgCursor = len(fields) - 1
+			}
 			a.renderInput()
 		case 'D': // Left - prev tab
+			a.cfgTabCursor[a.cfgTab] = a.cfgCursor
 			a.cfgTab--
 			if a.cfgTab < 0 {
 				a.cfgTab = len(cfgTabNames) - 1
 			}
-			a.cfgCursor = 0
+			fields := a.cfgCurrentFields()
+			if len(fields) == 0 {
+				a.cfgCursor = 0
+			} else if a.cfgTabCursor[a.cfgTab] < len(fields) {
+				a.cfgCursor = a.cfgTabCursor[a.cfgTab]
+			} else {
+				a.cfgCursor = len(fields) - 1
+			}
 			a.renderInput()
 		case '2': // modifyOtherKeys (Ctrl+S, Ctrl+C, etc.)
 			a.handleCSIDigit2(readByte, func(string) {})

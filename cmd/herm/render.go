@@ -922,8 +922,13 @@ func (a *App) positionCursor(buf *strings.Builder) {
 	s := a.scrollShift
 	if a.cfgActive {
 		if a.cfgEditing {
-			// Position cursor in the edit field: separator + tab bar (1) + cursor row
-			fieldRow := a.sepRow + 1 + a.cfgCursor + 1 // +1 for tab bar row
+			// Position cursor in the edit field:
+			// separator + tab bar (1) + optional effective-provider row (API Keys tab) + cursor row
+			extraRows := 0
+			if a.cfgTab == 0 {
+				extraRows = 1
+			}
+			fieldRow := a.sepRow + 1 + extraRows + a.cfgCursor + 1 // +1 for tab bar row
 			fields := a.cfgCurrentFields()
 			col := 0
 			if a.cfgCursor < len(fields) {
@@ -1053,4 +1058,3 @@ func (a *App) renderInput() {
 	a.positionCursor(&buf)
 	os.Stdout.WriteString(buf.String())
 }
-
