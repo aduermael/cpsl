@@ -130,7 +130,7 @@ var defaultExplorationModels = map[string]string{
 	ProviderAnthropic:  "claude-haiku-4-5",
 	ProviderOpenAI:     "gpt-4.1-mini-2025-04-14",
 	ProviderGrok:       "grok-4-1-fast-non-reasoning",
-	ProviderOpenRouter: "google/gemini-2.0-flash-exp:free",
+	ProviderOpenRouter: "z-ai/glm-4.5-air:free",
 	ProviderGemini:     "gemini-2.5-flash",
 }
 
