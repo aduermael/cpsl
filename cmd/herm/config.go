@@ -118,7 +118,7 @@ var defaultActiveModels = map[string]string{
 	ProviderAnthropic:  "claude-sonnet-4-6",
 	ProviderOpenAI:     "gpt-4.1-2025-04-14",
 	ProviderGrok:       "grok-4-1-fast-reasoning",
-	ProviderOpenRouter: "deepseek/deepseek-r1:free",
+	ProviderOpenRouter: "z-ai/glm-4.5-air:free",
 	ProviderGemini:     "gemini-2.5-pro",
 }
 
