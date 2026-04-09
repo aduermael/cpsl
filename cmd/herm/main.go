@@ -123,6 +123,7 @@ type App struct {
 	configReady         bool // true after workspace/project config has been merged
 	shownInitialModel   bool // true after the startup model line has been displayed
 	ollamaFetched       bool // true after the initial Ollama model fetch completes (or was skipped)
+	openRouterFetched   bool // true after the initial OpenRouter model fetch completes (or was skipped)
 	status           statusInfo
 	projectSnap      *projectSnapshot
 	modelCatalog     *langdag.ModelCatalog
@@ -930,12 +931,22 @@ func (a *App) handleResult(result any) {
 			if a.config.OllamaBaseURL != "" && !a.ollamaFetched {
 				go func() { a.resultCh <- fetchOllamaModelsCmd(a.config.OllamaBaseURL) }()
 			}
+			// Fetch OpenRouter models asynchronously if configured.
+			if a.config.OpenRouterAPIKey != "" && !a.openRouterFetched {
+				go func() { a.resultCh <- fetchOpenRouterModelsCmd(a.config.OpenRouterAPIKey) }()
+			}
 		}
 
 	case ollamaModelsMsg:
 		a.ollamaFetched = true
 		if len(msg.models) > 0 {
 			base := modelsFromCatalog(a.modelCatalog)
+			// Preserve any already-fetched OpenRouter models
+			for _, m := range a.models {
+				if m.Provider == ProviderOpenRouter {
+					base = append(base, m)
+				}
+			}
 			a.models = append(base, msg.models...)
 			if a.sweLoaded && a.sweScores != nil {
 				matchSWEScores(a.models, a.sweScores)
@@ -958,6 +969,25 @@ func (a *App) handleResult(result any) {
 				a.messages = append(a.messages, chatMessage{kind: msgInfo, content: msg})
 			}
 		}
+
+	case openRouterModelsMsg:
+		a.openRouterFetched = true
+		if len(msg.models) > 0 {
+			base := modelsFromCatalog(a.modelCatalog)
+			// Preserve any already-fetched Ollama models
+			for _, m := range a.models {
+				if m.Provider == ProviderOllama {
+					base = append(base, m)
+				}
+			}
+			// Replace all OpenRouter models with the fresh batch (new key may
+			// return a different model set — don't mix old and new).
+			a.models = append(base, msg.models...)
+			if a.sweLoaded && a.sweScores != nil {
+				matchSWEScores(a.models, a.sweScores)
+			}
+		}
+		a.maybeShowInitialModels()
 
 	case openPickerMsg:
 		if a.cfgActive {

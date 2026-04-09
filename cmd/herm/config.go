@@ -18,6 +18,7 @@ type Config struct {
 	PasteCollapseMinChars int             `json:"paste_collapse_min_chars"`
 	AnthropicAPIKey       string          `json:"anthropic_api_key,omitempty"`
 	GrokAPIKey            string          `json:"grok_api_key,omitempty"`
+	OpenRouterAPIKey      string          `json:"openrouter_api_key,omitempty"`
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
 	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
 	OllamaBaseURL         string          `json:"ollama_base_url,omitempty"` // e.g., "http://localhost:11434"
@@ -65,6 +66,9 @@ func (c Config) configuredProviders() map[string]bool {
 	if c.GrokAPIKey != "" {
 		providers[ProviderGrok] = true
 	}
+	if c.OpenRouterAPIKey != "" {
+		providers[ProviderOpenRouter] = true
+	}
 	if c.OpenAIAPIKey != "" {
 		providers[ProviderOpenAI] = true
 	}
@@ -88,6 +92,9 @@ func (c Config) defaultLangdagProvider() string {
 	if c.GrokAPIKey != "" {
 		return ProviderGrok
 	}
+	if c.OpenRouterAPIKey != "" {
+		return ProviderOpenRouter
+	}
 	if c.GeminiAPIKey != "" {
 		return ProviderGemini
 	}
@@ -108,10 +115,11 @@ func (c Config) availableModels(models []ModelDef) []ModelDef {
 // Ollama is intentionally omitted: locally installed models are user-specific
 // and there is no canonical default to suggest.
 var defaultActiveModels = map[string]string{
-	ProviderAnthropic: "claude-sonnet-4-6",
-	ProviderOpenAI:    "gpt-4.1-2025-04-14",
-	ProviderGrok:      "grok-4-1-fast-reasoning",
-	ProviderGemini:    "gemini-2.5-pro",
+	ProviderAnthropic:  "claude-sonnet-4-6",
+	ProviderOpenAI:     "gpt-4.1-2025-04-14",
+	ProviderGrok:       "grok-4-1-fast-reasoning",
+	ProviderOpenRouter: "deepseek/deepseek-r1:free",
+	ProviderGemini:     "gemini-2.5-pro",
 }
 
 // defaultExplorationModels maps provider to the preferred cheap/fast model
@@ -119,10 +127,11 @@ var defaultActiveModels = map[string]string{
 // Ollama is intentionally omitted: locally installed models are user-specific
 // and there is no canonical cheap/fast default to suggest.
 var defaultExplorationModels = map[string]string{
-	ProviderAnthropic: "claude-haiku-4-5",
-	ProviderOpenAI:    "gpt-4.1-mini-2025-04-14",
-	ProviderGrok:      "grok-4-1-fast-non-reasoning",
-	ProviderGemini:    "gemini-2.5-flash",
+	ProviderAnthropic:  "claude-haiku-4-5",
+	ProviderOpenAI:     "gpt-4.1-mini-2025-04-14",
+	ProviderGrok:       "grok-4-1-fast-non-reasoning",
+	ProviderOpenRouter: "google/gemini-2.0-flash-exp:free",
+	ProviderGemini:     "gemini-2.5-flash",
 }
 
 // preferredDefault looks up the default model ID for the given provider and

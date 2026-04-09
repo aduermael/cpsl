@@ -136,6 +136,10 @@ type ollamaModelsMsg struct {
 	models []ModelDef
 }
 
+type openRouterModelsMsg struct {
+	models []ModelDef
+}
+
 // openPickerMsg is sent after an async Ollama fetch completes to open the
 // model picker in the config editor with the freshly fetched model list.
 type openPickerMsg struct {
@@ -622,6 +626,10 @@ func fetchSWEScoresCmd() sweScoresMsg {
 
 func fetchOllamaModelsCmd(baseURL string) ollamaModelsMsg {
 	return ollamaModelsMsg{models: fetchOllamaModels(baseURL)}
+}
+
+func fetchOpenRouterModelsCmd(apiKey string) openRouterModelsMsg {
+	return openRouterModelsMsg{models: fetchOpenRouterModels(apiKey)}
 }
 
 // checkForUpdate queries the GitHub API for the latest release and compares
