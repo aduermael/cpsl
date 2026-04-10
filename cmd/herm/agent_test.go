@@ -242,6 +242,7 @@ func TestNewLangdagClientForProviderBranches(t *testing.T) {
 		{ProviderOpenAI, Config{OpenAIAPIKey: "key-o"}},
 		{ProviderGrok, Config{GrokAPIKey: "key-g"}},
 		{ProviderGemini, Config{GeminiAPIKey: "key-m"}},
+		{ProviderGemma, Config{GemmaAPIKey: "key-ma"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {

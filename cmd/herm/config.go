@@ -20,6 +20,7 @@ type Config struct {
 	GrokAPIKey            string          `json:"grok_api_key,omitempty"`
 	OpenAIAPIKey          string          `json:"openai_api_key,omitempty"`
 	GeminiAPIKey          string          `json:"gemini_api_key,omitempty"`
+	GemmaAPIKey           string          `json:"gemma_api_key,omitempty"`
 	OllamaBaseURL         string          `json:"ollama_base_url,omitempty"` // e.g., "http://localhost:11434"
 	ActiveModel           string          `json:"active_model,omitempty"`
 	ExplorationModel      string          `json:"exploration_model,omitempty"` // model for sub-agents; falls back to ActiveModel
@@ -71,6 +72,9 @@ func (c Config) configuredProviders() map[string]bool {
 	if c.GeminiAPIKey != "" {
 		providers[ProviderGemini] = true
 	}
+	if c.GemmaAPIKey != "" {
+		providers[ProviderGemma] = true
+	}
 	if c.OllamaBaseURL != "" {
 		providers[ProviderOllama] = true
 	}
@@ -90,6 +94,9 @@ func (c Config) defaultLangdagProvider() string {
 	}
 	if c.GeminiAPIKey != "" {
 		return ProviderGemini
+	}
+	if c.GemmaAPIKey != "" {
+		return ProviderGemma
 	}
 	if c.OllamaBaseURL != "" {
 		return ProviderOllama
@@ -112,6 +119,7 @@ var defaultActiveModels = map[string]string{
 	ProviderOpenAI:    "gpt-4.1-2025-04-14",
 	ProviderGrok:      "grok-4-1-fast-reasoning",
 	ProviderGemini:    "gemini-2.5-pro",
+	ProviderGemma:     "gemma-4",
 }
 
 // defaultExplorationModels maps provider to the preferred cheap/fast model
@@ -123,6 +131,7 @@ var defaultExplorationModels = map[string]string{
 	ProviderOpenAI:    "gpt-4.1-mini-2025-04-14",
 	ProviderGrok:      "grok-4-1-fast-non-reasoning",
 	ProviderGemini:    "gemini-2.5-flash",
+	ProviderGemma:     "gemma-3-4b",
 }
 
 // preferredDefault looks up the default model ID for the given provider and
