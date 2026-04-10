@@ -119,7 +119,7 @@ var defaultActiveModels = map[string]string{
 	ProviderOpenAI:    "gpt-4.1-2025-04-14",
 	ProviderGrok:      "grok-4-1-fast-reasoning",
 	ProviderGemini:    "gemini-2.5-pro",
-	ProviderGemma:     "gemma-4",
+	ProviderGemma:     "gemma-4-31b-it",
 }
 
 // defaultExplorationModels maps provider to the preferred cheap/fast model
@@ -131,7 +131,7 @@ var defaultExplorationModels = map[string]string{
 	ProviderOpenAI:    "gpt-4.1-mini-2025-04-14",
 	ProviderGrok:      "grok-4-1-fast-non-reasoning",
 	ProviderGemini:    "gemini-2.5-flash",
-	ProviderGemma:     "gemma-3-4b",
+	ProviderGemma:     "gemma-3-4b-it",
 }
 
 // preferredDefault looks up the default model ID for the given provider and

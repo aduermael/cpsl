@@ -731,8 +731,8 @@ func defaultTestModels() []ModelDef {
 		{Provider: ProviderGrok, ID: "grok-3-mini"},
 		{Provider: ProviderGemini, ID: "gemini-2.5-pro"},
 		{Provider: ProviderGemini, ID: "gemini-2.5-flash"},
-		{Provider: ProviderGemma, ID: "gemma-4"},
-		{Provider: ProviderGemma, ID: "gemma-3-4b"},
+		{Provider: ProviderGemma, ID: "gemma-4-31b-it"},
+		{Provider: ProviderGemma, ID: "gemma-3-4b-it"},
 	}
 }
 
