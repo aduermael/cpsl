@@ -68,6 +68,7 @@ type statusInfoMsg struct {
 }
 
 type commitInfoMsg struct {
+	branch      string
 	behind      int
 	ahead       int
 	hasUpstream bool
@@ -414,6 +415,7 @@ func fetchStatusCmd(worktreePath string) statusInfoMsg {
 
 func fetchCommitInfo(worktreePath string) commitInfoMsg {
 	var msg commitInfoMsg
+	msg.branch = worktreeBranch(worktreePath)
 	cmd := exec.Command("git", "rev-list", "--count", "--left-right", "@{upstream}...HEAD")
 	cmd.Dir = worktreePath
 	if out, err := cmd.Output(); err == nil {
@@ -428,7 +430,7 @@ func fetchCommitInfo(worktreePath string) commitInfoMsg {
 			}
 		}
 	}
-
+	
 	diffCmd := exec.Command("git", "diff", "--shortstat", "HEAD")
 	diffCmd.Dir = worktreePath
 	if out, err := diffCmd.Output(); err == nil {
