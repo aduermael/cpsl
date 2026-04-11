@@ -1843,7 +1843,12 @@ func TestResilienceRetrySucceedsAfterTransientError(t *testing.T) {
 		},
 	}
 	store := newMockStorage()
-	client := langdag.NewWithDeps(store, prov)
+	retryProv := langdag.WithRetry(prov, langdag.RetryConfig{
+		MaxRetries: 3,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   10 * time.Millisecond,
+	})
+	client := langdag.NewWithDeps(store, retryProv)
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
 
 	go agent.Run(context.Background(), "hello", "")
@@ -1933,7 +1938,12 @@ func TestResilienceRetryDuringToolLoop(t *testing.T) {
 		},
 	}
 	store := newMockStorage()
-	client := langdag.NewWithDeps(store, prov)
+	retryProv := langdag.WithRetry(prov, langdag.RetryConfig{
+		MaxRetries: 3,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   10 * time.Millisecond,
+	})
+	client := langdag.NewWithDeps(store, retryProv)
 
 	bashTool := &testTool{name: "bash", result: "ok"}
 	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
@@ -2572,7 +2582,7 @@ func TestStreamRetryNoRetryOnContextCancel(t *testing.T) {
 		return &langdag.PromptResult{Stream: stream}, nil
 	}
 
-	_, _, _, err := agent.retryableStream(ctx, retryConfig{maxAttempts: 1, baseDelay: time.Millisecond}, promptFn)
+	_, _, _, err := agent.retryableStream(ctx, promptFn)
 	if err == nil {
 		t.Error("expected error from retryableStream")
 	}
@@ -3893,9 +3903,9 @@ func TestMaxToolIterations_DefaultValue(t *testing.T) {
 
 // TestE2EPermanentErrorChain verifies the full error chain when a provider
 // returns a non-retryable error (401): provider → langdag retry (skipped) →
-// herm retryablePrompt (skipped) → agent emits EventError with original message
-// → EventDone. No EventRetry should appear. The original error message must
-// survive all wrapping layers so the user sees "401" and "Unauthorized".
+// agent emits EventError with original message → EventDone. No EventRetry
+// should appear. The original error message must survive all wrapping layers
+// so the user sees "401" and "Unauthorized".
 func TestE2EPermanentErrorChain(t *testing.T) {
 	prov := &failThenSucceedProvider{
 		model: "test-model",
@@ -3969,7 +3979,7 @@ func TestE2EPermanentErrorChain(t *testing.T) {
 
 // TestE2ETransientRetryChain verifies the full chain when a provider returns
 // transient errors (503) that eventually succeed: provider fails → langdag retry
-// → herm retryablePrompt emits EventRetry → provider succeeds → agent streams
+// emits EventRetry via context callback → provider succeeds → agent streams
 // response → EventUsage (only from success) → EventDone.
 func TestE2ETransientRetryChain(t *testing.T) {
 	prov := &failThenSucceedProvider{
@@ -3983,8 +3993,13 @@ func TestE2ETransientRetryChain(t *testing.T) {
 		},
 	}
 	store := newMockStorage()
-	client := langdag.NewWithDeps(store, prov)
-	// Use short retry delay so the test completes quickly.
+	// Wrap with retry (short delays for fast tests) so langdag handles transient errors.
+	retryProv := langdag.WithRetry(prov, langdag.RetryConfig{
+		MaxRetries: 3,
+		BaseDelay:  1 * time.Millisecond,
+		MaxDelay:   10 * time.Millisecond,
+	})
+	client := langdag.NewWithDeps(store, retryProv)
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
 
 	go agent.Run(context.Background(), "hello", "")

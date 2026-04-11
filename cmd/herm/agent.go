@@ -413,6 +413,7 @@ const maxBackgroundCompletionCycles = 3
 // remainingIter is the number of tool-loop iterations still available.
 // Returns the final node ID.
 func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, remainingIter int) string {
+	ctx = a.retryCtx(ctx)
 	bw := a.findBackgroundWaiter()
 	if bw == nil {
 		return lastNodeID
@@ -447,7 +448,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 		// Re-call LLM with tools enabled so the model can continue working.
 		opts := a.buildPromptOpts()
 		a.emit(AgentEvent{Type: EventLLMStart})
-		toolCalls, newNodeID, stopReason, err := a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+		toolCalls, newNodeID, stopReason, err := a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
 			return a.client.PromptFrom(ctx, nodeID, msg.String(), opts...)
 		})
 		if err != nil {
@@ -538,7 +539,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 				return nodeID
 			}
 			a.emit(AgentEvent{Type: EventLLMStart})
-			toolCalls, newNodeID, stopReason, err = a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+			toolCalls, newNodeID, stopReason, err = a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
 				return a.client.PromptFrom(ctx, nodeID, string(toolResultJSON), opts...)
 			})
 			if err != nil {
@@ -568,6 +569,7 @@ const gracefulExhaustionTimeout = 2 * time.Minute
 // it has. The text response is emitted as EventTextDelta by drainStream.
 // Returns the node ID from the final call, or lastNodeID on error.
 func (a *Agent) gracefulExhaustion(ctx context.Context, lastNodeID string) string {
+	ctx = a.retryCtx(ctx)
 	// Wait for any running background sub-agents to finish.
 	if bw := a.findBackgroundWaiter(); bw != nil {
 		bw.WaitForBackgroundAgents(gracefulExhaustionTimeout)
@@ -604,7 +606,7 @@ func (a *Agent) gracefulExhaustion(ctx context.Context, lastNodeID string) strin
 	}
 
 	a.emit(AgentEvent{Type: EventLLMStart})
-	_, finalNodeID, _, err := a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+	_, finalNodeID, _, err := a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
 		return a.client.PromptFrom(ctx, lastNodeID, msg.String(), finalOpts...)
 	})
 	if err != nil {
@@ -1038,100 +1040,33 @@ func (a *Agent) buildPromptOpts() []langdag.PromptOption {
 	return opts
 }
 
-// retryConfig controls retry behavior for LLM API calls.
-type retryConfig struct {
-	maxAttempts int           // total attempts (1 = no retry)
-	baseDelay   time.Duration // initial delay, doubled each attempt
-}
-
-// defaultRetryConfig is 3 attempts with 2s/4s/8s backoff.
-var defaultRetryConfig = retryConfig{maxAttempts: 3, baseDelay: 2 * time.Second}
-
-// isRetryableError checks whether an error should trigger a retry.
-// Retryable: rate limits (429), server errors (500/502/503/529), network issues.
-// Non-retryable: bad request (400), auth (401/403), context canceled.
-func isRetryableError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := err.Error()
-	// Context canceled or deadline exceeded — don't retry.
-	if strings.Contains(msg, "context canceled") || strings.Contains(msg, "context deadline exceeded") {
-		return false
-	}
-	// HTTP status codes that warrant retry.
-	for _, code := range []string{"429", "500", "502", "503", "529"} {
-		if strings.Contains(msg, code) {
-			return true
-		}
-	}
-	// Network-level errors.
-	for _, pattern := range []string{
-		"connection reset",
-		"connection refused",
-		"no such host",
-		"timeout",
-		"EOF",
-		"broken pipe",
-		"TLS handshake",
-	} {
-		if strings.Contains(msg, pattern) {
-			return true
-		}
-	}
-	// "overloaded" / "rate limit" in error text.
-	lower := strings.ToLower(msg)
-	if strings.Contains(lower, "overloaded") || strings.Contains(lower, "rate limit") {
-		return true
-	}
-	return false
-}
-
-// retryablePrompt wraps client.Prompt or client.PromptFrom with retry logic.
-// It calls promptFn, and if the error is retryable, waits with exponential
-// backoff and retries. Emits EventRetry events so the TUI shows retry status.
-func (a *Agent) retryablePrompt(ctx context.Context, cfg retryConfig, promptFn func() (*langdag.PromptResult, error)) (*langdag.PromptResult, error) {
-	var lastErr error
-	delay := cfg.baseDelay
-	for attempt := 1; attempt <= cfg.maxAttempts; attempt++ {
-		result, err := promptFn()
-		if err == nil {
-			return result, nil
-		}
-		lastErr = err
-		if !isRetryableError(err) || attempt == cfg.maxAttempts {
-			return nil, err
-		}
+// retryCtx returns a child context that routes langdag retry events to the
+// agent's event channel so the TUI can display retry status.
+func (a *Agent) retryCtx(ctx context.Context) context.Context {
+	return langdag.ContextWithRetryCallback(ctx, func(ev langdag.RetryEvent) {
 		a.emit(AgentEvent{
 			Type:     EventRetry,
-			Error:    err,
-			Attempt:  attempt,
-			MaxRetry: cfg.maxAttempts,
-			Duration: delay,
+			Error:    ev.Err,
+			Attempt:  ev.Attempt,
+			MaxRetry: ev.MaxRetries,
+			Duration: ev.Delay,
 		})
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
-		}
-		delay *= 2
-	}
-	return nil, lastErr
+	})
 }
 
 // maxStreamRetries is the number of additional attempts when a stream fails
-// mid-response (on top of the connection-level retries inside retryablePrompt).
+// mid-response. If drainStream returns streamOK=false and the context is not
+// canceled, it emits EventStreamClear and EventRetry, then re-calls the prompt.
 const maxStreamRetries = 1
 
-// retryableStream wraps retryablePrompt + drainStream into a single call that
-// retries on stream failure. If drainStream returns streamOK=false and the
-// context is not canceled, it emits EventStreamClear (so the TUI discards
-// partial text) and EventRetry, then re-calls the prompt. Returns the tool
-// calls, assistant node ID, and any error. A nil error with a non-empty nodeID
-// means the stream completed successfully.
-func (a *Agent) retryableStream(ctx context.Context, cfg retryConfig, promptFn func() (*langdag.PromptResult, error)) ([]types.ContentBlock, string, string, error) {
+// retryableStream calls promptFn, drains the resulting stream, and retries once
+// if the stream is interrupted mid-response. Connection-level retries (rate
+// limits, server errors) are handled by langdag's retry provider; this function
+// only handles stream-level failures. Returns the tool calls, assistant node ID,
+// stop reason, and any error.
+func (a *Agent) retryableStream(ctx context.Context, promptFn func() (*langdag.PromptResult, error)) ([]types.ContentBlock, string, string, error) {
 	for streamAttempt := 0; streamAttempt <= maxStreamRetries; streamAttempt++ {
-		result, err := a.retryablePrompt(ctx, cfg, promptFn)
+		result, err := promptFn()
 		if err != nil {
 			return nil, "", "", err
 		}
@@ -1228,11 +1163,12 @@ func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) (
 
 // runLoop is the core agent loop: call LLM, handle tool calls, repeat.
 func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID string) {
+	ctx = a.retryCtx(ctx)
 	opts := a.buildPromptOpts()
 
-	// Initial LLM call with connection-level and stream-level retry.
+	// Initial LLM call (langdag handles connection-level retries).
 	a.emit(AgentEvent{Type: EventLLMStart})
-	toolCalls, nodeID, stopReason, err := a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+	toolCalls, nodeID, stopReason, err := a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
 		if parentNodeID == "" {
 			return a.client.Prompt(ctx, userMessage, opts...)
 		}
@@ -1246,7 +1182,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 
 	// Handle max_tokens truncation with no usable content. When langdag
 	// skips node creation for an empty max_tokens response (Phase 4b), the
-	// error flows through drainStream and retryableStream retries. But as a
+	// error flows through drainStream and retryableStream. As a
 	// defence-in-depth, also check here in case a max_tokens stop reaches
 	// us with an empty nodeID and no tool calls.
 	if stopReason == "max_tokens" && len(toolCalls) == 0 && nodeID == "" {
@@ -1485,7 +1421,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		}
 		toolResultStr := string(toolResultJSON)
 		a.emit(AgentEvent{Type: EventLLMStart})
-		toolCalls, nodeID, stopReason, err = a.retryableStream(ctx, defaultRetryConfig, func() (*langdag.PromptResult, error) {
+		toolCalls, nodeID, stopReason, err = a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
 			return a.client.PromptFrom(ctx, nodeID, toolResultStr, opts...)
 		})
 		if err != nil {
