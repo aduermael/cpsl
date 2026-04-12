@@ -430,7 +430,7 @@ func fetchCommitInfo(worktreePath string) commitInfoMsg {
 			}
 		}
 	}
-	
+
 	diffCmd := exec.Command("git", "diff", "--shortstat", "HEAD")
 	diffCmd.Dir = worktreePath
 	if out, err := diffCmd.Output(); err == nil {
