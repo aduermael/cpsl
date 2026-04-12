@@ -976,6 +976,7 @@ func (a *App) handleResult(result any) {
 		a.status = msg.info
 
 	case commitInfoMsg:
+		a.status.Branch = msg.branch
 		a.status.HasUpstream = msg.hasUpstream
 		a.status.Behind = msg.behind
 		a.status.Ahead = msg.ahead
