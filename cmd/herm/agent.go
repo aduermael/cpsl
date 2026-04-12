@@ -54,9 +54,6 @@ func newLangdagClient(cfg Config) (*langdag.Client, error) {
 	if cfg.GeminiAPIKey != "" {
 		return newLangdagClientForProvider(cfg, ProviderGemini)
 	}
-	if cfg.GemmaAPIKey != "" {
-		return newLangdagClientForProvider(cfg, ProviderGemma)
-	}
 	if cfg.OllamaBaseURL != "" {
 		return newLangdagClientForProvider(cfg, ProviderOllama)
 	}
@@ -82,9 +79,6 @@ func newLangdagClientForProvider(cfg Config, provider string) (*langdag.Client, 
 	case ProviderGemini:
 		langdagCfg.Provider = "gemini"
 		langdagCfg.APIKeys = map[string]string{"gemini": cfg.GeminiAPIKey}
-	case ProviderGemma:
-		langdagCfg.Provider = "gemma"
-		langdagCfg.APIKeys = map[string]string{"gemma": cfg.GemmaAPIKey}
 	case ProviderOllama:
 		langdagCfg.Provider = "ollama"
 		langdagCfg.OllamaConfig = &langdag.OllamaConfig{BaseURL: cfg.OllamaBaseURL}

@@ -62,7 +62,6 @@ var cfgAPIKeyFields = []cfgField{
 	{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
 	{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
 	{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
-	{label: "Gemma", get: func(c Config) string { return c.GemmaAPIKey }, display: func(c Config) string { return maskKey(c.GemmaAPIKey) }, set: func(c *Config, v string) { c.GemmaAPIKey = v }},
 	{label: "Ollama URL", get: func(c Config) string { return c.OllamaBaseURL }, set: func(c *Config, v string) {
 		v = strings.TrimSpace(v)
 		if v != "" && !strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") {
@@ -82,10 +81,8 @@ func apiKeyRowForProvider(provider string) int {
 		return 2
 	case ProviderGemini:
 		return 3
-	case ProviderGemma:
-		return 4
 	case ProviderOllama:
-		return 5
+		return 4
 	default:
 		return 0
 	}
@@ -112,7 +109,7 @@ func (a *App) preferredAPIKeyCursor(cfg Config) int {
 	if p, _ := a.effectiveProviderForConfig(cfg); p != "" {
 		return apiKeyRowForProvider(p)
 	}
-	ordered := []string{ProviderAnthropic, ProviderOpenAI, ProviderGrok, ProviderGemini, ProviderGemma, ProviderOllama}
+	ordered := []string{ProviderAnthropic, ProviderOpenAI, ProviderGrok, ProviderGemini, ProviderOllama}
 	configured := cfg.configuredProviders()
 	for _, p := range ordered {
 		if configured[p] {

@@ -23,12 +23,11 @@ const (
 	ProviderGrok      = "grok"
 	ProviderOpenAI    = "openai"
 	ProviderGemini    = "gemini"
-	ProviderGemma     = "gemma"
 	ProviderOllama    = "ollama"
 )
 
 // supportedProviders lists providers in display order.
-var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini, ProviderGemma, ProviderOllama}
+var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini, ProviderOllama}
 
 // ModelDef describes a model available for selection.
 // Models are derived from the langdag model catalog at runtime.

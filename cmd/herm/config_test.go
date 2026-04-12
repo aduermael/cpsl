@@ -512,7 +512,6 @@ func TestBuildConfigRowsAPIKeysShowsEffectiveProviderFromMergedActiveModel(t *te
 		{name: "openai", provider: ProviderOpenAI, globalModel: "openai-global", projectModel: "openai-project", configure: func(c *Config) { c.OpenAIAPIKey = "k" }},
 		{name: "grok", provider: ProviderGrok, globalModel: "grok-global", projectModel: "grok-project", configure: func(c *Config) { c.GrokAPIKey = "k" }},
 		{name: "gemini", provider: ProviderGemini, globalModel: "gemini-global", projectModel: "gemini-project", configure: func(c *Config) { c.GeminiAPIKey = "k" }},
-		{name: "gemma", provider: ProviderGemma, globalModel: "gemma-global", projectModel: "gemma-project", configure: func(c *Config) { c.GemmaAPIKey = "k" }},
 		{name: "ollama", provider: ProviderOllama, globalModel: "ollama-global", projectModel: "ollama-project", configure: func(c *Config) { c.OllamaBaseURL = "http://localhost:11434" }},
 	}
 
@@ -557,7 +556,6 @@ func TestEnterConfigModeSetsPreferredAPIKeyCursorFromEffectiveProvider(t *testin
 		{name: "openai", provider: ProviderOpenAI, modelID: "openai-model", configure: func(c *Config) { c.OpenAIAPIKey = "k" }},
 		{name: "grok", provider: ProviderGrok, modelID: "grok-model", configure: func(c *Config) { c.GrokAPIKey = "k" }},
 		{name: "gemini", provider: ProviderGemini, modelID: "gemini-model", configure: func(c *Config) { c.GeminiAPIKey = "k" }},
-		{name: "gemma", provider: ProviderGemma, modelID: "gemma-model", configure: func(c *Config) { c.GemmaAPIKey = "k" }},
 		{name: "ollama", provider: ProviderOllama, modelID: "ollama-model", configure: func(c *Config) { c.OllamaBaseURL = "http://localhost:11434" }},
 	}
 
@@ -731,8 +729,6 @@ func defaultTestModels() []ModelDef {
 		{Provider: ProviderGrok, ID: "grok-3-mini"},
 		{Provider: ProviderGemini, ID: "gemini-2.5-pro"},
 		{Provider: ProviderGemini, ID: "gemini-2.5-flash"},
-		{Provider: ProviderGemma, ID: "gemma-4-31b-it"},
-		{Provider: ProviderGemma, ID: "gemma-3-4b-it"},
 	}
 }
 
