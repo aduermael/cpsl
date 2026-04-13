@@ -3208,14 +3208,18 @@ func TestIntegrationSubAgentSystemPromptIncludesTurnBudget(t *testing.T) {
 	// Verify the loaded tool description for "agent" mentions the default turn budget.
 	// The tool's Definition().Description uses a fallback when the package-level
 	// toolDescriptions cache isn't initialized, so test the loader directly.
-	descs := loadToolDescriptions("alpine:latest", tmpDir)
+	descs := loadToolDescriptions("alpine:latest", tmpDir, 0, 0)
 	agentDesc, ok := descs["agent"]
 	if !ok {
 		t.Fatal("loadToolDescriptions should include 'agent' tool")
 	}
-	budgetStr := fmt.Sprintf("%d turns per sub-agent", defaultSubAgentMaxTurns)
-	if !strings.Contains(agentDesc.Full, budgetStr) {
-		t.Errorf("agent tool description should mention %q", budgetStr)
+	exploreStr := fmt.Sprintf("Explore mode gets %d turns", defaultExploreMaxTurns)
+	if !strings.Contains(agentDesc.Full, exploreStr) {
+		t.Errorf("agent tool description should mention %q", exploreStr)
+	}
+	generalStr := fmt.Sprintf("general mode gets %d turns", defaultGeneralMaxTurns)
+	if !strings.Contains(agentDesc.Full, generalStr) {
+		t.Errorf("agent tool description should mention %q", generalStr)
 	}
 }
 

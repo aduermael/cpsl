@@ -193,9 +193,6 @@ func (a *App) startAgent(userMessage string) {
 		containerImage = defaultContainerImage
 	}
 
-	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
-	toolDescriptions = loadToolDescriptions(containerImage, workDir)
-
 	// Sub-agent tool: output-only communication, no shared memory.
 	// Uses exploration model if configured, otherwise falls back to active model.
 	exploreMaxTurns := a.config.ExploreMaxTurns
@@ -206,6 +203,9 @@ func (a *App) startAgent(userMessage string) {
 	if generalMaxTurns <= 0 {
 		generalMaxTurns = a.config.SubAgentMaxTurns // legacy fallback
 	}
+
+	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
+	toolDescriptions = loadToolDescriptions(containerImage, workDir, exploreMaxTurns, generalMaxTurns)
 	maxDepth := a.config.MaxAgentDepth
 	if maxDepth <= 0 {
 		maxDepth = defaultMaxAgentDepth

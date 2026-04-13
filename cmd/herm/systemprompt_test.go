@@ -606,7 +606,7 @@ func TestSubAgentPromptSmallerThanMain(t *testing.T) {
 // --- Tool Description tests ---
 
 func TestLoadToolDescriptions(t *testing.T) {
-	descs := loadToolDescriptions("test-image:latest", "/workspace")
+	descs := loadToolDescriptions("test-image:latest", "/workspace", 0, 0)
 	if descs == nil {
 		t.Fatal("loadToolDescriptions returned nil")
 	}
@@ -632,7 +632,7 @@ func TestLoadToolDescriptions(t *testing.T) {
 }
 
 func TestLoadToolDescriptionsPlaceholderReplacement(t *testing.T) {
-	descs := loadToolDescriptions("my-custom:v1.2.3", "/workspace")
+	descs := loadToolDescriptions("my-custom:v1.2.3", "/workspace", 0, 0)
 
 	// bash.md and devenv.md use __CONTAINER_IMAGE__.
 	for _, name := range []string{"bash", "devenv"} {
@@ -653,7 +653,7 @@ func TestLoadToolDescriptionsPlaceholderReplacement(t *testing.T) {
 }
 
 func TestToolDescriptionContainsGuidance(t *testing.T) {
-	descs := loadToolDescriptions("alpine:latest", "/workspace")
+	descs := loadToolDescriptions("alpine:latest", "/workspace", 0, 0)
 
 	// Each tool description should contain key guidance keywords.
 	tests := []struct {
@@ -763,7 +763,7 @@ func TestGetToolDescriptionFallback(t *testing.T) {
 
 func TestGetToolDescriptionLoaded(t *testing.T) {
 	old := toolDescriptions
-	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace")
+	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace", 0, 0)
 	defer func() { toolDescriptions = old }()
 
 	result := getToolDescription("bash", "fallback")
@@ -777,7 +777,7 @@ func TestGetToolDescriptionLoaded(t *testing.T) {
 
 func TestGetToolDescriptionMissingTool(t *testing.T) {
 	old := toolDescriptions
-	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace")
+	toolDescriptions = loadToolDescriptions("alpine:latest", "/workspace", 0, 0)
 	defer func() { toolDescriptions = old }()
 
 	result := getToolDescription("nonexistent_tool", "my fallback")
@@ -1007,7 +1007,7 @@ func TestMainAgentPromptNoDelegationBudgetWithoutAgentTool(t *testing.T) {
 }
 
 func TestAgentToolDescriptionTurnBudget(t *testing.T) {
-	descs := loadToolDescriptions("alpine:latest", "/workspace")
+	descs := loadToolDescriptions("alpine:latest", "/workspace", 0, 0)
 	td, ok := descs["agent"]
 	if !ok {
 		t.Fatal("missing agent tool description")
@@ -1015,61 +1015,66 @@ func TestAgentToolDescriptionTurnBudget(t *testing.T) {
 	if !strings.Contains(td.Full, "Turn budget:") {
 		t.Error("agent tool description should mention turn budget")
 	}
-	expected := fmt.Sprintf("%d turns per sub-agent", defaultSubAgentMaxTurns)
-	if !strings.Contains(td.Full, expected) {
-		t.Errorf("agent tool description should state default turns, want %q in description", expected)
+	wantExplore := fmt.Sprintf("Explore mode gets %d turns", defaultExploreMaxTurns)
+	if !strings.Contains(td.Full, wantExplore) {
+		t.Errorf("agent tool description should state explore turns, want %q in description", wantExplore)
+	}
+	wantGeneral := fmt.Sprintf("general mode gets %d turns", defaultGeneralMaxTurns)
+	if !strings.Contains(td.Full, wantGeneral) {
+		t.Errorf("agent tool description should state general turns, want %q in description", wantGeneral)
 	}
 }
 
 // TestBudgetConstantsFlowIntoAllOutputs verifies that changing the max-turns
-// constant (via the internal loadToolDescriptionsWithMaxTurns helper and
-// PromptData) propagates everywhere — no residual hardcoded "20" remains.
+// values (via loadToolDescriptions and PromptData) propagates everywhere —
+// no residual hardcoded defaults remain.
 func TestBudgetConstantsFlowIntoAllOutputs(t *testing.T) {
-	altMax := 42 // arbitrary non-default value
+	altExplore := 42 // arbitrary non-default values
+	altGeneral := 50
 
-	// 1. Tool descriptions: agent.md should reflect the alternate value.
-	descs := loadToolDescriptionsWithMaxTurns("alpine:latest", "/workspace", altMax)
+	// 1. Tool descriptions: agent.md should reflect the alternate values.
+	descs := loadToolDescriptions("alpine:latest", "/workspace", altExplore, altGeneral)
 	td, ok := descs["agent"]
 	if !ok {
 		t.Fatal("missing agent tool description")
 	}
-	wantTurns := fmt.Sprintf("%d turns per sub-agent", altMax)
-	if !strings.Contains(td.Full, wantTurns) {
-		t.Errorf("agent tool description should reflect alt max turns, want %q in:\n%s", wantTurns, td.Full)
-	}
-	wantExplore := fmt.Sprintf("~%d turns of exploration", altMax*3/4)
+	wantExplore := fmt.Sprintf("Explore mode gets %d turns", altExplore)
 	if !strings.Contains(td.Full, wantExplore) {
-		t.Errorf("agent tool description should reflect alt exploration turns, want %q in:\n%s", wantExplore, td.Full)
+		t.Errorf("agent tool description should reflect alt explore turns, want %q in:\n%s", wantExplore, td.Full)
 	}
-	// Should NOT contain the default literal (unless altMax happens to equal it).
-	if altMax != defaultSubAgentMaxTurns {
-		residual := fmt.Sprintf("%d turns per sub-agent", defaultSubAgentMaxTurns)
+	wantGeneral := fmt.Sprintf("general mode gets %d turns", altGeneral)
+	if !strings.Contains(td.Full, wantGeneral) {
+		t.Errorf("agent tool description should reflect alt general turns, want %q in:\n%s", wantGeneral, td.Full)
+	}
+	// Should NOT contain the default literals (unless alt happens to equal them).
+	if altExplore != defaultExploreMaxTurns {
+		residual := fmt.Sprintf("gets %d turns", defaultExploreMaxTurns)
 		if strings.Contains(td.Full, residual) {
-			t.Errorf("agent tool description still contains default %d — placeholder not replaced", defaultSubAgentMaxTurns)
+			t.Errorf("agent tool description still contains default explore %d — placeholder not replaced", defaultExploreMaxTurns)
 		}
 	}
 
 	// 2. Role template: main agent delegation section should use PromptData value.
 	// We can't easily change defaultSubAgentMaxTurns (it's a const), but we can
 	// verify PromptData.DefaultSubAgentMaxTurns flows into the rendered template
-	// by building a prompt with the field set to altMax.
+	// by building a prompt with the field set to altGeneral.
 	data := PromptData{
 		HasAgent:                true,
 		WorkDir:                 "/work",
 		ContainerImage:          "alpine:latest",
 		Date:                    "2026-01-01",
-		DefaultSubAgentMaxTurns: altMax,
+		DefaultSubAgentMaxTurns: altGeneral,
 	}
 	var buf bytes.Buffer
 	if err := prompts.Templates.ExecuteTemplate(&buf, "role", data); err != nil {
 		t.Fatalf("template execution failed: %v", err)
 	}
 	role := buf.String()
-	wantDelegation := fmt.Sprintf("default: %d", altMax)
+	wantDelegation := fmt.Sprintf("default: %d", altGeneral)
 	if !strings.Contains(role, wantDelegation) {
 		t.Errorf("role template should reflect alt max turns, want %q in:\n%s", wantDelegation, role)
 	}
-	if altMax != defaultSubAgentMaxTurns {
+	if altGeneral != defaultSubAgentMaxTurns {
 		residual := fmt.Sprintf("default: %d", defaultSubAgentMaxTurns)
 		if strings.Contains(role, residual) {
 			t.Errorf("role template still contains default %d — template not using .DefaultSubAgentMaxTurns", defaultSubAgentMaxTurns)

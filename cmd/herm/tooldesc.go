@@ -25,15 +25,16 @@ var toolDescriptions map[string]ToolDesc
 
 // loadToolDescriptions reads all markdown files from the embedded prompts/tools/
 // directory and returns a map keyed by tool name. Dynamic placeholders
-// (__CONTAINER_IMAGE__, __WORK_DIR__, __DEFAULT_MAX_TURNS__, __EXPLORATION_TURNS__)
+// (__CONTAINER_IMAGE__, __WORK_DIR__, __EXPLORE_MAX_TURNS__, __GENERAL_MAX_TURNS__)
 // are replaced with the provided values.
-func loadToolDescriptions(containerImage, workDir string) map[string]ToolDesc {
-	return loadToolDescriptionsWithMaxTurns(containerImage, workDir, defaultSubAgentMaxTurns)
-}
+func loadToolDescriptions(containerImage, workDir string, exploreMaxTurns, generalMaxTurns int) map[string]ToolDesc {
+	if exploreMaxTurns <= 0 {
+		exploreMaxTurns = defaultExploreMaxTurns
+	}
+	if generalMaxTurns <= 0 {
+		generalMaxTurns = defaultGeneralMaxTurns
+	}
 
-// loadToolDescriptionsWithMaxTurns is the implementation that accepts an explicit
-// maxTurns value, used by tests to verify placeholder replacement with arbitrary values.
-func loadToolDescriptionsWithMaxTurns(containerImage, workDir string, maxTurns int) map[string]ToolDesc {
 	entries, err := prompts.ToolDescFS.ReadDir("tools")
 	if err != nil {
 		return nil
@@ -64,14 +65,13 @@ func loadToolDescriptionsWithMaxTurns(containerImage, workDir string, maxTurns i
 			td.Full = strings.ReplaceAll(td.Full, "__WORK_DIR__", workDir)
 			td.Brief = strings.ReplaceAll(td.Brief, "__WORK_DIR__", workDir)
 		}
-		// Budget placeholders: __DEFAULT_MAX_TURNS__ and __EXPLORATION_TURNS__
-		// (exploration turns = 75% of max, leaving room for synthesis).
-		maxTurnsStr := fmt.Sprintf("%d", maxTurns)
-		explorationTurns := fmt.Sprintf("%d", maxTurns*3/4)
-		td.Full = strings.ReplaceAll(td.Full, "__DEFAULT_MAX_TURNS__", maxTurnsStr)
-		td.Brief = strings.ReplaceAll(td.Brief, "__DEFAULT_MAX_TURNS__", maxTurnsStr)
-		td.Full = strings.ReplaceAll(td.Full, "__EXPLORATION_TURNS__", explorationTurns)
-		td.Brief = strings.ReplaceAll(td.Brief, "__EXPLORATION_TURNS__", explorationTurns)
+		// Per-mode budget placeholders.
+		exploreStr := fmt.Sprintf("%d", exploreMaxTurns)
+		generalStr := fmt.Sprintf("%d", generalMaxTurns)
+		td.Full = strings.ReplaceAll(td.Full, "__EXPLORE_MAX_TURNS__", exploreStr)
+		td.Brief = strings.ReplaceAll(td.Brief, "__EXPLORE_MAX_TURNS__", exploreStr)
+		td.Full = strings.ReplaceAll(td.Full, "__GENERAL_MAX_TURNS__", generalStr)
+		td.Brief = strings.ReplaceAll(td.Brief, "__GENERAL_MAX_TURNS__", generalStr)
 
 		descs[td.Name] = td
 	}
