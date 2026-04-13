@@ -64,6 +64,9 @@ func newLangdagClient(cfg Config) (*langdag.Client, error) {
 func newLangdagClientForProvider(cfg Config, provider string) (*langdag.Client, error) {
 	langdagCfg := langdag.Config{
 		StoragePath: langdagStoragePath(),
+		RetryConfig: &langdag.RetryConfig{
+			BaseDelay: 2 * time.Second,
+		},
 	}
 
 	switch provider {
