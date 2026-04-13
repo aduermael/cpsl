@@ -1973,7 +1973,7 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	// Use buildResult directly with errors to verify the error reporting path.
 	result := tool.buildResult(context.Background(), "err-agent", nil,
 		[]string{"during tool \"bash\" (turn 3): HTTP 500 internal server error"},
-		3, 10)
+		3, 10, false)
 
 	if !strings.Contains(result, "[errors:") {
 		t.Errorf("result should contain [errors:], got: %q", result)
@@ -5181,7 +5181,7 @@ func TestTurnBudgetLateTier(t *testing.T) {
 	if !strings.Contains(got, expected) {
 		t.Errorf("late tier should show turn progress, got: %q", got)
 	}
-	if !strings.Contains(got, "Wrap up") {
+	if !strings.Contains(got, "wrap up NOW") {
 		t.Errorf("late tier should include wrap-up warning, got: %q", got)
 	}
 }
@@ -5204,11 +5204,63 @@ func TestTurnBudgetFinalTier(t *testing.T) {
 	if !strings.Contains(got, expected) {
 		t.Errorf("final tier should show turn progress, got: %q", got)
 	}
-	if !strings.Contains(got, "FINAL TURN") {
-		t.Errorf("final tier should include FINAL TURN message, got: %q", got)
+	if !strings.Contains(got, "FINAL") {
+		t.Errorf("final tier should include FINAL message, got: %q", got)
 	}
-	if !strings.Contains(got, "Do not make any more tool calls") {
-		t.Errorf("final tier should instruct no more tool calls, got: %q", got)
+	if !strings.Contains(got, "no tools") {
+		t.Errorf("final tier should instruct no tools, got: %q", got)
+	}
+}
+
+func TestSubAgentBudgetReminderOnlyTurnBudget(t *testing.T) {
+	// Sub-agents (maxTurns > 0, contextWindow == 0) should only get the turn
+	// budget line, not session stats, context window, or iteration warnings.
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(5, 20)
+	agent.SetTokenProgress(3000, 1000)
+	// Set main-agent fields that should NOT appear for sub-agents.
+	agent.sessionInputTokens = 50000
+	agent.sessionOutputTokens = 10000
+	agent.sessionAgentCalls = 5
+	agent.currentIteration = 18 // would trigger iteration warning for main agent
+
+	got := agent.budgetReminderBlock().Text
+	if !strings.Contains(got, "Budget: Turn 5/20") {
+		t.Errorf("sub-agent should show turn budget, got: %q", got)
+	}
+	if strings.Contains(got, "Session:") {
+		t.Errorf("sub-agent should not show session stats, got: %q", got)
+	}
+	if strings.Contains(got, "Context:") {
+		t.Errorf("sub-agent should not show context window, got: %q", got)
+	}
+	if strings.Contains(got, "tool iterations") {
+		t.Errorf("sub-agent should not show iteration warnings, got: %q", got)
+	}
+}
+
+func TestSubAgentBudgetReminderCompactLate(t *testing.T) {
+	// Verify the compact late-tier message format for sub-agents.
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(16, 20)
+
+	got := agent.turnBudgetLine()
+	if got != "Budget: Turn 16/20 — 4 left, wrap up NOW." {
+		t.Errorf("compact late tier mismatch, got: %q", got)
+	}
+}
+
+func TestSubAgentBudgetReminderCompactFinal(t *testing.T) {
+	// Verify the compact final-tier message format for sub-agents.
+	client := newTestClient("ok")
+	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
+	agent.SetTurnProgress(19, 20)
+
+	got := agent.turnBudgetLine()
+	if got != "Budget: Turn 19/20 — FINAL, produce summary, no tools." {
+		t.Errorf("compact final tier mismatch, got: %q", got)
 	}
 }
 

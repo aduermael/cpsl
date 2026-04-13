@@ -114,11 +114,11 @@ Streamline what sub-agents see in budget reminders and unify the synthesis promp
 
 **Turn budget messages:** The late/final tier messages are verbose (~170 chars each). Compact them since the role prompt already contains the full "wrap up" instructions.
 
-- [ ] 6a: In `budgetReminderBlock`, add an early path for sub-agents (when `maxTurns > 0` and `contextWindow == 0`): emit only the turn budget line wrapped in `<system-reminder>`, skipping session stats, context window, and iteration warnings. This eliminates 3 dead/redundant lines per sub-agent turn
-- [ ] 6b: Compact `turnBudgetLine` messages. Keep the default tier as-is. Mid: `"Budget: Turn %d/%d — past halfway, narrow focus."` Late: `"Budget: Turn %d/%d — %d left, wrap up NOW."` Final: `"Budget: Turn %d/%d — FINAL, produce summary, no tools."` This cuts late/final from ~170 chars to ~75 chars each
-- [ ] 6c: Create a shared `synthesisPrompt(reason string) string` function that returns a structured synthesis message (key findings, decisions, unfinished work). Replace both `subAgentSynthesisPrompt` and the inline string in `gracefulExhaustion`. Drop the `budgetReminderBlock()` prepend from `gracefulSubAgentSynthesis` (the model is told this is its final turn — budget numbers add nothing)
-- [ ] 6d: When synthesis was used (the output is already summary-shaped), skip the post-hoc `summarizeWithModel` call. Add a `synthesisUsed` flag to the drain result that `buildResult` checks
-- [ ] 6e: Tests — verify sub-agent budget reminders contain only turn budget, verify compact message format at each tier, verify unified synthesis prompt produces structured output, verify summarization is skipped when synthesis was used
+- [x] 6a: In `budgetReminderBlock`, add an early path for sub-agents (when `maxTurns > 0` and `contextWindow == 0`): emit only the turn budget line wrapped in `<system-reminder>`, skipping session stats, context window, and iteration warnings. This eliminates 3 dead/redundant lines per sub-agent turn
+- [x] 6b: Compact `turnBudgetLine` messages. Keep the default tier as-is. Mid: `"Budget: Turn %d/%d — past halfway, narrow focus."` Late: `"Budget: Turn %d/%d — %d left, wrap up NOW."` Final: `"Budget: Turn %d/%d — FINAL, produce summary, no tools."` This cuts late/final from ~170 chars to ~75 chars each
+- [x] 6c: Create a shared `synthesisPrompt(reason string) string` function that returns a structured synthesis message (key findings, decisions, unfinished work). Replace both `subAgentSynthesisPrompt` and the inline string in `gracefulExhaustion`. Drop the `budgetReminderBlock()` prepend from `gracefulSubAgentSynthesis` (the model is told this is its final turn — budget numbers add nothing)
+- [x] 6d: When synthesis was used (the output is already summary-shaped), skip the post-hoc `summarizeWithModel` call. Add a `synthesisUsed` flag to the drain result that `buildResult` checks
+- [x] 6e: Tests — verify sub-agent budget reminders contain only turn budget, verify compact message format at each tier, verify unified synthesis prompt produces structured output, verify summarization is skipped when synthesis was used
 
 ## Phase 7: Compact System Improvements
 

@@ -41,10 +41,17 @@ const (
 // synthesis turn (maxTurns + 1) plus one buffer turn.
 const subAgentIterationBuffer = 3
 
-// subAgentSynthesisPrompt is the system message injected when making a tools-disabled
-// final LLM call for a sub-agent that exceeded its turn budget while still requesting
-// tools. This forces the model to produce a text summary.
-const subAgentSynthesisPrompt = "[SYSTEM: Turn limit reached. Produce your final summary based on everything you've gathered so far. Do not request tools.]"
+// synthesisPrompt returns a structured synthesis message for a tools-disabled
+// final LLM call. The reason parameter describes why synthesis is happening
+// (e.g. "Turn limit reached", "Tool iteration limit reached"). Used by both
+// sub-agent and main-agent graceful exhaustion paths.
+func synthesisPrompt(reason string) string {
+	return fmt.Sprintf("[SYSTEM: %s. Produce a structured final response:\n"+
+		"- Key findings or decisions made\n"+
+		"- Files examined or modified\n"+
+		"- Unfinished work or open questions\n"+
+		"Do not request tools.]", reason)
+}
 
 // defaultMaxAgentDepth is the default maximum nesting depth for sub-agents.
 // Depth 1 means the main agent can spawn sub-agents, but sub-agents cannot
@@ -747,12 +754,14 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	// Post-drain: attempt synthesis if the agent exceeded its turn budget while
 	// still requesting tools.
+	synthesisUsed := false
 	if r.synthesisAttempted {
 		synthText := t.gracefulSubAgentSynthesis(ctx, agent, r.lastNodeID)
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
 			subTC.AddTextDelta(agentID, synthText)
 			t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: synthText})
+			synthesisUsed = true
 		}
 	}
 	subTC.Finalize()
@@ -776,7 +785,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		debugLog("sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns), nil
+	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns, synthesisUsed), nil
 }
 
 // executeBackground sets up and launches a background sub-agent, returning immediately.
@@ -871,12 +880,14 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 
 	// Post-drain: attempt synthesis if the agent exceeded its turn budget while
 	// still requesting tools.
+	synthesisUsed := false
 	if r.synthesisAttempted {
 		synthText := t.gracefulSubAgentSynthesis(ctx, agent, r.lastNodeID)
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
 			subTC.AddTextDelta(agentID, synthText)
 			deltaBuf.WriteString(synthText)
+			synthesisUsed = true
 		}
 	}
 	flushDelta()
@@ -900,7 +911,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns)
+	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns, synthesisUsed)
 	state.mu.Lock()
 	state.done = true
 	state.result = result
@@ -936,12 +947,8 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 		opts = append(opts, langdag.WithModel(model))
 	}
 
-	// Prepend budget stats as a <system-reminder> in the user message so the
-	// model sees its budget state when producing the synthesis.
-	synthMsg := subAgentSynthesisPrompt
-	if reminder := agent.budgetReminderBlock(); reminder.Text != "" {
-		synthMsg = reminder.Text + "\n\n" + synthMsg
-	}
+	// The model is told this is its final turn — budget numbers add nothing.
+	synthMsg := synthesisPrompt("Turn limit reached")
 
 	result, err := t.client.PromptFrom(synthCtx, lastNodeID, synthMsg, opts...)
 	if err != nil {
@@ -967,7 +974,10 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 }
 
 // buildResult constructs the final tool result from collected sub-agent state.
-func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, turns, maxTurns int) string {
+// When synthesisUsed is true (the agent produced a structured synthesis via
+// gracefulSubAgentSynthesis), the output is already summary-shaped and we skip
+// the post-hoc model summarization call.
+func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, turns, maxTurns int, synthesisUsed bool) string {
 	result := strings.TrimSpace(strings.Join(textParts, ""))
 	if result == "" && len(agentErrors) > 0 {
 		// No text output but we have errors — use errors as the result body.
@@ -976,7 +986,14 @@ func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textPart
 		result = "(sub-agent produced no output)"
 	}
 	outputPath := t.writeOutputFile(agentID, result)
-	summary, usedModel := t.summarizeWithModel(ctx, result)
+	var summary string
+	var usedModel bool
+	if synthesisUsed {
+		// Synthesis already produced structured output — pass through or truncate.
+		summary = summarizeOutput(result)
+	} else {
+		summary, usedModel = t.summarizeWithModel(ctx, result)
+	}
 	return formatSubAgentResult(agentID, outputPath, summary, usedModel, turns, maxTurns, agentErrors)
 }
 

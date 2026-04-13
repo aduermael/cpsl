@@ -1411,7 +1411,7 @@ func TestFormatSubAgentResultNoOutputWithErrors(t *testing.T) {
 
 	// We can't easily inject errors into the event stream via mock, so test
 	// buildResult directly.
-	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 1, 10)
+	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 1, 10, false)
 	if strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should not show generic no-output message when errors are present, got: %q", result)
 	}
@@ -1429,7 +1429,7 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
 
-	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 10)
+	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 10, false)
 	if !strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should show generic no-output, got: %q", result)
 	}
@@ -1617,7 +1617,7 @@ func TestSubAgentDoneTimeoutErrorInResult(t *testing.T) {
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	timeoutErr := fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", 200*time.Millisecond)
-	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 1, 10)
+	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 1, 10, false)
 	if !strings.Contains(result, "did not exit within") {
 		t.Errorf("result should contain timeout error, got: %q", result)
 	}
@@ -2886,13 +2886,68 @@ func TestSubAgentHardCancelAtMaxTurnsPlusOne(t *testing.T) {
 	}
 }
 
-func TestSubAgentSynthesisPromptConstant(t *testing.T) {
-	// Verify the synthesis prompt constant is well-formed.
-	if !strings.Contains(subAgentSynthesisPrompt, "Turn limit reached") {
-		t.Errorf("synthesis prompt should mention turn limit, got: %q", subAgentSynthesisPrompt)
+func TestSynthesisPromptFunction(t *testing.T) {
+	// Sub-agent synthesis (turn limit).
+	got := synthesisPrompt("Turn limit reached")
+	if !strings.Contains(got, "Turn limit reached") {
+		t.Errorf("synthesis prompt should mention reason, got: %q", got)
 	}
-	if !strings.Contains(subAgentSynthesisPrompt, "Do not request tools") {
-		t.Errorf("synthesis prompt should instruct no tools, got: %q", subAgentSynthesisPrompt)
+	if !strings.Contains(got, "Do not request tools") {
+		t.Errorf("synthesis prompt should instruct no tools, got: %q", got)
+	}
+	if !strings.Contains(got, "Key findings") {
+		t.Errorf("synthesis prompt should request structured output, got: %q", got)
+	}
+
+	// Main-agent synthesis (iteration limit).
+	got2 := synthesisPrompt("Tool iteration limit reached")
+	if !strings.Contains(got2, "Tool iteration limit reached") {
+		t.Errorf("synthesis prompt should mention iteration reason, got: %q", got2)
+	}
+	if !strings.Contains(got2, "Do not request tools") {
+		t.Errorf("synthesis prompt should instruct no tools, got: %q", got2)
+	}
+}
+
+func TestBuildResultSkipsSummarizationWhenSynthesisUsed(t *testing.T) {
+	// When synthesisUsed is true, buildResult should skip the model summarization
+	// call and use the output as-is (or truncate via summarizeOutput).
+	client := newTestClient("")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "explore-model", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	// Short output with synthesis — should pass through verbatim, no model call.
+	shortOutput := "STATUS: success\nFILES: main.go\nFINDINGS:\n- Found the bug\nNEXT: none"
+	result := tool.buildResult(context.Background(), "synth-agent", []string{shortOutput}, nil, 5, 10, true)
+	if !strings.Contains(result, shortOutput) {
+		t.Errorf("synthesis output should pass through verbatim, got: %q", result)
+	}
+	// Should NOT have "summary:model" since we skipped model summarization.
+	if strings.Contains(result, "summary:model") {
+		t.Errorf("should not use model summarization when synthesis was used, got: %q", result)
+	}
+
+	// Long output (>2KB) with synthesis — should use summarizeOutput truncation, not model.
+	longOutput := strings.Repeat("x", subAgentSummaryBytes+500)
+	result2 := tool.buildResult(context.Background(), "synth-long", []string{longOutput}, nil, 5, 10, true)
+	if strings.Contains(result2, "summary:model") {
+		t.Errorf("should not use model summarization for long synthesis output, got: %q", result2)
+	}
+	if !strings.Contains(result2, "full output in file above") {
+		t.Errorf("long synthesis output should be truncated, got: %q", result2)
+	}
+}
+
+func TestBuildResultUsesSummarizationWhenNoSynthesis(t *testing.T) {
+	// When synthesisUsed is false and output is short, should pass through without model.
+	client := newTestClient("")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+
+	shortOutput := "Found function foo in bar.go"
+	result := tool.buildResult(context.Background(), "no-synth", []string{shortOutput}, nil, 3, 10, false)
+	if !strings.Contains(result, shortOutput) {
+		t.Errorf("short non-synthesis output should pass through, got: %q", result)
 	}
 }
 
