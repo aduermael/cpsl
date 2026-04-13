@@ -974,7 +974,9 @@ func formatSubAgentResult(agentID, outputPath, summary string, modelSummary bool
 }
 
 // subAgentSummaryBytes is the max bytes for the inline summary in the tool result.
-const subAgentSummaryBytes = 500
+// Outputs under this threshold pass through verbatim without model summarization.
+// Set to 2KB so short results (~25-30 lines) avoid an unnecessary summarization call.
+const subAgentSummaryBytes = 2000
 
 // summarizeOutput returns the first ~500 bytes of the output, cutting at a line
 // boundary. If the output is longer, a note is appended.
@@ -990,8 +992,9 @@ func summarizeOutput(s string) string {
 }
 
 // summarizeWithModelMaxChars is the max characters of sub-agent output to send
-// to the exploration model for summarization.
-const summarizeWithModelMaxChars = 4000
+// to the exploration model for summarization. Set to 8KB so the summarizer sees
+// enough context for accurate bullets even on longer outputs.
+const summarizeWithModelMaxChars = 8000
 
 // summarizeWithModelPrompt is the prompt sent to the exploration model for
 // generating a structured summary of a sub-agent's output.

@@ -1153,7 +1153,7 @@ func TestSubAgentResultIncludesTokenUsage(t *testing.T) {
 // --- Phase 4: Model-based summarization tests ---
 
 func TestSummarizeWithModelShortOutput(t *testing.T) {
-	// Short output (under 500 bytes) should be returned as-is without calling the model.
+	// Short output (under 2KB) should be returned as-is without calling the model.
 	tool := &SubAgentTool{explorationModel: "cheap-model"}
 	summary, usedModel := tool.summarizeWithModel(context.Background(), "short output")
 	if usedModel {
@@ -1166,7 +1166,7 @@ func TestSummarizeWithModelShortOutput(t *testing.T) {
 
 func TestSummarizeWithModelNoExplorationModel(t *testing.T) {
 	// No exploration model — falls back to truncation.
-	longOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	longOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 	tool := &SubAgentTool{explorationModel: "", client: nil}
 	summary, usedModel := tool.summarizeWithModel(context.Background(), longOutput)
 	if usedModel {
@@ -1180,7 +1180,7 @@ func TestSummarizeWithModelNoExplorationModel(t *testing.T) {
 func TestSummarizeWithModelSuccess(t *testing.T) {
 	// Mock provider returns a structured summary.
 	client := newTestClient("- finding 1: the code has 3 modules\n- finding 2: tests pass")
-	longOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	longOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 
 	tool := &SubAgentTool{
 		explorationModel: "cheap-model",
@@ -1196,10 +1196,10 @@ func TestSummarizeWithModelSuccess(t *testing.T) {
 }
 
 func TestSummarizeWithModelTruncatesLargeInput(t *testing.T) {
-	// Output larger than 4000 chars should be truncated before sending to model.
+	// Output larger than 8000 chars should be truncated before sending to model.
 	// We verify indirectly: the call succeeds and returns a model summary.
 	client := newTestClient("- summarized large input")
-	largeOutput := strings.Repeat("x", 6000)
+	largeOutput := strings.Repeat("x", 10000)
 
 	tool := &SubAgentTool{
 		explorationModel: "cheap-model",
@@ -1215,9 +1215,9 @@ func TestSummarizeWithModelTruncatesLargeInput(t *testing.T) {
 }
 
 func TestSummarizeWithModelExecuteIntegration(t *testing.T) {
-	// When explorationModel is set and output is large, Execute() should use
+	// When explorationModel is set and output is large (>2KB), Execute() should use
 	// model summarization and include [summary: model] indicator.
-	largeOutput := strings.Repeat("This is a detailed line.\n", 50)
+	largeOutput := strings.Repeat("This is a detailed line.\n", 100)
 	// First response: sub-agent's LLM reply (the large output).
 	// Second response: summarization model's response.
 	client := newTestClient(largeOutput, "- bullet point summary")
