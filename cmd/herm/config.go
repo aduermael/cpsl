@@ -26,6 +26,8 @@ type Config struct {
 	ModelSortCol          string          `json:"model_sort_col,omitempty"`   // "name","provider","price","context"
 	ModelSortDirs         map[string]bool `json:"model_sort_dirs,omitempty"` // column name → ascending (per-column)
 	SubAgentMaxTurns      int             `json:"sub_agent_max_turns,omitempty"`
+	ExploreMaxTurns       int             `json:"explore_max_turns,omitempty"`
+	GeneralMaxTurns       int             `json:"general_max_turns,omitempty"`
 	MaxToolIterations     int             `json:"max_tool_iterations,omitempty"`     // main agent tool-call loop cap; 0 = default (200)
 	MaxAgentDepth         int             `json:"max_agent_depth,omitempty"`         // max sub-agent nesting depth; 0 = default (1)
 	Personality           string          `json:"personality,omitempty"` // optional agent personality/tone
@@ -222,6 +224,8 @@ type ProjectConfig struct {
 	ExplorationModel  string `json:"exploration_model,omitempty"`
 	Personality       string `json:"personality,omitempty"`
 	SubAgentMaxTurns  int    `json:"sub_agent_max_turns,omitempty"`
+	ExploreMaxTurns   int    `json:"explore_max_turns,omitempty"`
+	GeneralMaxTurns   int    `json:"general_max_turns,omitempty"`
 	MaxToolIterations int    `json:"max_tool_iterations,omitempty"`
 	MaxAgentDepth     int    `json:"max_agent_depth,omitempty"`
 	DebugMode         *bool  `json:"debug_mode,omitempty"` // nil = not overridden
@@ -242,6 +246,12 @@ func mergeConfigs(global Config, project ProjectConfig) Config {
 	}
 	if project.SubAgentMaxTurns != 0 {
 		merged.SubAgentMaxTurns = project.SubAgentMaxTurns
+	}
+	if project.ExploreMaxTurns != 0 {
+		merged.ExploreMaxTurns = project.ExploreMaxTurns
+	}
+	if project.GeneralMaxTurns != 0 {
+		merged.GeneralMaxTurns = project.GeneralMaxTurns
 	}
 	if project.MaxToolIterations != 0 {
 		merged.MaxToolIterations = project.MaxToolIterations

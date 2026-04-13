@@ -22,9 +22,18 @@ const (
 	ModeGeneral = "general" // full orchestrator model — all tools
 )
 
-// defaultSubAgentMaxTurns is the default response-cycle cap per sub-agent invocation.
+// defaultSubAgentMaxTurns is the legacy default response-cycle cap per sub-agent
+// invocation. Used as fallback when per-mode settings are not configured.
 // A "turn" is one LLM response cycle, which may contain multiple tool calls.
 const defaultSubAgentMaxTurns = 20
+
+// Per-mode default turn budgets. Explore agents are cheaper (fast model,
+// read-only tools) and need fewer turns. General agents are expensive (full
+// model, all tools) and keep the legacy default.
+const (
+	defaultExploreMaxTurns = 15
+	defaultGeneralMaxTurns = 20
+)
 
 // subAgentIterationBuffer is extra iterations added to the Agent's maxToolIterations
 // beyond maxTurns. This ensures the sub-agent's drain-loop turn counting fires first,
