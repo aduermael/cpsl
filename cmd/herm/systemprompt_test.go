@@ -1055,7 +1055,7 @@ func TestBudgetConstantsFlowIntoAllOutputs(t *testing.T) {
 	}
 
 	// 2. Role template: main agent delegation section should use PromptData value.
-	// We can't easily change defaultSubAgentMaxTurns (it's a const), but we can
+	// We can't easily change defaultGeneralMaxTurns (it's a const), but we can
 	// verify PromptData.DefaultSubAgentMaxTurns flows into the rendered template
 	// by building a prompt with the field set to altGeneral.
 	data := PromptData{
@@ -1074,10 +1074,10 @@ func TestBudgetConstantsFlowIntoAllOutputs(t *testing.T) {
 	if !strings.Contains(role, wantDelegation) {
 		t.Errorf("role template should reflect alt max turns, want %q in:\n%s", wantDelegation, role)
 	}
-	if altGeneral != defaultSubAgentMaxTurns {
-		residual := fmt.Sprintf("default: %d", defaultSubAgentMaxTurns)
+	if altGeneral != defaultGeneralMaxTurns {
+		residual := fmt.Sprintf("default: %d", defaultGeneralMaxTurns)
 		if strings.Contains(role, residual) {
-			t.Errorf("role template still contains default %d — template not using .DefaultSubAgentMaxTurns", defaultSubAgentMaxTurns)
+			t.Errorf("role template still contains default %d — template not using .DefaultSubAgentMaxTurns", defaultGeneralMaxTurns)
 		}
 	}
 }

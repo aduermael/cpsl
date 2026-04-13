@@ -215,7 +215,19 @@ func (a *App) startAgent(userMessage string) {
 	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
 		subAgentServerTools = nil
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, exploreMaxTurns, generalMaxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
+	subAgentTool := NewSubAgentTool(SubAgentConfig{
+		Client:           a.langdagClient,
+		Tools:            tools,
+		ServerTools:      subAgentServerTools,
+		MainModel:        modelID,
+		ExplorationModel: explorationModelID,
+		ExploreMaxTurns:  exploreMaxTurns,
+		GeneralMaxTurns:  generalMaxTurns,
+		MaxDepth:         maxDepth,
+		WorkDir:          workDir,
+		Personality:      a.config.Personality,
+		ContainerImage:   containerImage,
+	})
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string

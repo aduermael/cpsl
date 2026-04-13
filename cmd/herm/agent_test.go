@@ -1281,7 +1281,7 @@ func TestBudgetReminderNoIterationWarningAboveThreshold(t *testing.T) {
 
 func TestSubAgentReceivesMaxToolIterations(t *testing.T) {
 	client := newTestClient("ok")
-	sat := NewSubAgentTool(client, nil, nil, "main-model", "explore-model", 15, 15, 1, 0, "/tmp", "", "")
+	sat := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "explore-model", ExploreMaxTurns: 15, GeneralMaxTurns: 15, MaxDepth: 1, WorkDir: "/tmp"})
 
 	// Per-mode max turns should be set to 15.
 	if sat.exploreMaxTurns != 15 {
@@ -1535,7 +1535,7 @@ func TestSubAgentManyEventsNoDeadlock(t *testing.T) {
 	// (forwardBlocking) block with a 5s timeout. Drain in a background
 	// goroutine so critical sends succeed promptly.
 	parentEvents := make(chan AgentEvent, 1)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 1, 0, tmpDir, "", "")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmpDir})
 	tool.parentEvents = parentEvents
 
 	// Drain parent events slowly to test that non-critical forward() drops
@@ -1968,7 +1968,7 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	// Sub-agent encounters an error. Main agent should get structured error info.
 	client := newTestClient("") // empty output triggers no-output path
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Use buildResult directly with errors to verify the error reporting path.
 	result := tool.buildResult(context.Background(), "err-agent", nil,
@@ -4170,7 +4170,7 @@ func TestE2ESubAgentErrorChain(t *testing.T) {
 	subClient := langdag.NewWithDeps(subStore, subProv)
 
 	tmpDir := t.TempDir()
-	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0)
 	// Wire sub-agent events to the parent's event channel (as agentui.go does).
@@ -4285,7 +4285,7 @@ func TestE2ECascadingFailureRecovery(t *testing.T) {
 	parentClient := langdag.NewWithDeps(parentStore, parentProv)
 
 	tmpDir := t.TempDir()
-	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	simpleTool := &testTool{name: "simple_tool", result: "fallback result ok"}
 
 	agent := NewAgent(parentClient, []Tool{subAgentTool, simpleTool}, nil, "", "test-model", 0)
@@ -4550,7 +4550,7 @@ func TestE2EGracefulExhaustionWithBackgroundSubAgent(t *testing.T) {
 
 	tmpDir := t.TempDir()
 	bashTool := &testTool{name: "bash", result: "ok"}
-	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	const parentMaxIterations = 2
 	agent := NewAgent(parentClient, []Tool{bashTool, subAgentTool}, nil, "", "test-model", 0,
@@ -4888,7 +4888,7 @@ func TestE2EBackgroundLifecycleThreeAgents(t *testing.T) {
 	parentClient := langdag.NewWithDeps(parentStore, parentProv)
 
 	tmpDir := t.TempDir()
-	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0,
 		WithMaxToolIterations(10),
@@ -5017,7 +5017,7 @@ func TestE2EChannelSaturationThreeAgents(t *testing.T) {
 	parentClient := langdag.NewWithDeps(parentStore, parentProv)
 
 	tmpDir := t.TempDir()
-	subAgentTool := NewSubAgentTool(subClient, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
+	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0,
 		WithMaxToolIterations(10),
@@ -5124,7 +5124,7 @@ func TestTurnBudgetNotShownWhenMaxTurnsZero(t *testing.T) {
 }
 
 func TestTurnBudgetEarlyTier(t *testing.T) {
-	maxT := defaultSubAgentMaxTurns
+	maxT := defaultGeneralMaxTurns
 	// Pick a turn safely in the early range (below mid threshold).
 	turn := int(float64(maxT)*turnBudgetMidThreshold) - 1
 	if turn < 1 {
@@ -5147,7 +5147,7 @@ func TestTurnBudgetEarlyTier(t *testing.T) {
 }
 
 func TestTurnBudgetMidTier(t *testing.T) {
-	maxT := defaultSubAgentMaxTurns
+	maxT := defaultGeneralMaxTurns
 	// Pick a turn in the mid range (>= midThreshold, < lateThreshold).
 	turn := int(float64(maxT)*turnBudgetMidThreshold) + 1
 
@@ -5167,7 +5167,7 @@ func TestTurnBudgetMidTier(t *testing.T) {
 }
 
 func TestTurnBudgetLateTier(t *testing.T) {
-	maxT := defaultSubAgentMaxTurns
+	maxT := defaultGeneralMaxTurns
 	// Pick a turn in the late range (>= lateThreshold, < finalThreshold).
 	turn := int(float64(maxT)*turnBudgetLateThreshold) + 1
 
@@ -5187,7 +5187,7 @@ func TestTurnBudgetLateTier(t *testing.T) {
 }
 
 func TestTurnBudgetFinalTier(t *testing.T) {
-	maxT := defaultSubAgentMaxTurns
+	maxT := defaultGeneralMaxTurns
 	// Pick a turn in the final range (>= finalThreshold).
 	turn := int(float64(maxT)*turnBudgetFinalThreshold) + 1
 	if turn > maxT {
@@ -5265,7 +5265,7 @@ func TestSubAgentBudgetReminderCompactFinal(t *testing.T) {
 }
 
 func TestSetTurnProgressThreadSafe(t *testing.T) {
-	maxT := defaultSubAgentMaxTurns
+	maxT := defaultGeneralMaxTurns
 	client := newTestClient("ok")
 	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
 

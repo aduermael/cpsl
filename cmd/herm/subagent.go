@@ -22,11 +22,6 @@ const (
 	ModeGeneral = "general" // full orchestrator model — all tools
 )
 
-// defaultSubAgentMaxTurns is the legacy default response-cycle cap per sub-agent
-// invocation. Used as fallback when per-mode settings are not configured.
-// A "turn" is one LLM response cycle, which may contain multiple tool calls.
-const defaultSubAgentMaxTurns = 20
-
 // Per-mode default turn budgets. Explore agents are cheaper (fast model,
 // read-only tools) and need fewer turns. General agents are expensive (full
 // model, all tools) and keep the legacy default.
@@ -87,6 +82,24 @@ type agentNodeState struct {
 	mode   string
 }
 
+// SubAgentConfig holds the configuration for creating a SubAgentTool.
+// Zero-value int fields get sensible defaults (per-mode turn budgets,
+// max depth). This replaces the 12-parameter constructor.
+type SubAgentConfig struct {
+	Client           *langdag.Client
+	Tools            []Tool
+	ServerTools      []types.ToolDefinition
+	MainModel        string // full orchestrator model for "general" mode
+	ExplorationModel string // cheap model for "explore" mode and summarization; empty = use truncation fallback
+	ExploreMaxTurns  int    // turn budget for explore-mode sub-agents; 0 = defaultExploreMaxTurns
+	GeneralMaxTurns  int    // turn budget for general-mode sub-agents; 0 = defaultGeneralMaxTurns
+	MaxDepth         int    // maximum nesting depth from this level; 0 = defaultMaxAgentDepth
+	CurrentDepth     int    // current nesting depth (0 = spawned by main agent)
+	WorkDir          string
+	Personality      string
+	ContainerImage   string
+}
+
 // SubAgentTool spawns a sub-agent to handle complex subtasks autonomously.
 // Communication is output-only: the sub-agent returns a result string and
 // that is the sole information passed back to the caller.
@@ -118,29 +131,31 @@ type SubAgentTool struct {
 	snapTime  time.Time         // when snapCache was fetched
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, exploreMaxTurns int, generalMaxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
-	if exploreMaxTurns <= 0 {
-		exploreMaxTurns = defaultExploreMaxTurns
+// NewSubAgentTool creates a SubAgentTool from the given configuration.
+// Zero-value int fields in cfg get sensible defaults.
+func NewSubAgentTool(cfg SubAgentConfig) *SubAgentTool {
+	if cfg.ExploreMaxTurns <= 0 {
+		cfg.ExploreMaxTurns = defaultExploreMaxTurns
 	}
-	if generalMaxTurns <= 0 {
-		generalMaxTurns = defaultGeneralMaxTurns
+	if cfg.GeneralMaxTurns <= 0 {
+		cfg.GeneralMaxTurns = defaultGeneralMaxTurns
 	}
-	if maxDepth <= 0 {
-		maxDepth = defaultMaxAgentDepth
+	if cfg.MaxDepth <= 0 {
+		cfg.MaxDepth = defaultMaxAgentDepth
 	}
 	return &SubAgentTool{
-		client:           client,
-		tools:            tools,
-		serverTools:      serverTools,
-		mainModel:        mainModel,
-		explorationModel: explorationModel,
-		exploreMaxTurns:  exploreMaxTurns,
-		generalMaxTurns:  generalMaxTurns,
-		maxDepth:         maxDepth,
-		currentDepth:     currentDepth,
-		workDir:          workDir,
-		personality:      personality,
-		containerImage:   containerImage,
+		client:           cfg.Client,
+		tools:            cfg.Tools,
+		serverTools:      cfg.ServerTools,
+		mainModel:        cfg.MainModel,
+		explorationModel: cfg.ExplorationModel,
+		exploreMaxTurns:  cfg.ExploreMaxTurns,
+		generalMaxTurns:  cfg.GeneralMaxTurns,
+		maxDepth:         cfg.MaxDepth,
+		currentDepth:     cfg.CurrentDepth,
+		workDir:          cfg.WorkDir,
+		personality:      cfg.Personality,
+		containerImage:   cfg.ContainerImage,
 		doneTimeout:      subAgentDoneTimeout,
 		agentNodes:       make(map[string]agentNodeState),
 		bgAgents:         make(map[string]*bgAgentState),
@@ -470,7 +485,20 @@ func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
 	nextDepth := t.currentDepth + 1
 	if nextDepth < t.maxDepth {
 		// Sub-agent is allowed to spawn its own sub-agents.
-		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.mainModel, t.explorationModel, t.exploreMaxTurns, t.generalMaxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage)
+		child := NewSubAgentTool(SubAgentConfig{
+			Client:           t.client,
+			Tools:            t.tools,
+			ServerTools:      t.serverTools,
+			MainModel:        t.mainModel,
+			ExplorationModel: t.explorationModel,
+			ExploreMaxTurns:  t.exploreMaxTurns,
+			GeneralMaxTurns:  t.generalMaxTurns,
+			MaxDepth:         t.maxDepth,
+			CurrentDepth:     nextDepth,
+			WorkDir:          t.workDir,
+			Personality:      t.personality,
+			ContainerImage:   t.containerImage,
+		})
 		child.parentEvents = t.parentEvents
 		tools = append(tools, child)
 	}
@@ -1025,8 +1053,8 @@ func formatSubAgentResult(agentID, outputPath, summary string, modelSummary bool
 // Set to 2KB so short results (~25-30 lines) avoid an unnecessary summarization call.
 const subAgentSummaryBytes = 2000
 
-// summarizeOutput returns the first ~500 bytes of the output, cutting at a line
-// boundary. If the output is longer, a note is appended.
+// summarizeOutput returns output verbatim if within subAgentSummaryBytes,
+// otherwise truncates at a line boundary and appends a note.
 func summarizeOutput(s string) string {
 	if len(s) <= subAgentSummaryBytes {
 		return s

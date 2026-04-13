@@ -355,7 +355,7 @@ func TestCachedSnapshot_ReusedWithinTTL(t *testing.T) {
 	tmp := t.TempDir()
 	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
 
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 10, 1, 0, tmp, "", "")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
 
 	// First call populates the cache.
 	snap1 := tool.cachedSnapshot()
@@ -380,7 +380,7 @@ func TestCachedSnapshot_RefreshedAfterTTL(t *testing.T) {
 	tmp := t.TempDir()
 	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
 
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 10, 1, 0, tmp, "", "")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
 
 	// Populate cache.
 	tool.cachedSnapshot()
@@ -402,7 +402,7 @@ func TestCachedSnapshot_ConcurrentAccess(t *testing.T) {
 	tmp := t.TempDir()
 	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
 
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 10, 1, 0, tmp, "", "")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
 
 	// Spawn multiple goroutines to exercise the mutex.
 	done := make(chan projectSnapshot, 10)
@@ -439,7 +439,7 @@ func TestExploreModeSkipsGitStatus(t *testing.T) {
 		&stubTool{"edit_file"},
 		&stubTool{"write_file"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 
 	// Explore mode: strip GitStatus before building prompt.
 	exploreSnap := *snap
@@ -477,7 +477,7 @@ func TestGeneralModeGetsFullContext(t *testing.T) {
 		&stubTool{"edit_file"},
 		&stubTool{"write_file"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	generalTools := tool.buildSubAgentTools(ModeGeneral)
 	generalPrompt := buildSubAgentSystemPrompt(generalTools, nil, "/workspace", "alpine:latest", snap)
 
