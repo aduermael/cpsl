@@ -663,7 +663,7 @@ func TestToolDescriptionContainsGuidance(t *testing.T) {
 		{"bash", []string{"dev container", "builds, tests"}},
 		{"git", []string{"on the host", "SSH keys", "Never force-push"}},
 		{"devenv", []string{"Dockerfile", "aduermael/herm", "read", "write", "build"}},
-		{"agent", []string{"sub-agent", "explore", "implement", "agent_id", "[summary: model]", "[turns:"}},
+		{"agent", []string{"sub-agent", "explore", "general", "agent_id", "[summary: model]", "[turns:"}},
 		{"glob", []string{"glob pattern", ".gitignore"}},
 		{"grep", []string{"regex pattern", ".gitignore"}},
 		{"read_file", []string{"line numbers", "line ranges"}},

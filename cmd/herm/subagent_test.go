@@ -389,7 +389,7 @@ func TestSubAgentToolUnknownAgentID(t *testing.T) {
 func TestSubAgentToolDepthExcludesNestedAgent(t *testing.T) {
 	// At maxDepth=1, currentDepth=0 → nextDepth=1 which is NOT < maxDepth → no nested agent tool.
 	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	for _, st := range subTools {
 		if st.Definition().Name == "agent" {
@@ -402,7 +402,7 @@ func TestSubAgentToolDepthAllowsNestedAgent(t *testing.T) {
 	// At maxDepth=3, currentDepth=0 → nextDepth=1 < 3 → nested agent tool included.
 	baseTool := &testTool{name: "bash", result: "ok"}
 	tool := NewSubAgentTool(nil, []Tool{baseTool}, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	hasAgent := false
 	for _, st := range subTools {
@@ -474,14 +474,14 @@ func TestSubAgentToolImplementModeIncludesAllTools(t *testing.T) {
 		&testTool{name: "devenv", result: "ok"},
 	}
 	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	got := make(map[string]bool)
 	for _, st := range subTools {
 		got[st.Definition().Name] = true
 	}
 
-	// Implement mode should include every tool.
+	// General mode should include every tool.
 	for _, tt := range allTools {
 		name := tt.Definition().Name
 		if !got[name] {
@@ -1246,7 +1246,7 @@ func TestSubAgentToolInvalidMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -1260,7 +1260,7 @@ func TestSubAgentToolMissingMode(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for missing mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -1281,17 +1281,17 @@ func TestSubAgentToolExploreModeUsesExplorationModel(t *testing.T) {
 	}
 }
 
-func TestSubAgentToolImplementModeUsesMainModel(t *testing.T) {
-	client := newTestClient("implement output")
+func TestSubAgentToolGeneralModeUsesMainModel(t *testing.T) {
+	client := newTestClient("general output")
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
-	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"general"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
-	if !strings.Contains(result, "implement output") {
-		t.Errorf("result = %q, want implement output", result)
+	if !strings.Contains(result, "general output") {
+		t.Errorf("result = %q, want general output", result)
 	}
 }
 
@@ -2252,14 +2252,14 @@ func TestSubAgentResumeInheritsMode(t *testing.T) {
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
 
-	// Spawn in implement mode.
-	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
+	// Spawn in general mode.
+	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"general"}`))
 	if err != nil {
 		t.Fatalf("first Execute error: %v", err)
 	}
 	agentID := extractAgentID(t, result1)
 
-	// Resume without providing mode — should inherit "implement".
+	// Resume without providing mode — should inherit "general".
 	result2, err := tool.Execute(context.Background(), json.RawMessage(
 		`{"task":"continue","agent_id":"`+agentID+`"}`))
 	if err != nil {
@@ -2282,9 +2282,9 @@ func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
 	}
 	agentID := extractAgentID(t, result1)
 
-	// Resume with mode:"implement" — should still use "explore" (original).
+	// Resume with mode:"general" — should still use "explore" (original).
 	_, err = tool.Execute(context.Background(), json.RawMessage(
-		`{"task":"continue","mode":"implement","agent_id":"`+agentID+`"}`))
+		`{"task":"continue","mode":"general","agent_id":"`+agentID+`"}`))
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
@@ -2293,8 +2293,8 @@ func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
 	tool.mu.Lock()
 	state := tool.agentNodes[agentID]
 	tool.mu.Unlock()
-	if state.mode != "explore" {
-		t.Errorf("stored mode = %q, want \"explore\"", state.mode)
+	if state.mode != ModeExplore {
+		t.Errorf("stored mode = %q, want %q", state.mode, ModeExplore)
 	}
 }
 
@@ -2308,7 +2308,7 @@ func TestSubAgentNewAgentWithoutModeStillFails(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for new agent without mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -2356,12 +2356,12 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 		}
 	}
 
-	// Implement mode: has edit/write tools → should NOT include exploration strategy.
-	implTools := tool.buildSubAgentTools("implement")
-	implPrompt := buildSubAgentSystemPrompt(implTools, nil, "/workspace", "alpine:latest", nil)
+	// General mode: has edit/write tools → should NOT include exploration strategy.
+	generalTools := tool.buildSubAgentTools(ModeGeneral)
+	generalPrompt := buildSubAgentSystemPrompt(generalTools, nil, "/workspace", "alpine:latest", nil)
 
-	if strings.Contains(implPrompt, "Exploration strategy") {
-		t.Error("implement prompt should NOT contain exploration strategy section")
+	if strings.Contains(generalPrompt, "Exploration strategy") {
+		t.Error("general prompt should NOT contain exploration strategy section")
 	}
 }
 
