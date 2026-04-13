@@ -28,6 +28,8 @@ const compactSummaryPrompt = `Summarize the following conversation between a use
 2. Key decisions made and why
 3. Current state: what has been done, what files were modified
 4. Any important context the assistant would need to continue the work
+5. Pending tasks or plan steps not yet completed
+6. Errors encountered and their resolution status
 
 Be concise but complete. Write in second person ("you" = the assistant). Output only the summary, no preamble.`
 

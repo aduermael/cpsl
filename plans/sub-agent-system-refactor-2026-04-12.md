@@ -124,9 +124,9 @@ Streamline what sub-agents see in budget reminders and unify the synthesis promp
 
 Incremental improvements to the context management system.
 
-- [ ] 7a: Expand the compact summary prompt from 4 to 6 focuses. Add: "5. Pending tasks or plan steps not yet completed" and "6. Errors encountered and their resolution status." This improves conversation continuity after compaction. Update in `compact.go`
-- [ ] 7b: Make `clearOldToolResults` token-budget-aware. Instead of clearing all candidates beyond the most recent 4, estimate tokens freed per clearing (`size / 4` as rough bytes-to-tokens) and stop once the estimated input token count drops below the 80% threshold. This preserves more context when only a few large tool results are the bottleneck
-- [ ] 7c: Tests — verify expanded compact prompt produces richer summaries, verify token-budget-aware clearing stops early when possible
+- [x] 7a: Expand the compact summary prompt from 4 to 6 focuses. Add: "5. Pending tasks or plan steps not yet completed" and "6. Errors encountered and their resolution status." This improves conversation continuity after compaction. Update in `compact.go`
+- [x] 7b: Make `clearOldToolResults` token-budget-aware. Instead of clearing all candidates beyond the most recent 4, estimate tokens freed per clearing (`size / 4` as rough bytes-to-tokens) and stop once the estimated input token count drops below the 80% threshold. This preserves more context when only a few large tool results are the bottleneck
+- [x] 7c: Tests — verify expanded compact prompt produces richer summaries, verify token-budget-aware clearing stops early when possible
 
 ---
 

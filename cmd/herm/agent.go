@@ -936,8 +936,13 @@ func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTok
 		return clearable[i].size > clearable[j].size
 	})
 
+	// Track estimated input tokens; stop clearing once below threshold.
+	estimatedTokens := inputTokens
 	storage := a.client.Storage()
 	for _, c := range clearable {
+		if estimatedTokens < threshold {
+			break
+		}
 		// Already cleared?
 		if strings.Contains(c.node.Content, `"[output cleared]"`) {
 			continue
@@ -947,8 +952,11 @@ func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTok
 		if replaced == c.node.Content {
 			continue
 		}
+		// Estimate tokens freed: ~4 bytes per token.
+		freedTokens := (c.size - len(replaced)) / 4
 		c.node.Content = replaced
 		_ = storage.UpdateNode(ctx, c.node)
+		estimatedTokens -= freedTokens
 	}
 }
 

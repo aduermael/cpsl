@@ -536,5 +536,77 @@ func (p *failingProvider) Stream(_ context.Context, _ *types.CompletionRequest) 
 	return nil, fmt.Errorf("LLM service unavailable")
 }
 
-func (p *failingProvider) Name() string               { return "mock" }
-func (p *failingProvider) Models() []types.ModelInfo   { return nil }
+func (p *failingProvider) Name() string             { return "mock" }
+func (p *failingProvider) Models() []types.ModelInfo { return nil }
+
+func TestCompactSummaryPromptCoversAllFocuses(t *testing.T) {
+	// Verify the prompt includes all 6 focus areas for rich summaries.
+	expectedFocuses := []string{
+		"task/goal",
+		"Key decisions",
+		"Current state",
+		"important context",
+		"Pending tasks or plan steps",
+		"Errors encountered",
+	}
+	for _, focus := range expectedFocuses {
+		if !strings.Contains(compactSummaryPrompt, focus) {
+			t.Errorf("compactSummaryPrompt missing focus area: %q", focus)
+		}
+	}
+}
+
+// TestCompactPromptPassedToLLM verifies the full prompt (with all focuses) is
+// sent to the LLM during compaction.
+func TestCompactPromptPassedToLLM(t *testing.T) {
+	store := newClearingMockStorage()
+	prov := &focusCaptureProvider{
+		mockProvider: mockProvider{
+			responses: []string{"Summary with errors and pending tasks."},
+			model:     "test-model",
+		},
+	}
+	client := langdag.NewWithDeps(store, prov)
+
+	now := time.Now()
+	nodeCount := compactKeepRecent + 4
+	nodes := make([]*types.Node, nodeCount)
+	for i := 0; i < nodeCount; i++ {
+		id := fmt.Sprintf("pp-%d", i)
+		parentID := ""
+		if i > 0 {
+			parentID = nodes[i-1].ID
+		}
+		nt := types.NodeTypeUser
+		content := fmt.Sprintf("user msg %d", i)
+		if i%2 == 1 {
+			nt = types.NodeTypeAssistant
+			content = fmt.Sprintf("assistant msg %d", i)
+		}
+		nodes[i] = &types.Node{
+			ID: id, ParentID: parentID, RootID: "pp-0", Sequence: i,
+			NodeType: nt, Content: content, CreatedAt: now,
+		}
+	}
+
+	leafID := nodes[len(nodes)-1].ID
+	var ids []string
+	for _, n := range nodes {
+		_ = store.CreateNode(context.Background(), n)
+		ids = append(ids, n.ID)
+	}
+	store.ancestorChains[leafID] = ids
+
+	_, err := compactConversation(context.Background(), client, leafID, "test-model", "")
+	if err != nil {
+		t.Fatalf("compact error: %v", err)
+	}
+
+	// Verify all 6 focus areas were in the prompt sent to the LLM.
+	if !strings.Contains(prov.lastPrompt, "Pending tasks or plan steps") {
+		t.Error("prompt sent to LLM missing 'Pending tasks or plan steps'")
+	}
+	if !strings.Contains(prov.lastPrompt, "Errors encountered") {
+		t.Error("prompt sent to LLM missing 'Errors encountered'")
+	}
+}
