@@ -997,8 +997,17 @@ func summarizeOutput(s string) string {
 const summarizeWithModelMaxChars = 8000
 
 // summarizeWithModelPrompt is the prompt sent to the exploration model for
-// generating a structured summary of a sub-agent's output.
-const summarizeWithModelPrompt = `Summarize the key findings from this sub-agent's output in 3-5 bullet points. Focus on facts, decisions, and actionable information. Skip preamble. Output only the bullet points.
+// generating a structured summary of a sub-agent's output. The format gives
+// the main agent machine-parseable structure while keeping content human-readable.
+const summarizeWithModelPrompt = `Summarize this sub-agent output using exactly this format. No preamble, no extra commentary.
+
+STATUS: success | partial | failure
+FILES: <comma-separated key files touched or discovered, or "none">
+FINDINGS:
+- <bullet 1>
+- <bullet 2>
+- <bullet 3>
+NEXT: <one-line recommendation for the caller, or "none">
 
 --- SUB-AGENT OUTPUT ---
 `
