@@ -4,12 +4,14 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -19,15 +21,16 @@ import (
 
 // Provider constants for supported AI providers.
 const (
-	ProviderAnthropic = "anthropic"
-	ProviderGrok      = "grok"
-	ProviderOpenAI    = "openai"
-	ProviderGemini    = "gemini"
-	ProviderOllama    = "ollama"
+	ProviderAnthropic   = "anthropic"
+	ProviderGrok        = "grok"
+	ProviderOpenRouter  = "openrouter"
+	ProviderOpenAI      = "openai"
+	ProviderGemini      = "gemini"
+	ProviderOllama      = "ollama"
 )
 
 // supportedProviders lists providers in display order.
-var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenAI, ProviderGemini, ProviderOllama}
+var supportedProviders = []string{ProviderAnthropic, ProviderGrok, ProviderOpenRouter, ProviderOpenAI, ProviderGemini, ProviderOllama}
 
 // ModelDef describes a model available for selection.
 // Models are derived from the langdag model catalog at runtime.
@@ -50,8 +53,8 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 	}
 	var models []ModelDef
 	for _, provider := range supportedProviders {
-		// Ollama models are fetched separately via fetchOllamaModels
-		if provider == ProviderOllama {
+		// Ollama and OpenRouter models are fetched separately via their own fetch functions
+		if provider == ProviderOllama || provider == ProviderOpenRouter {
 			continue
 		}
 		for _, p := range catalog.ForProvider(provider) {
@@ -136,6 +139,82 @@ func fetchOllamaModels(baseURL string) []ModelDef {
 	for range tagsResp.Models {
 		r := <-ch
 		models[r.idx] = r.model
+	}
+	return models
+}
+
+const openRouterDefaultBase = "https://openrouter.ai/api/v1"
+
+// fetchOpenRouterModels fetches available models from the OpenRouter API.
+// Returns nil if apiKey is empty or the request fails.
+func fetchOpenRouterModels(apiKey string) []ModelDef {
+	return fetchOpenRouterModelsFrom(apiKey, openRouterDefaultBase)
+}
+
+// fetchOpenRouterModelsFrom fetches models using the given base URL.
+// Separated from fetchOpenRouterModels so tests can inject a httptest server.
+func fetchOpenRouterModelsFrom(apiKey, baseURL string) []ModelDef {
+	if apiKey == "" {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client := &http.Client{}
+	req, err := http.NewRequestWithContext(ctx, "GET", baseURL+"/models", nil)
+	if err != nil {
+		return nil
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("HTTP-Referer", "https://github.com/aduermael/herm")
+	req.Header.Set("X-Title", "herm")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	var body struct {
+		Data []struct {
+			ID          string `json:"id"`
+			Name        string `json:"name"`
+			ContextLength int  `json:"context_length"`
+			Pricing struct {
+				Prompt     string `json:"prompt"`
+				Completion string `json:"completion"`
+			} `json:"pricing"`
+			TopProvider struct {
+				MaxCompletionTokens int `json:"max_completion_tokens"`
+			} `json:"top_provider"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return nil
+	}
+
+	models := make([]ModelDef, 0, len(body.Data))
+	for _, m := range body.Data {
+		var promptPrice, completionPrice float64
+		// Prices are per-token strings; convert to per-million
+		if p, err := strconv.ParseFloat(m.Pricing.Prompt, 64); err == nil {
+			promptPrice = p * 1_000_000
+		}
+		if p, err := strconv.ParseFloat(m.Pricing.Completion, 64); err == nil {
+			completionPrice = p * 1_000_000
+		}
+		models = append(models, ModelDef{
+			Provider:        ProviderOpenRouter,
+			ID:              m.ID,
+			PromptPrice:     promptPrice,
+			CompletionPrice: completionPrice,
+			ContextWindow:   m.ContextLength,
+		})
 	}
 	return models
 }

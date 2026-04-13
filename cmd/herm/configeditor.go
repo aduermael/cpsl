@@ -61,6 +61,7 @@ var cfgAPIKeyFields = []cfgField{
 	{label: "Anthropic", get: func(c Config) string { return c.AnthropicAPIKey }, display: func(c Config) string { return maskKey(c.AnthropicAPIKey) }, set: func(c *Config, v string) { c.AnthropicAPIKey = v }},
 	{label: "OpenAI", get: func(c Config) string { return c.OpenAIAPIKey }, display: func(c Config) string { return maskKey(c.OpenAIAPIKey) }, set: func(c *Config, v string) { c.OpenAIAPIKey = v }},
 	{label: "Grok", get: func(c Config) string { return c.GrokAPIKey }, display: func(c Config) string { return maskKey(c.GrokAPIKey) }, set: func(c *Config, v string) { c.GrokAPIKey = v }},
+	{label: "OpenRouter", get: func(c Config) string { return c.OpenRouterAPIKey }, display: func(c Config) string { return maskKey(c.OpenRouterAPIKey) }, set: func(c *Config, v string) { c.OpenRouterAPIKey = v }},
 	{label: "Gemini", get: func(c Config) string { return c.GeminiAPIKey }, display: func(c Config) string { return maskKey(c.GeminiAPIKey) }, set: func(c *Config, v string) { c.GeminiAPIKey = v }},
 	{label: "Ollama URL", get: func(c Config) string { return c.OllamaBaseURL }, set: func(c *Config, v string) {
 		v = strings.TrimSpace(v)
@@ -79,10 +80,12 @@ func apiKeyRowForProvider(provider string) int {
 		return 1
 	case ProviderGrok:
 		return 2
-	case ProviderGemini:
+	case ProviderOpenRouter:
 		return 3
-	case ProviderOllama:
+	case ProviderGemini:
 		return 4
+	case ProviderOllama:
+		return 5
 	default:
 		return 0
 	}
@@ -109,7 +112,7 @@ func (a *App) preferredAPIKeyCursor(cfg Config) int {
 	if p, _ := a.effectiveProviderForConfig(cfg); p != "" {
 		return apiKeyRowForProvider(p)
 	}
-	ordered := []string{ProviderAnthropic, ProviderOpenAI, ProviderGrok, ProviderGemini, ProviderOllama}
+	ordered := []string{ProviderAnthropic, ProviderOpenAI, ProviderGrok, ProviderOpenRouter, ProviderGemini, ProviderOllama}
 	configured := cfg.configuredProviders()
 	for _, p := range ordered {
 		if configured[p] {
@@ -162,9 +165,13 @@ func (a *App) exitConfigMode(save bool) {
 		if !saveErr {
 			a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: "Config saved."})
 		}
-		// Refresh models including Ollama if configured
+		// Refresh models including Ollama and OpenRouter if configured
 		if a.config.OllamaBaseURL != "" {
 			go func() { a.resultCh <- fetchOllamaModelsCmd(a.config.OllamaBaseURL) }()
+		}
+		if a.config.OpenRouterAPIKey != "" {
+			a.openRouterFetched = false // allow re-fetch with new key
+			go func() { a.resultCh <- fetchOpenRouterModelsCmd(a.config.OpenRouterAPIKey) }()
 		}
 		// Show updated model if it changed
 		if a.models != nil {
@@ -203,6 +210,16 @@ func (a *App) openConfigModelPicker(getCurrentID func() string, onSelect func(st
 		}()
 		return
 	}
+	// If the draft OpenRouter key differs from the saved key, fetch fresh models
+	// async before opening the picker.
+	if a.cfgDraft.OpenRouterAPIKey != "" && a.config.OpenRouterAPIKey != a.cfgDraft.OpenRouterAPIKey {
+		go func() {
+			msg := fetchOpenRouterModelsCmd(a.cfgDraft.OpenRouterAPIKey)
+			a.resultCh <- msg
+			a.resultCh <- openPickerMsg{getCurrentID: getCurrentID, onSelect: onSelect}
+		}()
+		return
+	}
 	a.doOpenConfigModelPicker(a.models, getCurrentID, onSelect)
 }
 
@@ -230,6 +247,31 @@ func (a *App) doOpenConfigModelPicker(models []ModelDef, getCurrentID func() str
 					Provider: ProviderOllama,
 					ID:       savedID,
 					Label:    savedID + " \033[33m(offline)\033[0m",
+				})
+			}
+		}
+	}
+
+	// If OpenRouter is configured but models haven't loaded yet (e.g. bad key or
+	// network error), inject a stub so the picker still shows the saved selection.
+	if a.cfgDraft.OpenRouterAPIKey != "" {
+		orInList := false
+		for _, m := range available {
+			if m.Provider == ProviderOpenRouter {
+				orInList = true
+				break
+			}
+		}
+		if !orInList {
+			savedID := getCurrentID()
+			if savedID == "" {
+				savedID = a.cfgDraft.ActiveModel
+			}
+			if savedID != "" {
+				available = append(available, ModelDef{
+					Provider: ProviderOpenRouter,
+					ID:       savedID,
+					Label:    savedID + " \033[33m(unavailable)\033[0m",
 				})
 			}
 		}
