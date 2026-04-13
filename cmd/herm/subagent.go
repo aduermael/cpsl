@@ -418,6 +418,32 @@ func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
 	return tools
 }
 
+// drainResult holds the accumulated state from a sub-agent's event drain loop.
+// Both foreground Execute and background runBackground produce a drainResult.
+type drainResult struct {
+	textParts         []string // collected text output fragments
+	agentErrors       []string // error messages with tool/turn context
+	totalInputTokens  int
+	totalOutputTokens int
+	turns             int    // number of LLM response turns consumed
+	lastNodeID        string // last known nodeID for synthesis and resume
+	synthesisAttempted bool  // true when the agent exceeded its turn budget while still requesting tools
+}
+
+// drainOptions parameterizes the behavioral differences between foreground and
+// background event drain loops.
+type drainOptions struct {
+	agentID        string          // sub-agent's unique ID
+	mode           string          // "explore" or "general" — used for saveNodeID
+	agent          *Agent          // running agent (for DoneCh, Events, Cancel, SetTurnProgress, SetTokenProgress)
+	traceCollector *TraceCollector // records trace events for this sub-agent
+	// deltaForwarder is called for each text delta during the main event loop
+	// (not during the doneCh fallback drain). Foreground passes a function that
+	// calls t.forward() directly; background passes one that accumulates into a
+	// batch buffer and flushes periodically.
+	deltaForwarder func(agentID, text string)
+}
+
 // Execute runs a sub-agent synchronously, drains its events, and returns the collected text output.
 func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	var in subAgentInput
