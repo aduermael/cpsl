@@ -64,7 +64,7 @@ The foreground `Execute` (lines ~516-654) and background `runBackground` (lines 
 Extract a shared `drainSubAgentEvents` method that both call.
 
 - [x] 2a: Define a `drainResult` struct (textParts, agentErrors, token counts, turns, lastNodeID) and a `drainOptions` struct (agentID, mode, agent, traceCollector, deltaForwarder callback). The `deltaForwarder` callback parameterizes the one behavioral difference: foreground passes a function that calls `t.forward()` directly, background passes one that accumulates into a batch buffer and flushes periodically
-- [ ] 2b: Extract the shared drain loop into `(t *SubAgentTool) drainSubAgentEvents(ctx, opts) drainResult`. Include the `doneCh` fallback drain. Both the main select loop and the doneCh drain use the same event processing — avoid duplicating it internally (extract an `processEvent` helper if needed)
+- [x] 2b: Extract the shared drain loop into `(t *SubAgentTool) drainSubAgentEvents(ctx, opts) drainResult`. Include the `doneCh` fallback drain. Both the main select loop and the doneCh drain use the same event processing — avoid duplicating it internally (extract an `processEvent` helper if needed)
 - [ ] 2c: Refactor `Execute` to: setup → `drainSubAgentEvents` → post-drain synthesis → `buildResult` → return. Refactor `runBackground` similarly: setup → `drainSubAgentEvents` → post-drain synthesis → store in bgAgentState → notify. Verify both paths produce identical behavior to before
 - [ ] 2d: Tests — verify foreground and background drain produce the same results for identical event sequences. Test the delta batching callback is called correctly for background mode. Existing lifecycle tests must still pass
 
