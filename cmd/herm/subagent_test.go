@@ -447,7 +447,7 @@ func TestSubAgentToolExploreModeFiltersTools(t *testing.T) {
 	}
 
 	// Should include all allowlisted tools.
-	for name := range exploreToolAllowlist {
+	for name := range modeToolAllowlists[ModeExplore] {
 		if !got[name] {
 			t.Errorf("explore mode should include %q", name)
 		}

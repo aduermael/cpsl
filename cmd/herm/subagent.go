@@ -382,26 +382,31 @@ func (t *SubAgentTool) WaitForBackgroundAgents(timeout time.Duration) []string {
 	return results
 }
 
-// exploreToolAllowlist is the set of tools available to explore-mode sub-agents.
-// These are read-only tools plus bash (needed for read-only commands like ls,
-// tree, and build checks — an accepted escape hatch consistent with Claude Code).
-var exploreToolAllowlist = map[string]bool{
-	"glob":      true,
-	"grep":      true,
-	"read_file": true,
-	"outline":   true,
-	"bash":      true,
+// modeToolAllowlists maps each mode to its allowed tool set.
+// A nil allowlist (e.g. ModeGeneral) means all tools pass through.
+// Explore-mode includes read-only tools plus bash (needed for read-only
+// commands like ls, tree, and build checks — an accepted escape hatch
+// consistent with Claude Code).
+var modeToolAllowlists = map[string]map[string]bool{
+	ModeExplore: {
+		"glob":      true,
+		"grep":      true,
+		"read_file": true,
+		"outline":   true,
+		"bash":      true,
+	},
+	ModeGeneral: nil, // all tools
 }
 
 // buildSubAgentTools returns the tools available to the sub-agent.
-// When mode is "explore", only tools in exploreToolAllowlist are included.
-// When mode is "general", the full tool set is included.
+// Tools are filtered through the mode's allowlist (nil = all tools pass).
 // If the current depth allows further nesting, includes a new SubAgentTool
 // at the next depth level. Otherwise the sub-agent cannot spawn children.
 func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
+	allowlist := modeToolAllowlists[mode]
 	var tools []Tool
 	for _, tool := range t.tools {
-		if mode == ModeExplore && !exploreToolAllowlist[tool.Definition().Name] {
+		if allowlist != nil && !allowlist[tool.Definition().Name] {
 			continue
 		}
 		tools = append(tools, tool)
