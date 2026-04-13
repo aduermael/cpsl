@@ -16,6 +16,12 @@ import (
 	"langdag.com/langdag/types"
 )
 
+// Sub-agent mode constants.
+const (
+	ModeExplore = "explore" // fast, cheap model — read-only research
+	ModeGeneral = "general" // full orchestrator model — all tools
+)
+
 // defaultSubAgentMaxTurns is the default response-cycle cap per sub-agent invocation.
 // A "turn" is one LLM response cycle, which may contain multiple tool calls.
 const defaultSubAgentMaxTurns = 20
@@ -67,7 +73,7 @@ type SubAgentTool struct {
 	client           *langdag.Client
 	tools            []Tool
 	serverTools      []types.ToolDefinition
-	mainModel        string // full orchestrator model for "implement" mode
+	mainModel        string // full orchestrator model for "general" mode
 	explorationModel string // cheap model for "explore" mode and summarization; empty = use truncation fallback
 	maxTurns         int
 	maxDepth       int    // maximum nesting depth from this level
@@ -124,8 +130,8 @@ func (t *SubAgentTool) Definition() types.ToolDefinition {
 				},
 				"mode": {
 					"type": "string",
-					"enum": ["explore", "implement"],
-					"description": "The sub-agent mode. Required for new agents. 'explore' uses a fast, cheap model for research, search, and reading tasks. 'implement' uses the full orchestrator model for writing code and making changes. Ignored when resuming with agent_id (the original mode is preserved)."
+					"enum": ["explore", "general"],
+					"description": "The sub-agent mode. Required for new agents. 'explore' uses a fast, cheap model for research, search, and reading tasks. 'general' uses the full orchestrator model for writing code and making changes. Ignored when resuming with agent_id (the original mode is preserved)."
 				},
 				"agent_id": {
 					"type": "string",
@@ -389,13 +395,13 @@ var exploreToolAllowlist = map[string]bool{
 
 // buildSubAgentTools returns the tools available to the sub-agent.
 // When mode is "explore", only tools in exploreToolAllowlist are included.
-// When mode is "implement", the full tool set is included.
+// When mode is "general", the full tool set is included.
 // If the current depth allows further nesting, includes a new SubAgentTool
 // at the next depth level. Otherwise the sub-agent cannot spawn children.
 func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
 	var tools []Tool
 	for _, tool := range t.tools {
-		if mode == "explore" && !exploreToolAllowlist[tool.Definition().Name] {
+		if mode == ModeExplore && !exploreToolAllowlist[tool.Definition().Name] {
 			continue
 		}
 		tools = append(tools, tool)
@@ -442,26 +448,26 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		if state.mode != "" {
 			in.Mode = state.mode
 		} else {
-			in.Mode = "explore"
+			in.Mode = ModeExplore
 		}
 	}
 
-	if in.Mode != "explore" && in.Mode != "implement" {
-		return "", fmt.Errorf("mode must be \"explore\" or \"implement\", got %q", in.Mode)
+	if in.Mode != ModeExplore && in.Mode != ModeGeneral {
+		return "", fmt.Errorf("mode must be %q or %q, got %q", ModeExplore, ModeGeneral, in.Mode)
 	}
 
 	if in.Background {
 		return t.executeBackground(ctx, in)
 	}
 
-	// Select model based on mode: explore uses the cheap model, implement uses the full model.
+	// Select model based on mode: explore uses the cheap model, general uses the full model.
 	model := t.explorationModel
-	if in.Mode == "implement" {
+	if in.Mode == ModeGeneral {
 		model = t.mainModel
 	}
 
 	// Build the sub-agent's tool set (may include nested agent tool if depth allows).
-	// Explore mode gets read-only tools only; implement mode gets everything.
+	// Explore mode gets read-only tools only; general mode gets everything.
 	subTools := t.buildSubAgentTools(in.Mode)
 
 	// Fetch a fresh project snapshot so the sub-agent sees the current state
@@ -691,7 +697,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 // executeBackground sets up and launches a background sub-agent, returning immediately.
 func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (string, error) {
 	model := t.explorationModel
-	if in.Mode == "implement" {
+	if in.Mode == ModeGeneral {
 		model = t.mainModel
 	}
 

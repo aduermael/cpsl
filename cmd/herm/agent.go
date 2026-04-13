@@ -190,7 +190,7 @@ type AgentEvent struct {
 
 	// EventSubAgentStart
 	Task    string // sub-agent task description
-	Mode    string // sub-agent mode ("explore" or "implement")
+	Mode    string // sub-agent mode ("explore" or "general")
 	RetryOf string // ID of the failed agent being retried (empty for new agents)
 
 	// EventSubAgentStatus (done)

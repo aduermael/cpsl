@@ -53,7 +53,7 @@ Introduce named constants for modes and rename "implement" → "general". This i
 
 Currently modes are raw string literals scattered across ~8 files. The rename is safe because mode strings are only used in-flight (tool call JSON, transient `agentNodeState` for resume within a session) — no on-disk persistence, no migration needed.
 
-- [ ] 1a: Add `ModeExplore` and `ModeGeneral` constants to `subagent.go`. Replace all raw string comparisons (`"explore"`, `"implement"`) with constants in Go source files: `subagent.go`, `agent.go`, `render.go`. Update the JSON schema enum in the tool Definition from `["explore", "implement"]` to `["explore", "general"]`
+- [x] 1a: Add `ModeExplore` and `ModeGeneral` constants to `subagent.go`. Replace all raw string comparisons (`"explore"`, `"implement"`) with constants in Go source files: `subagent.go`, `agent.go`, `render.go`. Update the JSON schema enum in the tool Definition from `["explore", "implement"]` to `["explore", "general"]`
 - [ ] 1b: Update prompt files — `prompts/tools/agent.md` mode descriptions and usage guidance to reference "general" instead of "implement". Update `render.go` `modeOrder` slice
 - [ ] 1c: Update all test files (`subagent_test.go`, `render_test.go`, `systemprompt_test.go`) to use the new mode name and constants
 
