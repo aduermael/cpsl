@@ -525,6 +525,112 @@ func TestSubAgentToolExploreSystemPromptExcludesWriteTools(t *testing.T) {
 	}
 }
 
+func TestModeToolAllowlistsStructure(t *testing.T) {
+	// Explore mode has a non-nil allowlist with specific tools.
+	exploreList := modeToolAllowlists[ModeExplore]
+	if exploreList == nil {
+		t.Fatal("explore mode should have a non-nil allowlist")
+	}
+	for _, name := range []string{"glob", "grep", "read_file", "outline", "bash"} {
+		if !exploreList[name] {
+			t.Errorf("explore allowlist should include %q", name)
+		}
+	}
+
+	// General mode has a nil allowlist (all tools pass through).
+	generalList := modeToolAllowlists[ModeGeneral]
+	if generalList != nil {
+		t.Errorf("general mode should have nil allowlist, got %v", generalList)
+	}
+}
+
+func TestMaxTurnsForMode(t *testing.T) {
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 12, 25, 1, 0, "/workspace", "", "")
+	if got := tool.maxTurnsForMode(ModeExplore); got != 12 {
+		t.Errorf("maxTurnsForMode(explore) = %d, want 12", got)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != 25 {
+		t.Errorf("maxTurnsForMode(general) = %d, want 25", got)
+	}
+}
+
+func TestMaxTurnsForModeDefaults(t *testing.T) {
+	// Passing 0 for both should use the per-mode defaults.
+	tool := NewSubAgentTool(nil, nil, nil, "", "", 0, 0, 1, 0, "/workspace", "", "")
+	if got := tool.maxTurnsForMode(ModeExplore); got != defaultExploreMaxTurns {
+		t.Errorf("maxTurnsForMode(explore) = %d, want %d", got, defaultExploreMaxTurns)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != defaultGeneralMaxTurns {
+		t.Errorf("maxTurnsForMode(general) = %d, want %d", got, defaultGeneralMaxTurns)
+	}
+}
+
+func TestPerModeTurnBudgetConfigPrecedence(t *testing.T) {
+	// Test config override precedence: per-mode > legacy SubAgentMaxTurns > default.
+
+	// Case 1: Both per-mode fields set — they take priority.
+	cfg := Config{ExploreMaxTurns: 8, GeneralMaxTurns: 30, SubAgentMaxTurns: 25}
+	tool := NewSubAgentTool(nil, nil, nil, "", "", cfg.ExploreMaxTurns, cfg.GeneralMaxTurns, 1, 0, "/workspace", "", "")
+	if got := tool.maxTurnsForMode(ModeExplore); got != 8 {
+		t.Errorf("per-mode explore = %d, want 8", got)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != 30 {
+		t.Errorf("per-mode general = %d, want 30", got)
+	}
+
+	// Case 2: Only legacy SubAgentMaxTurns set, per-mode fields zero —
+	// agentui.go falls back to SubAgentMaxTurns for both.
+	cfg2 := Config{SubAgentMaxTurns: 18}
+	exploreMax := cfg2.ExploreMaxTurns
+	if exploreMax <= 0 {
+		exploreMax = cfg2.SubAgentMaxTurns
+	}
+	generalMax := cfg2.GeneralMaxTurns
+	if generalMax <= 0 {
+		generalMax = cfg2.SubAgentMaxTurns
+	}
+	tool2 := NewSubAgentTool(nil, nil, nil, "", "", exploreMax, generalMax, 1, 0, "/workspace", "", "")
+	if got := tool2.maxTurnsForMode(ModeExplore); got != 18 {
+		t.Errorf("legacy fallback explore = %d, want 18", got)
+	}
+	if got := tool2.maxTurnsForMode(ModeGeneral); got != 18 {
+		t.Errorf("legacy fallback general = %d, want 18", got)
+	}
+
+	// Case 3: Nothing set (all zero) — defaults apply.
+	cfg3 := Config{}
+	eMax := cfg3.ExploreMaxTurns
+	if eMax <= 0 {
+		eMax = cfg3.SubAgentMaxTurns
+	}
+	gMax := cfg3.GeneralMaxTurns
+	if gMax <= 0 {
+		gMax = cfg3.SubAgentMaxTurns
+	}
+	tool3 := NewSubAgentTool(nil, nil, nil, "", "", eMax, gMax, 1, 0, "/workspace", "", "")
+	if got := tool3.maxTurnsForMode(ModeExplore); got != defaultExploreMaxTurns {
+		t.Errorf("default explore = %d, want %d", got, defaultExploreMaxTurns)
+	}
+	if got := tool3.maxTurnsForMode(ModeGeneral); got != defaultGeneralMaxTurns {
+		t.Errorf("default general = %d, want %d", got, defaultGeneralMaxTurns)
+	}
+}
+
+func TestMergeConfigsPerModeTurns(t *testing.T) {
+	global := Config{SubAgentMaxTurns: 25, ExploreMaxTurns: 10, GeneralMaxTurns: 20}
+	project := ProjectConfig{ExploreMaxTurns: 12}
+	merged := mergeConfigs(global, project)
+	if merged.ExploreMaxTurns != 12 {
+		t.Errorf("merged ExploreMaxTurns = %d, want 12", merged.ExploreMaxTurns)
+	}
+	if merged.GeneralMaxTurns != 20 {
+		t.Errorf("merged GeneralMaxTurns = %d, want 20 (from global)", merged.GeneralMaxTurns)
+	}
+	if merged.SubAgentMaxTurns != 25 {
+		t.Errorf("merged SubAgentMaxTurns = %d, want 25", merged.SubAgentMaxTurns)
+	}
+}
+
 func TestSubAgentToolNoOutput(t *testing.T) {
 	// Provider returns empty text.
 	client := newTestClient("")

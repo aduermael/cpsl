@@ -80,7 +80,7 @@ Improve the tool filtering architecture and make turn budgets mode-aware. These 
 - [x] 3b: Add `ExploreMaxTurns` and `GeneralMaxTurns` fields to `Config` and `ProjectConfig` (with `json:"...,omitempty"` for backward compat). Keep `SubAgentMaxTurns` as a legacy fallback that applies to both when the new fields are zero. Add corresponding constants `defaultExploreMaxTurns = 15` and `defaultGeneralMaxTurns = 20`
 - [x] 3c: In `Execute`, after determining the model based on mode, also resolve `maxTurns` based on mode (explore → exploreMaxTurns, general → generalMaxTurns). Pass the resolved value to the agent and drain loop
 - [x] 3d: Update `tooldesc.go` — replace the `__EXPLORATION_TURNS__` heuristic with `__EXPLORE_MAX_TURNS__` and `__GENERAL_MAX_TURNS__` placeholders populated from actual config values. Update `prompts/tools/agent.md` to reference per-mode budgets
-- [ ] 3e: Tests — verify tool filtering per mode, verify per-mode turn budget resolution, verify config override precedence (per-mode > legacy SubAgentMaxTurns > default)
+- [x] 3e: Tests — verify tool filtering per mode, verify per-mode turn budget resolution, verify config override precedence (per-mode > legacy SubAgentMaxTurns > default)
 
 ## Phase 4: Communication Efficiency — Output and Result Format
 
