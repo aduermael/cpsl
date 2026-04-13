@@ -8,14 +8,14 @@ Runs inside the dev container. Spawn a sub-agent with its own context window. Ea
 
 **Modes — you must specify one:**
 - `"explore"` — uses a fast, cheap model. For research, search, reading code, investigating issues, gathering information.
-- `"implement"` — uses the full orchestrator model. For writing code, making edits, running build/test cycles, executing changes.
+- `"general"` — uses the full orchestrator model. For writing code, making edits, running build/test cycles, executing changes.
 
 **When to use:**
 - Tasks requiring deep exploration across many files (10+ tool calls) -> `explore`
-- Self-contained implementation work that would produce verbose output -> `implement`
+- Self-contained implementation work that would produce verbose output -> `general`
 - Running multiple independent investigations in parallel (spawn several sub-agents) -> `explore`
 
-When spawning multiple implement-mode sub-agents, ensure they work on separate files — parallel edits to the same file will conflict. Partition work by file or directory.
+When spawning multiple general-mode sub-agents, ensure they work on separate files — parallel edits to the same file will conflict. Partition work by file or directory.
 
 **When NOT to use — act directly instead:**
 - A single grep, glob, or file read
