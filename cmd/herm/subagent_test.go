@@ -3353,3 +3353,204 @@ func TestPromptCachingPreservedAcrossTurns(t *testing.T) {
 		}
 	}
 }
+
+// --- Phase 2d: Shared drain loop tests ---
+
+// TestDrainConsistencyForegroundBackground verifies that the shared drain loop
+// produces equivalent text content and turn counts for foreground and background.
+func TestDrainConsistencyForegroundBackground(t *testing.T) {
+	const expectedText = "shared drain output"
+	tmpDir := t.TempDir()
+
+	// Foreground.
+	fgClient := newTestClient(expectedText)
+	fgTool := NewSubAgentTool(fgClient, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	fgResult, err := fgTool.Execute(context.Background(), json.RawMessage(`{"task":"drain test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("foreground Execute error: %v", err)
+	}
+
+	// Background.
+	bgClient := newTestClient(expectedText)
+	parentEvents := make(chan AgentEvent, 4096)
+	bgTool := NewSubAgentTool(bgClient, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	bgTool.parentEvents = parentEvents
+
+	launchResult, err := bgTool.Execute(context.Background(), json.RawMessage(`{"task":"drain test","mode":"explore","background":true}`))
+	if err != nil {
+		t.Fatalf("background Execute error: %v", err)
+	}
+
+	// Extract agentID from background launch result.
+	prefix := "[agent_id: "
+	idx := strings.Index(launchResult, prefix)
+	if idx < 0 {
+		t.Fatalf("launch result missing agent_id: %q", launchResult)
+	}
+	rest := launchResult[idx+len(prefix):]
+	end := strings.Index(rest, "]")
+	agentID := rest[:end]
+
+	waitForBgAgent(t, bgTool, agentID, 10*time.Second)
+
+	bgFinalResult, err := bgTool.bgAgentStatus(agentID)
+	if err != nil {
+		t.Fatalf("bgAgentStatus error: %v", err)
+	}
+
+	// Both should contain the expected text.
+	if !strings.Contains(fgResult, expectedText) {
+		t.Errorf("foreground missing text: %q", fgResult)
+	}
+	if !strings.Contains(bgFinalResult, expectedText) {
+		t.Errorf("background missing text: %q", bgFinalResult)
+	}
+
+	// Both should report turns: 0/10 (text-only response, no tool calls).
+	if !strings.Contains(fgResult, "[turns: 0/10]") {
+		t.Errorf("foreground missing turn count [turns: 0/10]: %q", fgResult)
+	}
+	if !strings.Contains(bgFinalResult, "[turns: 0/10]") {
+		t.Errorf("background missing turn count [turns: 0/10]: %q", bgFinalResult)
+	}
+
+	// Both should include token usage.
+	if !strings.Contains(fgResult, "[tokens:") {
+		t.Errorf("foreground missing token usage: %q", fgResult)
+	}
+	if !strings.Contains(bgFinalResult, "[tokens:") {
+		t.Errorf("background missing token usage: %q", bgFinalResult)
+	}
+
+	// Wait for background goroutine to fully exit before TempDir cleanup.
+	bgTool.DrainGoroutines(5 * time.Second)
+}
+
+// TestDrainForegroundDeltaForwarderReceivesAllText verifies that the foreground
+// deltaForwarder callback (t.forward) receives all text from the drain loop.
+func TestDrainForegroundDeltaForwarderReceivesAllText(t *testing.T) {
+	const expectedText = "all deltas forwarded"
+	client := newTestClient(expectedText)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 256)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.parentEvents = parentEvents
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test deltas","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Collect all delta text from forwarded events.
+	close(parentEvents)
+	var deltaText strings.Builder
+	for ev := range parentEvents {
+		if ev.Type == EventSubAgentDelta {
+			deltaText.WriteString(ev.Text)
+		}
+	}
+
+	// The combined delta text should match the agent's output.
+	if !strings.Contains(deltaText.String(), expectedText) {
+		t.Errorf("delta forwarder text = %q, want to contain %q", deltaText.String(), expectedText)
+	}
+}
+
+// TestDrainBackgroundDeltaBatchingCallbackInvoked verifies that the background
+// delta batching callback accumulates text and eventually forwards it.
+func TestDrainBackgroundDeltaBatchingCallbackInvoked(t *testing.T) {
+	const expectedText = "batched delta output"
+	client := newTestClient(expectedText)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 4096)
+	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.parentEvents = parentEvents
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test batching","mode":"explore","background":true}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Wait for done event (background completion).
+	deadline := time.After(10 * time.Second)
+	var deltaText strings.Builder
+	gotDone := false
+	for !gotDone {
+		select {
+		case ev := <-parentEvents:
+			switch ev.Type {
+			case EventSubAgentDelta:
+				deltaText.WriteString(ev.Text)
+			case EventSubAgentStatus:
+				if ev.Text == "done" {
+					gotDone = true
+				}
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for background agent done")
+		}
+	}
+
+	// Wait for background goroutine to fully exit before TempDir cleanup.
+	tool.DrainGoroutines(5 * time.Second)
+
+	// The accumulated delta text should contain the expected output.
+	if !strings.Contains(deltaText.String(), expectedText) {
+		t.Errorf("batched delta text = %q, want to contain %q", deltaText.String(), expectedText)
+	}
+}
+
+// TestDrainConsistencyWithToolCalls verifies that the shared drain loop correctly
+// counts turns and forwards tool status events for both foreground and background
+// when the agent makes tool calls.
+func TestDrainConsistencyWithToolCalls(t *testing.T) {
+	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 2, release: make(chan struct{})}
+	defer close(mockTool.release)
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			{
+				text: "Turn one.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "Turn two result.", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 4096)
+	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool.parentEvents = parentEvents
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"tool call test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should have 1 turn (the response with a tool call). The final text-only
+	// response does not increment the turn counter since it has no tool calls.
+	if !strings.Contains(result, "[turns: 1/10]") {
+		t.Errorf("expected [turns: 1/10] in result: %q", result)
+	}
+
+	// Verify tool status was forwarded.
+	close(parentEvents)
+	gotToolStatus := false
+	for ev := range parentEvents {
+		if ev.Type == EventSubAgentStatus && strings.Contains(ev.Text, "tool: test_tool") {
+			gotToolStatus = true
+		}
+	}
+	if !gotToolStatus {
+		t.Error("expected tool status event to be forwarded during drain")
+	}
+}
