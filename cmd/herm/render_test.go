@@ -3574,7 +3574,7 @@ func TestIntegrationExplorePromptProgressiveDepth(t *testing.T) {
 		&stubTool{"edit_file"},
 		&stubTool{"write_file"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 10, 1, 0, "/workspace", "", "alpine:latest")
 	exploreTools := tool.buildSubAgentTools("explore")
 	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
 

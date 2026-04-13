@@ -198,9 +198,13 @@ func (a *App) startAgent(userMessage string) {
 
 	// Sub-agent tool: output-only communication, no shared memory.
 	// Uses exploration model if configured, otherwise falls back to active model.
-	maxTurns := a.config.SubAgentMaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultSubAgentMaxTurns
+	exploreMaxTurns := a.config.ExploreMaxTurns
+	if exploreMaxTurns <= 0 {
+		exploreMaxTurns = a.config.SubAgentMaxTurns // legacy fallback
+	}
+	generalMaxTurns := a.config.GeneralMaxTurns
+	if generalMaxTurns <= 0 {
+		generalMaxTurns = a.config.SubAgentMaxTurns // legacy fallback
 	}
 	maxDepth := a.config.MaxAgentDepth
 	if maxDepth <= 0 {
@@ -211,7 +215,7 @@ func (a *App) startAgent(userMessage string) {
 	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
 		subAgentServerTools = nil
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
+	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, exploreMaxTurns, generalMaxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string

@@ -84,7 +84,8 @@ type SubAgentTool struct {
 	serverTools      []types.ToolDefinition
 	mainModel        string // full orchestrator model for "general" mode
 	explorationModel string // cheap model for "explore" mode and summarization; empty = use truncation fallback
-	maxTurns         int
+	exploreMaxTurns  int    // turn budget for explore-mode sub-agents
+	generalMaxTurns  int    // turn budget for general-mode sub-agents
 	maxDepth       int    // maximum nesting depth from this level
 	currentDepth   int    // current nesting depth (0 = spawned by main agent)
 	workDir        string
@@ -101,9 +102,12 @@ type SubAgentTool struct {
 	bgWg       sync.WaitGroup           // tracks running background goroutines
 }
 
-func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, maxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
-	if maxTurns <= 0 {
-		maxTurns = defaultSubAgentMaxTurns
+func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, exploreMaxTurns int, generalMaxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
+	if exploreMaxTurns <= 0 {
+		exploreMaxTurns = defaultExploreMaxTurns
+	}
+	if generalMaxTurns <= 0 {
+		generalMaxTurns = defaultGeneralMaxTurns
 	}
 	if maxDepth <= 0 {
 		maxDepth = defaultMaxAgentDepth
@@ -114,7 +118,8 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		serverTools:      serverTools,
 		mainModel:        mainModel,
 		explorationModel: explorationModel,
-		maxTurns:         maxTurns,
+		exploreMaxTurns:  exploreMaxTurns,
+		generalMaxTurns:  generalMaxTurns,
 		maxDepth:         maxDepth,
 		currentDepth:     currentDepth,
 		workDir:          workDir,
@@ -124,6 +129,14 @@ func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.T
 		agentNodes:       make(map[string]agentNodeState),
 		bgAgents:         make(map[string]*bgAgentState),
 	}
+}
+
+// maxTurnsForMode returns the resolved turn budget for the given mode.
+func (t *SubAgentTool) maxTurnsForMode(mode string) int {
+	if mode == ModeExplore {
+		return t.exploreMaxTurns
+	}
+	return t.generalMaxTurns
 }
 
 func (t *SubAgentTool) Definition() types.ToolDefinition {
@@ -424,7 +437,7 @@ func (t *SubAgentTool) buildSubAgentTools(mode string) []Tool {
 	nextDepth := t.currentDepth + 1
 	if nextDepth < t.maxDepth {
 		// Sub-agent is allowed to spawn its own sub-agents.
-		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.mainModel, t.explorationModel, t.maxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage)
+		child := NewSubAgentTool(t.client, t.tools, t.serverTools, t.mainModel, t.explorationModel, t.exploreMaxTurns, t.generalMaxTurns, t.maxDepth, nextDepth, t.workDir, t.personality, t.containerImage)
 		child.parentEvents = t.parentEvents
 		tools = append(tools, child)
 	}
@@ -449,6 +462,7 @@ type drainResult struct {
 type drainOptions struct {
 	agentID        string          // sub-agent's unique ID
 	mode           string          // "explore" or "general" — used for saveNodeID
+	maxTurns       int             // resolved turn budget for this mode
 	agent          *Agent          // running agent (for DoneCh, Events, Cancel, SetTurnProgress, SetTokenProgress)
 	traceCollector *TraceCollector // records trace events for this sub-agent
 	// deltaForwarder is called for each text delta during the main event loop
@@ -498,7 +512,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 				r.turns++
 				responseCounted = true
 				if fullProcessing {
-					opts.agent.SetTurnProgress(r.turns, t.maxTurns)
+					opts.agent.SetTurnProgress(r.turns, opts.maxTurns)
 				}
 			}
 			if fullProcessing {
@@ -506,20 +520,20 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 				// Two-stage turn enforcement:
 				// - At turns > maxTurns+1: hard cancel as safety backstop.
 				// - At turns > maxTurns: flag synthesis and cancel current run.
-				if r.turns > t.maxTurns+1 {
+				if r.turns > opts.maxTurns+1 {
 					if !maxTurnsExceeded {
 						maxTurnsExceeded = true
-						r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent exceeded turn budget (%d) — synthesis was attempted", t.maxTurns))
+						r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent exceeded turn budget (%d) — synthesis was attempted", opts.maxTurns))
 					}
 					opts.agent.Cancel()
-				} else if r.turns > t.maxTurns && !r.synthesisAttempted {
+				} else if r.turns > opts.maxTurns && !r.synthesisAttempted {
 					r.synthesisAttempted = true
 					opts.agent.Cancel()
 				}
 				t.forward(AgentEvent{Type: EventSubAgentStatus, AgentID: opts.agentID, Text: fmt.Sprintf("tool: %s", event.ToolName)})
 			} else {
 				// doneCh fallback: only flag synthesis, no cancel or forward.
-				if r.turns > t.maxTurns && !r.synthesisAttempted {
+				if r.turns > opts.maxTurns && !r.synthesisAttempted {
 					r.synthesisAttempted = true
 				}
 			}
@@ -646,11 +660,12 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return t.executeBackground(ctx, in)
 	}
 
-	// Select model based on mode: explore uses the cheap model, general uses the full model.
+	// Select model and turn budget based on mode.
 	model := t.explorationModel
 	if in.Mode == ModeGeneral {
 		model = t.mainModel
 	}
+	maxTurns := t.maxTurnsForMode(in.Mode)
 
 	// Build the sub-agent's tool set (may include nested agent tool if depth allows).
 	// Explore mode gets read-only tools only; general mode gets everything.
@@ -665,8 +680,8 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
 
 	agentOpts := []AgentOption{
-		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),
-		WithMaxTurns(t.maxTurns),
+		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),
+		WithMaxTurns(maxTurns),
 	}
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
@@ -692,6 +707,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	r := t.drainSubAgentEvents(drainOptions{
 		agentID:        agentID,
 		mode:           in.Mode,
+		maxTurns:       maxTurns,
 		agent:          agent,
 		traceCollector: subTC,
 		deltaForwarder: func(id, text string) {
@@ -710,7 +726,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		}
 	}
 	subTC.Finalize()
-	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, t.maxTurns)
+	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, maxTurns)
 	t.forwardBlocking(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
@@ -721,7 +737,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 			InputTokens:  r.totalInputTokens,
 			OutputTokens: r.totalOutputTokens,
 		},
-		Task: fmt.Sprintf("turns:%d/%d", r.turns, t.maxTurns),
+		Task: fmt.Sprintf("turns:%d/%d", r.turns, maxTurns),
 	})
 	// Wait for the goroutine to finish with a timeout safety net.
 	select {
@@ -730,7 +746,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		debugLog("sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns), nil
+	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns, maxTurns), nil
 }
 
 // executeBackground sets up and launches a background sub-agent, returning immediately.
@@ -739,14 +755,15 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	if in.Mode == ModeGeneral {
 		model = t.mainModel
 	}
+	maxTurns := t.maxTurnsForMode(in.Mode)
 
 	subTools := t.buildSubAgentTools(in.Mode)
 	snap := fetchProjectSnapshot(t.workDir)
 	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
 
 	agentOpts := []AgentOption{
-		WithMaxToolIterations(t.maxTurns + subAgentIterationBuffer),
-		WithMaxTurns(t.maxTurns),
+		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),
+		WithMaxTurns(maxTurns),
 	}
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
@@ -774,7 +791,7 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	t.bgWg.Add(1)
 	go func() {
 		defer t.bgWg.Done()
-		t.runBackground(bgCtx, agent, agentID, in, model, subTC, state)
+		t.runBackground(bgCtx, agent, agentID, in, model, maxTurns, subTC, state)
 	}()
 
 	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes. Do not narrate progress — the user sees live sub-agent status in the UI. Move on to your next action or stop. If an agent fails, you can retry by spawning a new agent with retry_of set to the failed agent's ID.", agentID, in.Task), nil
@@ -782,7 +799,7 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 
 // runBackground runs a background sub-agent to completion, draining events
 // and storing the result in bgAgentState.
-func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID string, in subAgentInput, model string, subTC *TraceCollector, state *bgAgentState) {
+func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID string, in subAgentInput, model string, maxTurns int, subTC *TraceCollector, state *bgAgentState) {
 	defer state.cancel()
 
 	done := make(chan struct{})
@@ -808,6 +825,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 	r := t.drainSubAgentEvents(drainOptions{
 		agentID:        agentID,
 		mode:           in.Mode,
+		maxTurns:       maxTurns,
 		agent:          agent,
 		traceCollector: subTC,
 		deltaForwarder: func(_ string, text string) {
@@ -830,7 +848,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 	}
 	flushDelta()
 	subTC.Finalize()
-	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, t.maxTurns)
+	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, maxTurns)
 	t.forwardBlockingWithTimeout(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
@@ -841,7 +859,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 			InputTokens:  r.totalInputTokens,
 			OutputTokens: r.totalOutputTokens,
 		},
-		Task: fmt.Sprintf("turns:%d/%d", r.turns, t.maxTurns),
+		Task: fmt.Sprintf("turns:%d/%d", r.turns, maxTurns),
 	}, forwardBlockingDoneTimeout)
 	select {
 	case <-done:
@@ -849,7 +867,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns)
+	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns, maxTurns)
 	state.mu.Lock()
 	state.done = true
 	state.result = result
@@ -916,7 +934,7 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 }
 
 // buildResult constructs the final tool result from collected sub-agent state.
-func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, inputTokens, outputTokens, turns int) string {
+func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, inputTokens, outputTokens, turns, maxTurns int) string {
 	result := strings.TrimSpace(strings.Join(textParts, ""))
 	if result == "" && len(agentErrors) > 0 {
 		// No text output but we have errors — use errors as the result body.
@@ -926,7 +944,7 @@ func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textPart
 	}
 	outputPath := t.writeOutputFile(agentID, result)
 	summary, usedModel := t.summarizeWithModel(ctx, result)
-	return formatSubAgentResult(agentID, outputPath, summary, usedModel, inputTokens, outputTokens, turns, t.maxTurns, agentErrors)
+	return formatSubAgentResult(agentID, outputPath, summary, usedModel, inputTokens, outputTokens, turns, maxTurns, agentErrors)
 }
 
 // formatSubAgentResult builds the tool result string with agent ID, output file
