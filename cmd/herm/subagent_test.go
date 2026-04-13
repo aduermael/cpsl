@@ -1264,6 +1264,93 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 	}
 }
 
+// --- Phase 4 continued: Output thresholds, structured format, compact header ---
+
+func TestOutputUnder2KBPassesThrough(t *testing.T) {
+	// Outputs under subAgentSummaryBytes (2KB) must pass through verbatim
+	// without model summarization or truncation.
+	output := strings.Repeat("a", subAgentSummaryBytes-1) // just under threshold
+	tool := &SubAgentTool{explorationModel: "cheap-model", client: newTestClient("should not be called")}
+	summary, usedModel := tool.summarizeWithModel(context.Background(), output)
+	if usedModel {
+		t.Error("output under 2KB should not trigger model summarization")
+	}
+	if summary != output {
+		t.Errorf("output should pass through verbatim, got %d bytes vs original %d", len(summary), len(output))
+	}
+}
+
+func TestOutputExactly2KBPassesThrough(t *testing.T) {
+	// Output exactly at the threshold should also pass through.
+	output := strings.Repeat("b", subAgentSummaryBytes)
+	tool := &SubAgentTool{explorationModel: "cheap-model"}
+	summary, usedModel := tool.summarizeWithModel(context.Background(), output)
+	if usedModel {
+		t.Error("output at exactly 2KB should not trigger model summarization")
+	}
+	if summary != output {
+		t.Error("output at threshold should pass through verbatim")
+	}
+}
+
+func TestStructuredSummaryPromptFormat(t *testing.T) {
+	// The summary prompt should request the STATUS/FILES/FINDINGS/NEXT format.
+	if !strings.Contains(summarizeWithModelPrompt, "STATUS:") {
+		t.Error("summary prompt should request STATUS field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "FILES:") {
+		t.Error("summary prompt should request FILES field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "FINDINGS:") {
+		t.Error("summary prompt should request FINDINGS field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "NEXT:") {
+		t.Error("summary prompt should request NEXT field")
+	}
+}
+
+func TestCompactResultHeaderFormat(t *testing.T) {
+	// Verify the compact header format: [agent:<id> turns:<n/m>]
+	got := formatSubAgentResult("test-id", "/out.md", "content", false, 3, 10, nil)
+
+	// Must start with [agent:
+	if !strings.HasPrefix(got, "[agent:test-id") {
+		t.Errorf("header should start with [agent:test-id, got: %q", got[:min(40, len(got))])
+	}
+	// Must contain turns without spaces
+	if !strings.Contains(got, "turns:3/10") {
+		t.Errorf("header should contain turns:3/10, got: %q", got)
+	}
+	// Must NOT contain token counts
+	if strings.Contains(got, "tokens") {
+		t.Errorf("compact header should not contain token counts, got: %q", got)
+	}
+	// Must NOT contain old [agent_id: format
+	if strings.Contains(got, "agent_id") {
+		t.Errorf("compact header should not use old agent_id format, got: %q", got)
+	}
+}
+
+func TestCompactResultHeaderWithSummaryModel(t *testing.T) {
+	got := formatSubAgentResult("x", "/out.md", "summary", true, 5, 15, nil)
+	if !strings.Contains(got, "summary:model") {
+		t.Errorf("model summary should appear as summary:model, got: %q", got)
+	}
+	// Should be inside the main bracket, not a separate bracket
+	if strings.Contains(got, "[summary:") {
+		t.Errorf("summary should be inside main bracket, not separate, got: %q", got)
+	}
+}
+
+func TestCompactResultHeaderWithSummaryTruncated(t *testing.T) {
+	// Summary longer than threshold + output path present → truncated indicator
+	longSummary := strings.Repeat("x", subAgentSummaryBytes+100)
+	got := formatSubAgentResult("x", "/out.md", longSummary, false, 1, 10, nil)
+	if !strings.Contains(got, "summary:truncated") {
+		t.Errorf("should indicate truncated summary, got: %q", got[:min(80, len(got))])
+	}
+}
+
 // --- Phase 5: Graceful sub-agent error reporting tests ---
 
 func TestSubAgentResultIncludesTurnCount(t *testing.T) {
