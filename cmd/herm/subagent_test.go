@@ -358,7 +358,7 @@ func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 		t.Fatalf("first Execute error: %v", err)
 	}
 
-	// Extract agent_id from the result (format: "[agent_id: <id>]\n\n<output>").
+	// Extract agent_id from the result (format: "[agent:<id> turns:...").
 	agentID := extractAgentID(t, result1)
 
 	// Second call — resume with the agent_id.
@@ -367,8 +367,8 @@ func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
-	if !strings.Contains(result2, "agent_id:") {
-		t.Errorf("resumed result should contain agent_id, got: %q", result2)
+	if !strings.Contains(result2, "[agent:") {
+		t.Errorf("resumed result should contain [agent:, got: %q", result2)
 	}
 }
 
@@ -655,64 +655,74 @@ func TestSubAgentToolResultContainsAgentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
-	if !strings.HasPrefix(result, "[agent_id:") {
-		t.Errorf("result should start with [agent_id:, got: %q", result[:min(50, len(result))])
+	if !strings.HasPrefix(result, "[agent:") {
+		t.Errorf("result should start with [agent:, got: %q", result[:min(50, len(result))])
 	}
 }
 
 func TestFormatSubAgentResult(t *testing.T) {
-	// With output path, no tokens, no model summary
-	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 0, 0, 1, 15, nil)
-	want := "[agent_id: abc123] [output: /tmp/.herm/agents/abc123.md] [turns: 1/15]\n\nhello world"
+	// With output path, no model summary
+	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 1, 15, nil)
+	want := "[agent:abc123 turns:1/15] [output: /tmp/.herm/agents/abc123.md]\n\nhello world"
 	if got != want {
-		t.Errorf("with path, no tokens:\n got %q\nwant %q", got, want)
+		t.Errorf("with path:\n got %q\nwant %q", got, want)
 	}
 
 	// Without output path (write failed)
-	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 0, 0, 15, nil)
-	want2 := "[agent_id: abc123] [turns: 0/15]\n\nhello world"
+	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 15, nil)
+	want2 := "[agent:abc123 turns:0/15]\n\nhello world"
 	if got2 != want2 {
 		t.Errorf("without path:\n got %q\nwant %q", got2, want2)
 	}
 
-	// With output path and token usage
-	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 5000, 1200, 3, 15, nil)
-	want3 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=5000 output=1200] [turns: 3/15]\n\nresult"
+	// With output path — no token counts in compact header
+	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 3, 15, nil)
+	want3 := "[agent:abc123 turns:3/15] [output: /tmp/out.md]\n\nresult"
 	if got3 != want3 {
-		t.Errorf("with tokens:\n got %q\nwant %q", got3, want3)
-	}
-
-	// Without output path but with tokens
-	got4 := formatSubAgentResult("abc123", "", "result", false, 100, 50, 2, 15, nil)
-	want4 := "[agent_id: abc123] [tokens: input=100 output=50] [turns: 2/15]\n\nresult"
-	if got4 != want4 {
-		t.Errorf("tokens without path:\n got %q\nwant %q", got4, want4)
+		t.Errorf("compact header:\n got %q\nwant %q", got3, want3)
 	}
 
 	// With model summary indicator
-	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 1000, 200, 5, 15, nil)
-	want5 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=1000 output=200] [turns: 5/15] [summary: model]\n\n- finding 1\n- finding 2"
+	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 5, 15, nil)
+	want5 := "[agent:abc123 turns:5/15 summary:model] [output: /tmp/out.md]\n\n- finding 1\n- finding 2"
 	if got5 != want5 {
 		t.Errorf("model summary:\n got %q\nwant %q", got5, want5)
 	}
 
 	// With errors
-	got6 := formatSubAgentResult("abc123", "/tmp/out.md", "partial result", false, 100, 50, 2, 15, []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"})
+	got6 := formatSubAgentResult("abc123", "/tmp/out.md", "partial result", false, 2, 15, []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"})
 	if !strings.Contains(got6, "[errors:") {
 		t.Errorf("result with errors should contain [errors:], got: %q", got6)
 	}
 	if !strings.Contains(got6, "connection reset") {
 		t.Errorf("result should contain error text, got: %q", got6)
 	}
-	if !strings.Contains(got6, "[turns: 2/15]") {
+	if !strings.Contains(got6, "turns:2/15") {
 		t.Errorf("result should contain turns, got: %q", got6)
 	}
 }
 
 // extractAgentID parses the agent_id from a SubAgentTool result string.
+// Works with the compact format "[agent:<id> turns:..." from foreground results.
 func extractAgentID(t *testing.T, result string) string {
 	t.Helper()
-	// Format: "[agent_id: <id>]\n\n<output>"
+	prefix := "[agent:"
+	idx := strings.Index(result, prefix)
+	if idx < 0 {
+		t.Fatalf("result does not contain agent: prefix: %q", result)
+	}
+	rest := result[idx+len(prefix):]
+	end := strings.IndexAny(rest, " ]")
+	if end < 0 {
+		t.Fatalf("result has no delimiter after agent id: %q", result)
+	}
+	return rest[:end]
+}
+
+// extractBgAgentID parses the agent_id from a background launch result string.
+// Works with the "[agent_id: <id>] Sub-agent started..." format.
+func extractBgAgentID(t *testing.T, result string) string {
+	t.Helper()
 	prefix := "[agent_id: "
 	idx := strings.Index(result, prefix)
 	if idx < 0 {
@@ -782,7 +792,7 @@ func TestSubAgentOutputFileWritten(t *testing.T) {
 
 func TestSubAgentOutputFileLargeOutput(t *testing.T) {
 	// Output larger than summary limit — file should have full output, result should have summary.
-	largeOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	largeOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 	client := newTestClient(largeOutput)
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
@@ -875,7 +885,7 @@ func TestSubAgentBackgroundReturnsImmediately(t *testing.T) {
 	}
 
 	// Wait for background goroutine to finish so TempDir cleanup succeeds.
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 }
 
@@ -889,7 +899,7 @@ func TestSubAgentBackgroundCompletionStoresResult(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for the background agent to finish.
 	deadline := time.After(10 * time.Second)
@@ -951,7 +961,7 @@ func TestSubAgentBackgroundStatusCompleted(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for completion.
 	deadline := time.After(10 * time.Second)
@@ -1125,9 +1135,11 @@ func extractOutputPath(t *testing.T, result string) string {
 	return rest[:end]
 }
 
-// --- Phase 5: Token budget awareness tests ---
+// --- Phase 5: Compact result header tests ---
 
-func TestSubAgentResultIncludesTokenUsage(t *testing.T) {
+func TestSubAgentResultOmitsTokenUsage(t *testing.T) {
+	// Token counts are tracked via EventUsage but omitted from the result header
+	// since they're not actionable by the main agent.
 	client := newTestClient("token test output")
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
@@ -1137,16 +1149,11 @@ func TestSubAgentResultIncludesTokenUsage(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	// The mock provider returns Usage{InputTokens: 100, OutputTokens: 50}.
-	// The result should include [tokens: input=100 output=50].
-	if !strings.Contains(result, "[tokens:") {
-		t.Errorf("result should contain token usage, got: %q", result)
+	if strings.Contains(result, "[tokens:") {
+		t.Errorf("result should NOT contain token usage in compact header, got: %q", result)
 	}
-	if !strings.Contains(result, "input=100") {
-		t.Errorf("result should contain input=100, got: %q", result)
-	}
-	if !strings.Contains(result, "output=50") {
-		t.Errorf("result should contain output=50, got: %q", result)
+	if !strings.Contains(result, "[agent:") {
+		t.Errorf("result should contain compact [agent: header, got: %q", result)
 	}
 }
 
@@ -1216,7 +1223,7 @@ func TestSummarizeWithModelTruncatesLargeInput(t *testing.T) {
 
 func TestSummarizeWithModelExecuteIntegration(t *testing.T) {
 	// When explorationModel is set and output is large (>2KB), Execute() should use
-	// model summarization and include [summary: model] indicator.
+	// model summarization and include summary:model indicator.
 	largeOutput := strings.Repeat("This is a detailed line.\n", 100)
 	// First response: sub-agent's LLM reply (the large output).
 	// Second response: summarization model's response.
@@ -1229,8 +1236,8 @@ func TestSummarizeWithModelExecuteIntegration(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if !strings.Contains(result, "[summary: model]") {
-		t.Errorf("result should contain [summary: model], got: %q", result)
+	if !strings.Contains(result, "summary:model") {
+		t.Errorf("result should contain summary:model, got: %q", result)
 	}
 	if !strings.Contains(result, "bullet point summary") {
 		t.Errorf("result should contain model summary, got: %q", result)
@@ -1249,7 +1256,7 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if strings.Contains(result, "[summary:") {
+	if strings.Contains(result, "summary:") {
 		t.Errorf("short output should not have summary indicator, got: %q", result)
 	}
 	if !strings.Contains(result, "brief result") {
@@ -1269,13 +1276,13 @@ func TestSubAgentResultIncludesTurnCount(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	// Result should always contain [turns: N/M].
-	if !strings.Contains(result, "[turns:") {
-		t.Errorf("result should contain [turns:], got: %q", result)
+	// Result should always contain turns:N/M in the compact header.
+	if !strings.Contains(result, "turns:") {
+		t.Errorf("result should contain turns:, got: %q", result)
 	}
 	// The mock makes no tool calls, so turns should be 0/10.
-	if !strings.Contains(result, "[turns: 0/10]") {
-		t.Errorf("result should contain [turns: 0/10], got: %q", result)
+	if !strings.Contains(result, "turns:0/10") {
+		t.Errorf("result should contain turns:0/10, got: %q", result)
 	}
 }
 
@@ -1290,7 +1297,7 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if !strings.Contains(result, "[turns: 0/5]") {
+	if !strings.Contains(result, "turns:0/5") {
 		t.Errorf("result should show maxTurns=5, got: %q", result)
 	}
 }
@@ -1298,12 +1305,12 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 func TestFormatSubAgentResultWithErrors(t *testing.T) {
 	// Errors should appear in the header.
 	errors := []string{"turn 1: connection reset", `during tool "bash" (turn 2): timeout`}
-	got := formatSubAgentResult("abc", "/tmp/out.md", "partial", false, 100, 50, 2, 15, errors)
+	got := formatSubAgentResult("abc", "/tmp/out.md", "partial", false, 2, 15, errors)
 
 	if !strings.Contains(got, "[errors: turn 1: connection reset; during tool") {
 		t.Errorf("result should contain joined errors, got: %q", got)
 	}
-	if !strings.Contains(got, "[turns: 2/15]") {
+	if !strings.Contains(got, "turns:2/15") {
 		t.Errorf("result should contain turns, got: %q", got)
 	}
 }
@@ -1317,7 +1324,7 @@ func TestFormatSubAgentResultNoOutputWithErrors(t *testing.T) {
 
 	// We can't easily inject errors into the event stream via mock, so test
 	// buildResult directly.
-	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 100, 50, 1, 10)
+	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 1, 10)
 	if strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should not show generic no-output message when errors are present, got: %q", result)
 	}
@@ -1335,7 +1342,7 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
 
-	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 0, 0, 10)
+	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 10)
 	if !strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should show generic no-output, got: %q", result)
 	}
@@ -1436,7 +1443,7 @@ func TestSubAgentToolBatchedToolCallsCountAsOneTurn(t *testing.T) {
 	}
 
 	// 3 tool calls in 1 response = 1 turn, not 3.
-	if !strings.Contains(result, "[turns: 1/20]") {
+	if !strings.Contains(result, "turns:1/20") {
 		t.Errorf("3 tool calls in one response should count as 1 turn, got: %q", result)
 	}
 }
@@ -1478,7 +1485,7 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 	}
 
 	// 2 responses with tool calls = 2 turns.
-	if !strings.Contains(result, "[turns: 2/20]") {
+	if !strings.Contains(result, "turns:2/20") {
 		t.Errorf("2 responses with tool calls should count as 2 turns, got: %q", result)
 	}
 }
@@ -1523,7 +1530,7 @@ func TestSubAgentDoneTimeoutErrorInResult(t *testing.T) {
 	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 10, 3, 0, tmpDir, "", "alpine:latest")
 
 	timeoutErr := fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", 200*time.Millisecond)
-	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 100, 50, 1, 10)
+	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 1, 10)
 	if !strings.Contains(result, "did not exit within") {
 		t.Errorf("result should contain timeout error, got: %q", result)
 	}
@@ -1659,7 +1666,7 @@ func TestSubAgentMaxTurnsReached(t *testing.T) {
 	// turns depending on whether doneCh fires before EventToolCallStart for
 	// turn 2 is processed. Both are valid — the important invariant is that
 	// partial output was preserved and synthesis was attempted.
-	if !strings.Contains(result, "[turns: 2/1]") && !strings.Contains(result, "[turns: 1/1]") {
+	if !strings.Contains(result, "turns:2/1") && !strings.Contains(result, "turns:1/1") {
 		t.Errorf("result should show turns 1/1 or 2/1, got: %q", result)
 	}
 }
@@ -1725,7 +1732,7 @@ func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 	// count 2 or 3 turns depending on scheduling. Both are valid — the
 	// important invariant is that text was preserved and turns did not exceed
 	// maxTurns + 2 (synthesis buffer).
-	if !strings.Contains(result, "[turns: 3/2]") && !strings.Contains(result, "[turns: 2/2]") {
+	if !strings.Contains(result, "turns:3/2") && !strings.Contains(result, "turns:2/2") {
 		t.Errorf("result should show turns 2/2 or 3/2, got: %q", result)
 	}
 }
@@ -1969,7 +1976,7 @@ func TestSubAgentBackgroundFatalErrorSurfacing(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for background agent to complete.
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
@@ -2021,20 +2028,20 @@ func TestSubAgentBackgroundErrorIncludesAgentContext(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 30*time.Second) // 500 is retryable, retries take time
 
 	completedMu.Lock()
 	got := completedResult
 	completedMu.Unlock()
 
-	// Result should include agent_id.
-	if !strings.Contains(got, "[agent_id:") {
-		t.Errorf("result should contain agent_id, got: %q", got)
+	// Result should include compact agent header.
+	if !strings.Contains(got, "[agent:") {
+		t.Errorf("result should contain [agent: header, got: %q", got)
 	}
 	// Result should include turn context.
-	if !strings.Contains(got, "turn") {
-		t.Errorf("result should contain turn context, got: %q", got)
+	if !strings.Contains(got, "turns:") {
+		t.Errorf("result should contain turns: context, got: %q", got)
 	}
 }
 
@@ -2056,7 +2063,7 @@ func TestSubAgentBackgroundCompletionInjection(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 
 	// The parent agent should have pending background results.
@@ -2158,7 +2165,7 @@ func TestSubAgentConcurrentBackgroundRace(t *testing.T) {
 		if result == "" {
 			continue
 		}
-		id := extractAgentID(t, result)
+		id := extractBgAgentID(t, result)
 		agentIDs[id] = true
 		waitForBgAgent(t, tool, id, 10*time.Second)
 	}
@@ -2225,17 +2232,22 @@ func TestSubAgentConcurrentMixedRace(t *testing.T) {
 		if results[i] == "" {
 			continue
 		}
-		id := extractAgentID(t, results[i])
+		id := extractBgAgentID(t, results[i])
 		waitForBgAgent(t, tool, id, 10*time.Second)
 	}
 
 	// All should have unique agent_ids.
 	agentIDs := make(map[string]bool)
-	for _, result := range results {
+	for i, result := range results {
 		if result == "" {
 			continue
 		}
-		id := extractAgentID(t, result)
+		var id string
+		if i >= 3 {
+			id = extractBgAgentID(t, result)
+		} else {
+			id = extractAgentID(t, result)
+		}
 		if agentIDs[id] {
 			t.Errorf("duplicate agent_id %q", id)
 		}
@@ -2371,8 +2383,8 @@ func TestSubAgentResumeInheritsMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
-	if !strings.Contains(result2, "agent_id:") {
-		t.Errorf("expected agent_id in result, got %q", result2)
+	if !strings.Contains(result2, "[agent:") {
+		t.Errorf("expected [agent: in result, got %q", result2)
 	}
 }
 
@@ -2436,7 +2448,7 @@ func TestBackgroundToolResultContainsSuppressionGuidance(t *testing.T) {
 		t.Errorf("background tool result should tell agent to move on, got: %q", result)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 }
 
@@ -2782,8 +2794,8 @@ func TestSubAgentHardCancelAtMaxTurnsPlusOne(t *testing.T) {
 	// The error message should indicate synthesis was attempted (not just "partial output").
 	// Due to the race between doneCh and eventCh, the error may or may not be captured.
 	// What we CAN verify: the agent terminated and produced partial output.
-	if !strings.Contains(result, "[agent_id:") {
-		t.Errorf("result should contain agent_id, got: %q", result)
+	if !strings.Contains(result, "[agent:") {
+		t.Errorf("result should contain [agent: header, got: %q", result)
 	}
 }
 
@@ -3034,17 +3046,17 @@ func TestIntegrationBudgetAwareSubAgentLifecycle(t *testing.T) {
 	}
 
 	// Result should show turns within budget (4 tool-call turns counted).
-	if !strings.Contains(result, "[turns:") {
+	if !strings.Contains(result, "turns:") {
 		t.Errorf("result should contain turns metadata, got: %q", result)
 	}
 	// The turn count should be 4 (tool-call turns only; text-only response doesn't count).
-	if !strings.Contains(result, fmt.Sprintf("[turns: 4/%d]", maxTurns)) {
+	if !strings.Contains(result, fmt.Sprintf("turns:4/%d", maxTurns)) {
 		t.Logf("turns metadata (may vary due to event races): %q", result)
 	}
 
-	// Token usage should be tracked.
-	if !strings.Contains(result, "[tokens:") {
-		t.Errorf("result should contain token metadata, got: %q", result)
+	// Token counts are omitted from the compact header (tracked via EventUsage).
+	if strings.Contains(result, "[tokens:") {
+		t.Errorf("compact result should NOT contain [tokens:], got: %q", result)
 	}
 }
 
@@ -3102,7 +3114,7 @@ func TestIntegrationSubAgentIgnoresBudgetGetsForcedSynthesis(t *testing.T) {
 	}
 
 	// The turn counter should show the agent exceeded its budget.
-	if !strings.Contains(result, "[turns:") {
+	if !strings.Contains(result, "turns:") {
 		t.Errorf("result should contain turns metadata, got: %q", result)
 	}
 
@@ -3176,9 +3188,9 @@ func TestIntegrationBackgroundSubAgentBudgetAwareness(t *testing.T) {
 	}
 
 	if !strings.Contains(result, "[agent_id:") {
-		t.Fatalf("expected [agent_id:] in result, got: %q", result)
+		t.Fatalf("expected [agent_id:] in background launch result, got: %q", result)
 	}
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for background agent to complete.
 	waitForBgAgent(t, tool, agentID, 15*time.Second)
@@ -3517,20 +3529,20 @@ func TestDrainConsistencyForegroundBackground(t *testing.T) {
 		t.Errorf("background missing text: %q", bgFinalResult)
 	}
 
-	// Both should report turns: 0/10 (text-only response, no tool calls).
-	if !strings.Contains(fgResult, "[turns: 0/10]") {
-		t.Errorf("foreground missing turn count [turns: 0/10]: %q", fgResult)
+	// Both should report turns:0/10 (text-only response, no tool calls).
+	if !strings.Contains(fgResult, "turns:0/10") {
+		t.Errorf("foreground missing turn count turns:0/10: %q", fgResult)
 	}
-	if !strings.Contains(bgFinalResult, "[turns: 0/10]") {
-		t.Errorf("background missing turn count [turns: 0/10]: %q", bgFinalResult)
+	if !strings.Contains(bgFinalResult, "turns:0/10") {
+		t.Errorf("background missing turn count turns:0/10: %q", bgFinalResult)
 	}
 
-	// Both should include token usage.
-	if !strings.Contains(fgResult, "[tokens:") {
-		t.Errorf("foreground missing token usage: %q", fgResult)
+	// Token counts are omitted from the compact header (tracked via EventUsage).
+	if strings.Contains(fgResult, "[tokens:") {
+		t.Errorf("foreground should NOT contain [tokens:]: %q", fgResult)
 	}
-	if !strings.Contains(bgFinalResult, "[tokens:") {
-		t.Errorf("background missing token usage: %q", bgFinalResult)
+	if strings.Contains(bgFinalResult, "[tokens:") {
+		t.Errorf("background should NOT contain [tokens:]: %q", bgFinalResult)
 	}
 
 	// Wait for background goroutine to fully exit before TempDir cleanup.
@@ -3649,8 +3661,8 @@ func TestDrainConsistencyWithToolCalls(t *testing.T) {
 
 	// Should have 1 turn (the response with a tool call). The final text-only
 	// response does not increment the turn counter since it has no tool calls.
-	if !strings.Contains(result, "[turns: 1/10]") {
-		t.Errorf("expected [turns: 1/10] in result: %q", result)
+	if !strings.Contains(result, "turns:1/10") {
+		t.Errorf("expected turns:1/10 in result: %q", result)
 	}
 
 	// Verify tool status was forwarded.

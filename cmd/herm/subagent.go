@@ -746,7 +746,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		debugLog("sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns, maxTurns), nil
+	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns), nil
 }
 
 // executeBackground sets up and launches a background sub-agent, returning immediately.
@@ -867,7 +867,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.totalInputTokens, r.totalOutputTokens, r.turns, maxTurns)
+	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns)
 	state.mu.Lock()
 	state.done = true
 	state.result = result
@@ -934,7 +934,7 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 }
 
 // buildResult constructs the final tool result from collected sub-agent state.
-func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, inputTokens, outputTokens, turns, maxTurns int) string {
+func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, turns, maxTurns int) string {
 	result := strings.TrimSpace(strings.Join(textParts, ""))
 	if result == "" && len(agentErrors) > 0 {
 		// No text output but we have errors — use errors as the result body.
@@ -944,27 +944,24 @@ func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textPart
 	}
 	outputPath := t.writeOutputFile(agentID, result)
 	summary, usedModel := t.summarizeWithModel(ctx, result)
-	return formatSubAgentResult(agentID, outputPath, summary, usedModel, inputTokens, outputTokens, turns, maxTurns, agentErrors)
+	return formatSubAgentResult(agentID, outputPath, summary, usedModel, turns, maxTurns, agentErrors)
 }
 
-// formatSubAgentResult builds the tool result string with agent ID, output file
-// path, token usage, turn count, error context, summary quality indicator, and
-// the summary. The caller can use read_file on the output path for full results.
-func formatSubAgentResult(agentID, outputPath, summary string, modelSummary bool, inputTokens, outputTokens, turns, maxTurns int, errors []string) string {
+// formatSubAgentResult builds a compact tool result header with agent ID, turn
+// count, summary quality indicator, and the summary body. Token counts are
+// omitted (tracked via EventUsage, not actionable by the main agent).
+func formatSubAgentResult(agentID, outputPath, summary string, modelSummary bool, turns, maxTurns int, errors []string) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[agent_id: %s]", agentID)
-	if outputPath != "" {
-		fmt.Fprintf(&b, " [output: %s]", outputPath)
-	}
-	if inputTokens > 0 || outputTokens > 0 {
-		fmt.Fprintf(&b, " [tokens: input=%d output=%d]", inputTokens, outputTokens)
-	}
-	fmt.Fprintf(&b, " [turns: %d/%d]", turns, maxTurns)
+	fmt.Fprintf(&b, "[agent:%s turns:%d/%d", agentID, turns, maxTurns)
 	if modelSummary {
-		b.WriteString(" [summary: model]")
+		b.WriteString(" summary:model")
 	} else if outputPath != "" && len(summary) > subAgentSummaryBytes {
 		// Only mark truncated when there was actually more content (output file exists).
-		b.WriteString(" [summary: truncated]")
+		b.WriteString(" summary:truncated")
+	}
+	b.WriteString("]")
+	if outputPath != "" {
+		fmt.Fprintf(&b, " [output: %s]", outputPath)
 	}
 	if len(errors) > 0 {
 		fmt.Fprintf(&b, " [errors: %s]", strings.Join(errors, "; "))

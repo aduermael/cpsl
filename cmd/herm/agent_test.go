@@ -1618,7 +1618,7 @@ func TestExplorationFlowOutlineThenReadThenAgent(t *testing.T) {
 
 	outlineTool := &testTool{name: "outline", result: "1: func main()\n5: func handleError(err error)"}
 	readTool := &testTool{name: "read_file", result: "func handleError(err error) {\n\tos.Exit(1)\n}"}
-	agentTool := &testTool{name: "agent", result: "[agent_id: abc] [turns: 3/15] [summary: model]\n\n- Uses os.Exit"}
+	agentTool := &testTool{name: "agent", result: "[agent:abc turns:3/15 summary:model]\n\n- Uses os.Exit"}
 
 	agent := NewAgent(client, []Tool{outlineTool, readTool, agentTool}, nil, "", "test-model", 0)
 
@@ -1673,8 +1673,8 @@ func TestExplorationFlowOutlineThenReadThenAgent(t *testing.T) {
 			agentResult = ev.ToolResult
 		}
 	}
-	if !strings.Contains(agentResult, "[summary: model]") {
-		t.Errorf("agent result = %q, want to contain [summary: model]", agentResult)
+	if !strings.Contains(agentResult, "summary:model") {
+		t.Errorf("agent result = %q, want to contain summary:model", agentResult)
 	}
 }
 
@@ -1701,7 +1701,7 @@ func TestExplorationFlowParallelSubAgents(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	gate := make(chan struct{})
-	tracker := &parallelTracker{name: "agent", result: "[agent_id: x] [turns: 2/15] [summary: model]\n\n- module analyzed", gate: gate}
+	tracker := &parallelTracker{name: "agent", result: "[agent:x turns:2/15 summary:model]\n\n- module analyzed", gate: gate}
 	agent := NewAgent(client, []Tool{tracker}, nil, "", "test-model", 0)
 
 	go agent.Run(context.Background(), "explore the codebase architecture", "")
@@ -1973,7 +1973,7 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	// Use buildResult directly with errors to verify the error reporting path.
 	result := tool.buildResult(context.Background(), "err-agent", nil,
 		[]string{"during tool \"bash\" (turn 3): HTTP 500 internal server error"},
-		500, 100, 3, 10)
+		3, 10)
 
 	if !strings.Contains(result, "[errors:") {
 		t.Errorf("result should contain [errors:], got: %q", result)
@@ -1984,7 +1984,7 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	if !strings.Contains(result, "Sub-agent encountered errors") {
 		t.Errorf("no-output + errors should use error body, got: %q", result)
 	}
-	if !strings.Contains(result, "[turns: 3/10]") {
+	if !strings.Contains(result, "turns:3/10") {
 		t.Errorf("result should include turn count, got: %q", result)
 	}
 }

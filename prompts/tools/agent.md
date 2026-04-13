@@ -35,10 +35,11 @@ When spawning multiple general-mode sub-agents, ensure they work on separate fil
 - Resume a previous sub-agent by passing its agent_id with a new task — this continues from where it left off with full context preserved.
 
 **Reading results:**
-- Results include metadata: `[agent_id]`, `[output]`, `[tokens]`, `[turns]`, and a summary.
-- `[summary: model]` — intelligent summary; usually sufficient to act on.
-- `[summary: truncated]` — naive truncation; read the full output file via `read_file` for complete findings.
+- Results have a compact header: `[agent:<id> turns:<N/M> summary:<method>]` followed by an `[output: <path>]` pointer to the full output file.
+- `summary:model` — structured summary (STATUS/FILES/FINDINGS/NEXT); usually sufficient to act on.
+- `summary:truncated` — naive truncation; read the full output file via `read_file` for complete findings.
 - `[errors: ...]` — sub-agent hit errors; review and consider retrying with a narrower task.
-- `[turns: N/M]` — turns count LLM response cycles, not individual tool calls (one response with 5 tool calls = 1 turn). N=M means the sub-agent hit its turn limit and may have incomplete results.
+- Turns count LLM response cycles, not individual tool calls (one response with 5 tool calls = 1 turn). N=M means the sub-agent hit its turn limit and may have incomplete results.
+- Full output is saved to `.herm/agents/<agent_id>.md`. If you need exact file paths, line numbers, code snippets, or error details not in the summary, read the full output with `read_file`.
 
 **Turn budget:** Explore mode gets __EXPLORE_MAX_TURNS__ turns, general mode gets __GENERAL_MAX_TURNS__ turns. Scope explore tasks to fit within ~75% of the budget + a few turns for synthesis. If a task requires more depth, consider splitting it into multiple focused sub-agents rather than one broad one.
