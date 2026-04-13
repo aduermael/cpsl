@@ -57,6 +57,11 @@ const defaultMaxAgentDepth = 1
 // or other paths could hang.
 const subAgentDoneTimeout = 5 * time.Minute
 
+// snapshotCacheTTL is how long a cached project snapshot is reused before
+// fetching a fresh one. When the main agent spawns multiple sub-agents in
+// quick succession, this avoids redundant shell commands against an unchanged repo.
+const snapshotCacheTTL = 10 * time.Second
+
 // bgAgentState tracks a background sub-agent's lifecycle.
 type bgAgentState struct {
 	mu      sync.Mutex
@@ -100,6 +105,10 @@ type SubAgentTool struct {
 	agentNodes map[string]agentNodeState // agentID → state (nodeID + mode for resume)
 	bgAgents   map[string]*bgAgentState // background sub-agents
 	bgWg       sync.WaitGroup           // tracks running background goroutines
+
+	snapMu    sync.Mutex        // guards snapshot cache
+	snapCache *projectSnapshot  // cached project snapshot; nil = not cached
+	snapTime  time.Time         // when snapCache was fetched
 }
 
 func NewSubAgentTool(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, mainModel string, explorationModel string, exploreMaxTurns int, generalMaxTurns int, maxDepth int, currentDepth int, workDir string, personality string, containerImage string) *SubAgentTool {
@@ -137,6 +146,23 @@ func (t *SubAgentTool) maxTurnsForMode(mode string) int {
 		return t.exploreMaxTurns
 	}
 	return t.generalMaxTurns
+}
+
+// cachedSnapshot returns a project snapshot, reusing a cached one if it was
+// fetched within snapshotCacheTTL. This avoids redundant shell commands when
+// multiple sub-agents spawn in rapid succession against an unchanged repo.
+func (t *SubAgentTool) cachedSnapshot() projectSnapshot {
+	t.snapMu.Lock()
+	defer t.snapMu.Unlock()
+
+	if t.snapCache != nil && time.Since(t.snapTime) < snapshotCacheTTL {
+		return *t.snapCache
+	}
+
+	msg := fetchProjectSnapshot(t.workDir)
+	t.snapCache = &msg.snapshot
+	t.snapTime = time.Now()
+	return msg.snapshot
 }
 
 func (t *SubAgentTool) Definition() types.ToolDefinition {
@@ -671,13 +697,17 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	// Explore mode gets read-only tools only; general mode gets everything.
 	subTools := t.buildSubAgentTools(in.Mode)
 
-	// Fetch a fresh project snapshot so the sub-agent sees the current state
-	// of the worktree (files, commits, status) rather than a stale startup copy.
-	snap := fetchProjectSnapshot(t.workDir)
+	// Get a project snapshot (cached if recently fetched, fresh otherwise).
+	// Explore agents are read-only — git status (uncommitted changes) is not
+	// actionable for them, so strip it to save tokens.
+	snap := t.cachedSnapshot()
+	if in.Mode == ModeExplore {
+		snap.GitStatus = ""
+	}
 
 	// Build a lean sub-agent system prompt: skips communication, personality,
 	// skills, and uses a compact role section instead of the full orchestrator framing.
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
+	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap)
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),
@@ -758,8 +788,11 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	maxTurns := t.maxTurnsForMode(in.Mode)
 
 	subTools := t.buildSubAgentTools(in.Mode)
-	snap := fetchProjectSnapshot(t.workDir)
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap.snapshot)
+	snap := t.cachedSnapshot()
+	if in.Mode == ModeExplore {
+		snap.GitStatus = ""
+	}
+	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap)
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),

@@ -100,9 +100,9 @@ Sub-agents should get only the context they need, and rapid sequential spawns sh
 
 **Explore-mode context stripping:** Explore agents are read-only — they cannot modify files, so git status (uncommitted changes) is less actionable. Skip it for explore mode, matching Claude Code's approach. Keep the project tree (useful for orientation) and recent commits (useful for understanding recent changes).
 
-- [ ] 5a: Add snapshot cache fields to `SubAgentTool` (`snapMu sync.Mutex`, `snapCache *projectSnapshot`, `snapTime time.Time`). Add `cachedSnapshot() projectSnapshot` method with `snapshotCacheTTL = 10 * time.Second`. Replace direct `fetchProjectSnapshot` calls in both foreground and background paths
-- [ ] 5b: For explore-mode sub-agents, zero the `GitStatus` field on the snapshot before passing it to `buildSubAgentSystemPrompt`. This is simpler than adding template conditionals — just clear the field. Token savings: 50-500 tokens per explore spawn depending on repo state
-- [ ] 5c: Tests — verify snapshot is reused within TTL window, verify fresh snapshot after TTL expires, verify explore-mode sub-agents don't receive git status in their system prompt, verify general-mode sub-agents still get full context
+- [x] 5a: Add snapshot cache fields to `SubAgentTool` (`snapMu sync.Mutex`, `snapCache *projectSnapshot`, `snapTime time.Time`). Add `cachedSnapshot() projectSnapshot` method with `snapshotCacheTTL = 10 * time.Second`. Replace direct `fetchProjectSnapshot` calls in both foreground and background paths
+- [x] 5b: For explore-mode sub-agents, zero the `GitStatus` field on the snapshot before passing it to `buildSubAgentSystemPrompt`. This is simpler than adding template conditionals — just clear the field. Token savings: 50-500 tokens per explore spawn depending on repo state
+- [x] 5c: Tests — verify snapshot is reused within TTL window, verify fresh snapshot after TTL expires, verify explore-mode sub-agents don't receive git status in their system prompt, verify general-mode sub-agents still get full context
 
 ## Phase 6: Budget Reminder and Synthesis Refinements
 
