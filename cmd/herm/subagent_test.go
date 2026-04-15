@@ -193,7 +193,7 @@ func newTestClient(responses ...string) *langdag.Client {
 }
 
 func TestSubAgentToolDefinition(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	def := tool.Definition()
 	if def.Name != "agent" {
 		t.Errorf("name = %q, want agent", def.Name)
@@ -204,7 +204,7 @@ func TestSubAgentToolDefinition(t *testing.T) {
 }
 
 func TestSubAgentToolNoApproval(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	if tool.RequiresApproval(json.RawMessage(`{"task":"hello"}`)) {
 		t.Error("sub-agent tool should never require approval")
 	}
@@ -213,7 +213,7 @@ func TestSubAgentToolNoApproval(t *testing.T) {
 func TestSubAgentToolEmptyTask(t *testing.T) {
 	client := newTestClient("hello")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"","mode":"explore"}`))
 	if err == nil {
@@ -225,7 +225,7 @@ func TestSubAgentToolEmptyTask(t *testing.T) {
 }
 
 func TestSubAgentToolInvalidJSON(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -235,7 +235,7 @@ func TestSubAgentToolInvalidJSON(t *testing.T) {
 func TestSubAgentToolExecuteReturnsOutput(t *testing.T) {
 	client := newTestClient("Hello from the sub-agent!")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"say hello","mode":"explore"}`))
 	if err != nil {
@@ -251,7 +251,7 @@ func TestSubAgentToolForwardsEventsWithAgentID(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parentEvents := make(chan AgentEvent, 256)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.parentEvents = parentEvents
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do work","mode":"explore"}`))
@@ -319,7 +319,7 @@ func TestSubAgentStartEventCarriesMode(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	parentEvents := make(chan AgentEvent, 256)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.parentEvents = parentEvents
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"research","mode":"explore"}`))
@@ -350,7 +350,7 @@ func TestSubAgentStartEventCarriesMode(t *testing.T) {
 func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 	client := newTestClient("resumed output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// First call — establishes a sub-agent and saves its nodeID.
 	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"initial work","mode":"explore"}`))
@@ -358,7 +358,7 @@ func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 		t.Fatalf("first Execute error: %v", err)
 	}
 
-	// Extract agent_id from the result (format: "[agent_id: <id>]\n\n<output>").
+	// Extract agent_id from the result (format: "[agent:<id> turns:...").
 	agentID := extractAgentID(t, result1)
 
 	// Second call — resume with the agent_id.
@@ -367,15 +367,15 @@ func TestSubAgentToolResumeWithAgentID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
-	if !strings.Contains(result2, "agent_id:") {
-		t.Errorf("resumed result should contain agent_id, got: %q", result2)
+	if !strings.Contains(result2, "[agent:") {
+		t.Errorf("resumed result should contain [agent:, got: %q", result2)
 	}
 }
 
 func TestSubAgentToolUnknownAgentID(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"resume","mode":"explore","agent_id":"nonexistent"}`))
 	if err == nil {
@@ -388,8 +388,8 @@ func TestSubAgentToolUnknownAgentID(t *testing.T) {
 
 func TestSubAgentToolDepthExcludesNestedAgent(t *testing.T) {
 	// At maxDepth=1, currentDepth=0 → nextDepth=1 which is NOT < maxDepth → no nested agent tool.
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	for _, st := range subTools {
 		if st.Definition().Name == "agent" {
@@ -401,8 +401,8 @@ func TestSubAgentToolDepthExcludesNestedAgent(t *testing.T) {
 func TestSubAgentToolDepthAllowsNestedAgent(t *testing.T) {
 	// At maxDepth=3, currentDepth=0 → nextDepth=1 < 3 → nested agent tool included.
 	baseTool := &testTool{name: "bash", result: "ok"}
-	tool := NewSubAgentTool(nil, []Tool{baseTool}, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: []Tool{baseTool}, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	hasAgent := false
 	for _, st := range subTools {
@@ -438,7 +438,7 @@ func TestSubAgentToolExploreModeFiltersTools(t *testing.T) {
 		&testTool{name: "git", result: "ok"},
 		&testTool{name: "devenv", result: "ok"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	subTools := tool.buildSubAgentTools("explore")
 
 	got := make(map[string]bool)
@@ -447,7 +447,7 @@ func TestSubAgentToolExploreModeFiltersTools(t *testing.T) {
 	}
 
 	// Should include all allowlisted tools.
-	for name := range exploreToolAllowlist {
+	for name := range modeToolAllowlists[ModeExplore] {
 		if !got[name] {
 			t.Errorf("explore mode should include %q", name)
 		}
@@ -473,15 +473,15 @@ func TestSubAgentToolImplementModeIncludesAllTools(t *testing.T) {
 		&testTool{name: "git", result: "ok"},
 		&testTool{name: "devenv", result: "ok"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
-	subTools := tool.buildSubAgentTools("implement")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
+	subTools := tool.buildSubAgentTools(ModeGeneral)
 
 	got := make(map[string]bool)
 	for _, st := range subTools {
 		got[st.Definition().Name] = true
 	}
 
-	// Implement mode should include every tool.
+	// General mode should include every tool.
 	for _, tt := range allTools {
 		name := tt.Definition().Name
 		if !got[name] {
@@ -504,7 +504,7 @@ func TestSubAgentToolExploreSystemPromptExcludesWriteTools(t *testing.T) {
 		&testTool{name: "git", result: "ok"},
 		&testTool{name: "devenv", result: "ok"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	exploreTools := tool.buildSubAgentTools("explore")
 
 	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
@@ -525,11 +525,117 @@ func TestSubAgentToolExploreSystemPromptExcludesWriteTools(t *testing.T) {
 	}
 }
 
+func TestModeToolAllowlistsStructure(t *testing.T) {
+	// Explore mode has a non-nil allowlist with specific tools.
+	exploreList := modeToolAllowlists[ModeExplore]
+	if exploreList == nil {
+		t.Fatal("explore mode should have a non-nil allowlist")
+	}
+	for _, name := range []string{"glob", "grep", "read_file", "outline", "bash"} {
+		if !exploreList[name] {
+			t.Errorf("explore allowlist should include %q", name)
+		}
+	}
+
+	// General mode has a nil allowlist (all tools pass through).
+	generalList := modeToolAllowlists[ModeGeneral]
+	if generalList != nil {
+		t.Errorf("general mode should have nil allowlist, got %v", generalList)
+	}
+}
+
+func TestMaxTurnsForMode(t *testing.T) {
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 12, GeneralMaxTurns: 25, MaxDepth: 1, WorkDir: "/workspace"})
+	if got := tool.maxTurnsForMode(ModeExplore); got != 12 {
+		t.Errorf("maxTurnsForMode(explore) = %d, want 12", got)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != 25 {
+		t.Errorf("maxTurnsForMode(general) = %d, want 25", got)
+	}
+}
+
+func TestMaxTurnsForModeDefaults(t *testing.T) {
+	// Passing 0 for both should use the per-mode defaults.
+	tool := NewSubAgentTool(SubAgentConfig{MaxDepth: 1, WorkDir: "/workspace"})
+	if got := tool.maxTurnsForMode(ModeExplore); got != defaultExploreMaxTurns {
+		t.Errorf("maxTurnsForMode(explore) = %d, want %d", got, defaultExploreMaxTurns)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != defaultGeneralMaxTurns {
+		t.Errorf("maxTurnsForMode(general) = %d, want %d", got, defaultGeneralMaxTurns)
+	}
+}
+
+func TestPerModeTurnBudgetConfigPrecedence(t *testing.T) {
+	// Test config override precedence: per-mode > legacy SubAgentMaxTurns > default.
+
+	// Case 1: Both per-mode fields set — they take priority.
+	cfg := Config{ExploreMaxTurns: 8, GeneralMaxTurns: 30, SubAgentMaxTurns: 25}
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: cfg.ExploreMaxTurns, GeneralMaxTurns: cfg.GeneralMaxTurns, MaxDepth: 1, WorkDir: "/workspace"})
+	if got := tool.maxTurnsForMode(ModeExplore); got != 8 {
+		t.Errorf("per-mode explore = %d, want 8", got)
+	}
+	if got := tool.maxTurnsForMode(ModeGeneral); got != 30 {
+		t.Errorf("per-mode general = %d, want 30", got)
+	}
+
+	// Case 2: Only legacy SubAgentMaxTurns set, per-mode fields zero —
+	// agentui.go falls back to SubAgentMaxTurns for both.
+	cfg2 := Config{SubAgentMaxTurns: 18}
+	exploreMax := cfg2.ExploreMaxTurns
+	if exploreMax <= 0 {
+		exploreMax = cfg2.SubAgentMaxTurns
+	}
+	generalMax := cfg2.GeneralMaxTurns
+	if generalMax <= 0 {
+		generalMax = cfg2.SubAgentMaxTurns
+	}
+	tool2 := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: exploreMax, GeneralMaxTurns: generalMax, MaxDepth: 1, WorkDir: "/workspace"})
+	if got := tool2.maxTurnsForMode(ModeExplore); got != 18 {
+		t.Errorf("legacy fallback explore = %d, want 18", got)
+	}
+	if got := tool2.maxTurnsForMode(ModeGeneral); got != 18 {
+		t.Errorf("legacy fallback general = %d, want 18", got)
+	}
+
+	// Case 3: Nothing set (all zero) — defaults apply.
+	cfg3 := Config{}
+	eMax := cfg3.ExploreMaxTurns
+	if eMax <= 0 {
+		eMax = cfg3.SubAgentMaxTurns
+	}
+	gMax := cfg3.GeneralMaxTurns
+	if gMax <= 0 {
+		gMax = cfg3.SubAgentMaxTurns
+	}
+	tool3 := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: eMax, GeneralMaxTurns: gMax, MaxDepth: 1, WorkDir: "/workspace"})
+	if got := tool3.maxTurnsForMode(ModeExplore); got != defaultExploreMaxTurns {
+		t.Errorf("default explore = %d, want %d", got, defaultExploreMaxTurns)
+	}
+	if got := tool3.maxTurnsForMode(ModeGeneral); got != defaultGeneralMaxTurns {
+		t.Errorf("default general = %d, want %d", got, defaultGeneralMaxTurns)
+	}
+}
+
+func TestMergeConfigsPerModeTurns(t *testing.T) {
+	global := Config{SubAgentMaxTurns: 25, ExploreMaxTurns: 10, GeneralMaxTurns: 20}
+	project := ProjectConfig{ExploreMaxTurns: 12}
+	merged := mergeConfigs(global, project)
+	if merged.ExploreMaxTurns != 12 {
+		t.Errorf("merged ExploreMaxTurns = %d, want 12", merged.ExploreMaxTurns)
+	}
+	if merged.GeneralMaxTurns != 20 {
+		t.Errorf("merged GeneralMaxTurns = %d, want 20 (from global)", merged.GeneralMaxTurns)
+	}
+	if merged.SubAgentMaxTurns != 25 {
+		t.Errorf("merged SubAgentMaxTurns = %d, want 25", merged.SubAgentMaxTurns)
+	}
+}
+
 func TestSubAgentToolNoOutput(t *testing.T) {
 	// Provider returns empty text.
 	client := newTestClient("")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do nothing","mode":"explore"}`))
 	if err != nil {
@@ -543,70 +649,80 @@ func TestSubAgentToolNoOutput(t *testing.T) {
 func TestSubAgentToolResultContainsAgentID(t *testing.T) {
 	client := newTestClient("some output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"do work","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
-	if !strings.HasPrefix(result, "[agent_id:") {
-		t.Errorf("result should start with [agent_id:, got: %q", result[:min(50, len(result))])
+	if !strings.HasPrefix(result, "[agent:") {
+		t.Errorf("result should start with [agent:, got: %q", result[:min(50, len(result))])
 	}
 }
 
 func TestFormatSubAgentResult(t *testing.T) {
-	// With output path, no tokens, no model summary
-	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 0, 0, 1, 15, nil)
-	want := "[agent_id: abc123] [output: /tmp/.herm/agents/abc123.md] [turns: 1/15]\n\nhello world"
+	// With output path, no model summary
+	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 1, 15, nil)
+	want := "[agent:abc123 turns:1/15] [output: /tmp/.herm/agents/abc123.md]\n\nhello world"
 	if got != want {
-		t.Errorf("with path, no tokens:\n got %q\nwant %q", got, want)
+		t.Errorf("with path:\n got %q\nwant %q", got, want)
 	}
 
 	// Without output path (write failed)
-	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 0, 0, 15, nil)
-	want2 := "[agent_id: abc123] [turns: 0/15]\n\nhello world"
+	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 15, nil)
+	want2 := "[agent:abc123 turns:0/15]\n\nhello world"
 	if got2 != want2 {
 		t.Errorf("without path:\n got %q\nwant %q", got2, want2)
 	}
 
-	// With output path and token usage
-	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 5000, 1200, 3, 15, nil)
-	want3 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=5000 output=1200] [turns: 3/15]\n\nresult"
+	// With output path — no token counts in compact header
+	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 3, 15, nil)
+	want3 := "[agent:abc123 turns:3/15] [output: /tmp/out.md]\n\nresult"
 	if got3 != want3 {
-		t.Errorf("with tokens:\n got %q\nwant %q", got3, want3)
-	}
-
-	// Without output path but with tokens
-	got4 := formatSubAgentResult("abc123", "", "result", false, 100, 50, 2, 15, nil)
-	want4 := "[agent_id: abc123] [tokens: input=100 output=50] [turns: 2/15]\n\nresult"
-	if got4 != want4 {
-		t.Errorf("tokens without path:\n got %q\nwant %q", got4, want4)
+		t.Errorf("compact header:\n got %q\nwant %q", got3, want3)
 	}
 
 	// With model summary indicator
-	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 1000, 200, 5, 15, nil)
-	want5 := "[agent_id: abc123] [output: /tmp/out.md] [tokens: input=1000 output=200] [turns: 5/15] [summary: model]\n\n- finding 1\n- finding 2"
+	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 5, 15, nil)
+	want5 := "[agent:abc123 turns:5/15 summary:model] [output: /tmp/out.md]\n\n- finding 1\n- finding 2"
 	if got5 != want5 {
 		t.Errorf("model summary:\n got %q\nwant %q", got5, want5)
 	}
 
 	// With errors
-	got6 := formatSubAgentResult("abc123", "/tmp/out.md", "partial result", false, 100, 50, 2, 15, []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"})
+	got6 := formatSubAgentResult("abc123", "/tmp/out.md", "partial result", false, 2, 15, []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"})
 	if !strings.Contains(got6, "[errors:") {
 		t.Errorf("result with errors should contain [errors:], got: %q", got6)
 	}
 	if !strings.Contains(got6, "connection reset") {
 		t.Errorf("result should contain error text, got: %q", got6)
 	}
-	if !strings.Contains(got6, "[turns: 2/15]") {
+	if !strings.Contains(got6, "turns:2/15") {
 		t.Errorf("result should contain turns, got: %q", got6)
 	}
 }
 
 // extractAgentID parses the agent_id from a SubAgentTool result string.
+// Works with the compact format "[agent:<id> turns:..." from foreground results.
 func extractAgentID(t *testing.T, result string) string {
 	t.Helper()
-	// Format: "[agent_id: <id>]\n\n<output>"
+	prefix := "[agent:"
+	idx := strings.Index(result, prefix)
+	if idx < 0 {
+		t.Fatalf("result does not contain agent: prefix: %q", result)
+	}
+	rest := result[idx+len(prefix):]
+	end := strings.IndexAny(rest, " ]")
+	if end < 0 {
+		t.Fatalf("result has no delimiter after agent id: %q", result)
+	}
+	return rest[:end]
+}
+
+// extractBgAgentID parses the agent_id from a background launch result string.
+// Works with the "[agent_id: <id>] Sub-agent started..." format.
+func extractBgAgentID(t *testing.T, result string) string {
+	t.Helper()
 	prefix := "[agent_id: "
 	idx := strings.Index(result, prefix)
 	if idx < 0 {
@@ -649,7 +765,7 @@ func TestSummarizeOutput(t *testing.T) {
 func TestSubAgentOutputFileWritten(t *testing.T) {
 	client := newTestClient("Full sub-agent output for file test")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write file","mode":"explore"}`))
 	if err != nil {
@@ -676,10 +792,10 @@ func TestSubAgentOutputFileWritten(t *testing.T) {
 
 func TestSubAgentOutputFileLargeOutput(t *testing.T) {
 	// Output larger than summary limit — file should have full output, result should have summary.
-	largeOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	largeOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 	client := newTestClient(largeOutput)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"produce large output","mode":"explore"}`))
 	if err != nil {
@@ -749,7 +865,7 @@ func TestCleanupAgentOutputDirNonexistent(t *testing.T) {
 func TestSubAgentBackgroundReturnsImmediately(t *testing.T) {
 	client := newTestClient("background output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	start := time.Now()
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"long task","mode":"explore","background":true}`))
@@ -769,21 +885,21 @@ func TestSubAgentBackgroundReturnsImmediately(t *testing.T) {
 	}
 
 	// Wait for background goroutine to finish so TempDir cleanup succeeds.
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 }
 
 func TestSubAgentBackgroundCompletionStoresResult(t *testing.T) {
 	client := newTestClient("bg agent output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"bg task","mode":"explore","background":true}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for the background agent to finish.
 	deadline := time.After(10 * time.Second)
@@ -812,7 +928,7 @@ func TestSubAgentBackgroundCompletionStoresResult(t *testing.T) {
 
 func TestSubAgentBackgroundStatusRunning(t *testing.T) {
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(nil, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Manually create a running background agent state.
 	tool.mu.Lock()
@@ -838,14 +954,14 @@ func TestSubAgentBackgroundStatusRunning(t *testing.T) {
 func TestSubAgentBackgroundStatusCompleted(t *testing.T) {
 	client := newTestClient("status check output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"bg status task","mode":"explore","background":true}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for completion.
 	deadline := time.After(10 * time.Second)
@@ -881,7 +997,7 @@ func TestSubAgentBackgroundStatusCompleted(t *testing.T) {
 }
 
 func TestSubAgentBackgroundStatusNotFound(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	_, err := tool.bgAgentStatus("nonexistent")
 	if err == nil {
 		t.Fatal("expected error for non-existent background agent")
@@ -892,7 +1008,7 @@ func TestSubAgentBackgroundStatusNotFound(t *testing.T) {
 }
 
 func TestSubAgentBackgroundRejectsWithAgentID(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"resume","mode":"explore","background":true,"agent_id":"abc"}`))
 	if err == nil {
 		t.Fatal("expected error for background + agent_id combination")
@@ -905,7 +1021,7 @@ func TestSubAgentBackgroundRejectsWithAgentID(t *testing.T) {
 func TestSubAgentBackgroundCallsOnBgComplete(t *testing.T) {
 	client := newTestClient("complete callback output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	var completedResult string
 	var completedMu sync.Mutex
@@ -944,7 +1060,7 @@ func TestSubAgentBackgroundForwardsEvents(t *testing.T) {
 	client := newTestClient("bg events output")
 	tmpDir := t.TempDir()
 	parentEvents := make(chan AgentEvent, 256)
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.parentEvents = parentEvents
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"bg events task","mode":"explore","background":true}`))
@@ -1019,35 +1135,32 @@ func extractOutputPath(t *testing.T, result string) string {
 	return rest[:end]
 }
 
-// --- Phase 5: Token budget awareness tests ---
+// --- Phase 5: Compact result header tests ---
 
-func TestSubAgentResultIncludesTokenUsage(t *testing.T) {
+func TestSubAgentResultOmitsTokenUsage(t *testing.T) {
+	// Token counts are tracked via EventUsage but omitted from the result header
+	// since they're not actionable by the main agent.
 	client := newTestClient("token test output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"count tokens","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	// The mock provider returns Usage{InputTokens: 100, OutputTokens: 50}.
-	// The result should include [tokens: input=100 output=50].
-	if !strings.Contains(result, "[tokens:") {
-		t.Errorf("result should contain token usage, got: %q", result)
+	if strings.Contains(result, "[tokens:") {
+		t.Errorf("result should NOT contain token usage in compact header, got: %q", result)
 	}
-	if !strings.Contains(result, "input=100") {
-		t.Errorf("result should contain input=100, got: %q", result)
-	}
-	if !strings.Contains(result, "output=50") {
-		t.Errorf("result should contain output=50, got: %q", result)
+	if !strings.Contains(result, "[agent:") {
+		t.Errorf("result should contain compact [agent: header, got: %q", result)
 	}
 }
 
 // --- Phase 4: Model-based summarization tests ---
 
 func TestSummarizeWithModelShortOutput(t *testing.T) {
-	// Short output (under 500 bytes) should be returned as-is without calling the model.
+	// Short output (under 2KB) should be returned as-is without calling the model.
 	tool := &SubAgentTool{explorationModel: "cheap-model"}
 	summary, usedModel := tool.summarizeWithModel(context.Background(), "short output")
 	if usedModel {
@@ -1060,7 +1173,7 @@ func TestSummarizeWithModelShortOutput(t *testing.T) {
 
 func TestSummarizeWithModelNoExplorationModel(t *testing.T) {
 	// No exploration model — falls back to truncation.
-	longOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	longOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 	tool := &SubAgentTool{explorationModel: "", client: nil}
 	summary, usedModel := tool.summarizeWithModel(context.Background(), longOutput)
 	if usedModel {
@@ -1074,7 +1187,7 @@ func TestSummarizeWithModelNoExplorationModel(t *testing.T) {
 func TestSummarizeWithModelSuccess(t *testing.T) {
 	// Mock provider returns a structured summary.
 	client := newTestClient("- finding 1: the code has 3 modules\n- finding 2: tests pass")
-	longOutput := strings.Repeat("This is a detailed line of output.\n", 50)
+	longOutput := strings.Repeat("This is a detailed line of output.\n", 80)
 
 	tool := &SubAgentTool{
 		explorationModel: "cheap-model",
@@ -1090,10 +1203,10 @@ func TestSummarizeWithModelSuccess(t *testing.T) {
 }
 
 func TestSummarizeWithModelTruncatesLargeInput(t *testing.T) {
-	// Output larger than 4000 chars should be truncated before sending to model.
+	// Output larger than 8000 chars should be truncated before sending to model.
 	// We verify indirectly: the call succeeds and returns a model summary.
 	client := newTestClient("- summarized large input")
-	largeOutput := strings.Repeat("x", 6000)
+	largeOutput := strings.Repeat("x", 10000)
 
 	tool := &SubAgentTool{
 		explorationModel: "cheap-model",
@@ -1109,22 +1222,22 @@ func TestSummarizeWithModelTruncatesLargeInput(t *testing.T) {
 }
 
 func TestSummarizeWithModelExecuteIntegration(t *testing.T) {
-	// When explorationModel is set and output is large, Execute() should use
-	// model summarization and include [summary: model] indicator.
-	largeOutput := strings.Repeat("This is a detailed line.\n", 50)
+	// When explorationModel is set and output is large (>2KB), Execute() should use
+	// model summarization and include summary:model indicator.
+	largeOutput := strings.Repeat("This is a detailed line.\n", 100)
 	// First response: sub-agent's LLM reply (the large output).
 	// Second response: summarization model's response.
 	client := newTestClient(largeOutput, "- bullet point summary")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"explore codebase","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if !strings.Contains(result, "[summary: model]") {
-		t.Errorf("result should contain [summary: model], got: %q", result)
+	if !strings.Contains(result, "summary:model") {
+		t.Errorf("result should contain summary:model, got: %q", result)
 	}
 	if !strings.Contains(result, "bullet point summary") {
 		t.Errorf("result should contain model summary, got: %q", result)
@@ -1136,18 +1249,105 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 	// NOT include a summary indicator.
 	client := newTestClient("brief result")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick check","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if strings.Contains(result, "[summary:") {
+	if strings.Contains(result, "summary:") {
 		t.Errorf("short output should not have summary indicator, got: %q", result)
 	}
 	if !strings.Contains(result, "brief result") {
 		t.Errorf("result should contain original output, got: %q", result)
+	}
+}
+
+// --- Phase 4 continued: Output thresholds, structured format, compact header ---
+
+func TestOutputUnder2KBPassesThrough(t *testing.T) {
+	// Outputs under subAgentSummaryBytes (2KB) must pass through verbatim
+	// without model summarization or truncation.
+	output := strings.Repeat("a", subAgentSummaryBytes-1) // just under threshold
+	tool := &SubAgentTool{explorationModel: "cheap-model", client: newTestClient("should not be called")}
+	summary, usedModel := tool.summarizeWithModel(context.Background(), output)
+	if usedModel {
+		t.Error("output under 2KB should not trigger model summarization")
+	}
+	if summary != output {
+		t.Errorf("output should pass through verbatim, got %d bytes vs original %d", len(summary), len(output))
+	}
+}
+
+func TestOutputExactly2KBPassesThrough(t *testing.T) {
+	// Output exactly at the threshold should also pass through.
+	output := strings.Repeat("b", subAgentSummaryBytes)
+	tool := &SubAgentTool{explorationModel: "cheap-model"}
+	summary, usedModel := tool.summarizeWithModel(context.Background(), output)
+	if usedModel {
+		t.Error("output at exactly 2KB should not trigger model summarization")
+	}
+	if summary != output {
+		t.Error("output at threshold should pass through verbatim")
+	}
+}
+
+func TestStructuredSummaryPromptFormat(t *testing.T) {
+	// The summary prompt should request the STATUS/FILES/FINDINGS/NEXT format.
+	if !strings.Contains(summarizeWithModelPrompt, "STATUS:") {
+		t.Error("summary prompt should request STATUS field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "FILES:") {
+		t.Error("summary prompt should request FILES field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "FINDINGS:") {
+		t.Error("summary prompt should request FINDINGS field")
+	}
+	if !strings.Contains(summarizeWithModelPrompt, "NEXT:") {
+		t.Error("summary prompt should request NEXT field")
+	}
+}
+
+func TestCompactResultHeaderFormat(t *testing.T) {
+	// Verify the compact header format: [agent:<id> turns:<n/m>]
+	got := formatSubAgentResult("test-id", "/out.md", "content", false, 3, 10, nil)
+
+	// Must start with [agent:
+	if !strings.HasPrefix(got, "[agent:test-id") {
+		t.Errorf("header should start with [agent:test-id, got: %q", got[:min(40, len(got))])
+	}
+	// Must contain turns without spaces
+	if !strings.Contains(got, "turns:3/10") {
+		t.Errorf("header should contain turns:3/10, got: %q", got)
+	}
+	// Must NOT contain token counts
+	if strings.Contains(got, "tokens") {
+		t.Errorf("compact header should not contain token counts, got: %q", got)
+	}
+	// Must NOT contain old [agent_id: format
+	if strings.Contains(got, "agent_id") {
+		t.Errorf("compact header should not use old agent_id format, got: %q", got)
+	}
+}
+
+func TestCompactResultHeaderWithSummaryModel(t *testing.T) {
+	got := formatSubAgentResult("x", "/out.md", "summary", true, 5, 15, nil)
+	if !strings.Contains(got, "summary:model") {
+		t.Errorf("model summary should appear as summary:model, got: %q", got)
+	}
+	// Should be inside the main bracket, not a separate bracket
+	if strings.Contains(got, "[summary:") {
+		t.Errorf("summary should be inside main bracket, not separate, got: %q", got)
+	}
+}
+
+func TestCompactResultHeaderWithSummaryTruncated(t *testing.T) {
+	// Summary longer than threshold + output path present → truncated indicator
+	longSummary := strings.Repeat("x", subAgentSummaryBytes+100)
+	got := formatSubAgentResult("x", "/out.md", longSummary, false, 1, 10, nil)
+	if !strings.Contains(got, "summary:truncated") {
+		t.Errorf("should indicate truncated summary, got: %q", got[:min(80, len(got))])
 	}
 }
 
@@ -1156,20 +1356,20 @@ func TestSummarizeWithModelFallbackOnShortOutput(t *testing.T) {
 func TestSubAgentResultIncludesTurnCount(t *testing.T) {
 	client := newTestClient("turn count output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"work","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	// Result should always contain [turns: N/M].
-	if !strings.Contains(result, "[turns:") {
-		t.Errorf("result should contain [turns:], got: %q", result)
+	// Result should always contain turns:N/M in the compact header.
+	if !strings.Contains(result, "turns:") {
+		t.Errorf("result should contain turns:, got: %q", result)
 	}
 	// The mock makes no tool calls, so turns should be 0/10.
-	if !strings.Contains(result, "[turns: 0/10]") {
-		t.Errorf("result should contain [turns: 0/10], got: %q", result)
+	if !strings.Contains(result, "turns:0/10") {
+		t.Errorf("result should contain turns:0/10, got: %q", result)
 	}
 }
 
@@ -1177,14 +1377,14 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 	// Verify that maxTurns is reflected in the turns display.
 	client := newTestClient("output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 5, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 5, GeneralMaxTurns: 5, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick task","mode":"explore"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	if !strings.Contains(result, "[turns: 0/5]") {
+	if !strings.Contains(result, "turns:0/5") {
 		t.Errorf("result should show maxTurns=5, got: %q", result)
 	}
 }
@@ -1192,12 +1392,12 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 func TestFormatSubAgentResultWithErrors(t *testing.T) {
 	// Errors should appear in the header.
 	errors := []string{"turn 1: connection reset", `during tool "bash" (turn 2): timeout`}
-	got := formatSubAgentResult("abc", "/tmp/out.md", "partial", false, 100, 50, 2, 15, errors)
+	got := formatSubAgentResult("abc", "/tmp/out.md", "partial", false, 2, 15, errors)
 
 	if !strings.Contains(got, "[errors: turn 1: connection reset; during tool") {
 		t.Errorf("result should contain joined errors, got: %q", got)
 	}
-	if !strings.Contains(got, "[turns: 2/15]") {
+	if !strings.Contains(got, "turns:2/15") {
 		t.Errorf("result should contain turns, got: %q", got)
 	}
 }
@@ -1207,11 +1407,11 @@ func TestFormatSubAgentResultNoOutputWithErrors(t *testing.T) {
 	// use the errors as the result body instead of "(sub-agent produced no output)".
 	client := newTestClient("") // empty output
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// We can't easily inject errors into the event stream via mock, so test
 	// buildResult directly.
-	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 100, 50, 1)
+	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 1, 10, false)
 	if strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should not show generic no-output message when errors are present, got: %q", result)
 	}
@@ -1227,9 +1427,9 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 	// No output and no errors — should show generic message.
 	client := newTestClient("")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 0, 0)
+	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 10, false)
 	if !strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should show generic no-output, got: %q", result)
 	}
@@ -1240,13 +1440,13 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 func TestSubAgentToolInvalidMode(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test","mode":"invalid"}`))
 	if err == nil {
 		t.Fatal("expected error for invalid mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -1254,13 +1454,13 @@ func TestSubAgentToolInvalidMode(t *testing.T) {
 func TestSubAgentToolMissingMode(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test"}`))
 	if err == nil {
 		t.Fatal("expected error for missing mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -1270,7 +1470,7 @@ func TestSubAgentToolExploreModeUsesExplorationModel(t *testing.T) {
 	// We verify indirectly: explore mode should succeed and use the exploration model.
 	client := newTestClient("explore output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"search code","mode":"explore"}`))
 	if err != nil {
@@ -1281,17 +1481,17 @@ func TestSubAgentToolExploreModeUsesExplorationModel(t *testing.T) {
 	}
 }
 
-func TestSubAgentToolImplementModeUsesMainModel(t *testing.T) {
-	client := newTestClient("implement output")
+func TestSubAgentToolGeneralModeUsesMainModel(t *testing.T) {
+	client := newTestClient("general output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"general"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
 	}
-	if !strings.Contains(result, "implement output") {
-		t.Errorf("result = %q, want implement output", result)
+	if !strings.Contains(result, "general output") {
+		t.Errorf("result = %q, want general output", result)
 	}
 }
 
@@ -1322,7 +1522,7 @@ func TestSubAgentToolBatchedToolCallsCountAsOneTurn(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 20, GeneralMaxTurns: 20, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"batch test","mode":"explore"}`))
 	if err != nil {
@@ -1330,7 +1530,7 @@ func TestSubAgentToolBatchedToolCallsCountAsOneTurn(t *testing.T) {
 	}
 
 	// 3 tool calls in 1 response = 1 turn, not 3.
-	if !strings.Contains(result, "[turns: 1/20]") {
+	if !strings.Contains(result, "turns:1/20") {
 		t.Errorf("3 tool calls in one response should count as 1 turn, got: %q", result)
 	}
 }
@@ -1364,7 +1564,7 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 20, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 20, GeneralMaxTurns: 20, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"multi-response test","mode":"explore"}`))
 	if err != nil {
@@ -1372,7 +1572,7 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 	}
 
 	// 2 responses with tool calls = 2 turns.
-	if !strings.Contains(result, "[turns: 2/20]") {
+	if !strings.Contains(result, "turns:2/20") {
 		t.Errorf("2 responses with tool calls should count as 2 turns, got: %q", result)
 	}
 }
@@ -1381,7 +1581,7 @@ func TestSubAgentToolMultipleResponsesCountSeparately(t *testing.T) {
 
 func TestSubAgentDoneTimeoutDefault(t *testing.T) {
 	// Verify NewSubAgentTool sets the doneTimeout to the default constant.
-	tool := NewSubAgentTool(nil, nil, nil, "", "", 10, 3, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	if tool.doneTimeout != subAgentDoneTimeout {
 		t.Errorf("doneTimeout = %v, want %v", tool.doneTimeout, subAgentDoneTimeout)
 	}
@@ -1391,7 +1591,7 @@ func TestSubAgentDoneTimeoutCustom(t *testing.T) {
 	// Verify that a custom doneTimeout doesn't break normal execution.
 	client := newTestClient("timeout test output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.doneTimeout = 5 * time.Second // shorter than default, but generous enough for normal flow
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"quick task","mode":"explore"}`))
@@ -1414,10 +1614,10 @@ func TestSubAgentDoneTimeoutErrorInResult(t *testing.T) {
 	// reliably trigger the timeout in tests.
 	client := newTestClient("partial output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	timeoutErr := fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", 200*time.Millisecond)
-	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 100, 50, 1)
+	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 1, 10, false)
 	if !strings.Contains(result, "did not exit within") {
 		t.Errorf("result should contain timeout error, got: %q", result)
 	}
@@ -1433,7 +1633,7 @@ func TestSubAgentDoneTimeoutDoesNotHang(t *testing.T) {
 	// hang. This exercises both select branches non-deterministically.
 	client := newTestClient("fast output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.doneTimeout = 1 * time.Millisecond // near-instant timeout
 
 	done := make(chan string, 1)
@@ -1537,7 +1737,7 @@ func TestSubAgentMaxTurnsReached(t *testing.T) {
 	tmpDir := t.TempDir()
 	// maxTurns=1: turn 1 completes (tool returns immediately),
 	// turn 2 triggers synthesis (tool blocks until canceled).
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 1, GeneralMaxTurns: 1, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"looping task","mode":"explore"}`))
 	if err != nil {
@@ -1553,7 +1753,7 @@ func TestSubAgentMaxTurnsReached(t *testing.T) {
 	// turns depending on whether doneCh fires before EventToolCallStart for
 	// turn 2 is processed. Both are valid — the important invariant is that
 	// partial output was preserved and synthesis was attempted.
-	if !strings.Contains(result, "[turns: 2/1]") && !strings.Contains(result, "[turns: 1/1]") {
+	if !strings.Contains(result, "turns:2/1") && !strings.Contains(result, "turns:1/1") {
 		t.Errorf("result should show turns 1/1 or 2/1, got: %q", result)
 	}
 }
@@ -1600,7 +1800,7 @@ func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 	tmpDir := t.TempDir()
 	// maxTurns=2: turns 1,2 complete (tool returns immediately),
 	// turn 3 triggers synthesis (tool blocks until canceled).
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 2, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 2, GeneralMaxTurns: 2, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"multi-turn","mode":"explore"}`))
 	if err != nil {
@@ -1619,7 +1819,7 @@ func TestSubAgentMaxTurnsPartialOutputPreserved(t *testing.T) {
 	// count 2 or 3 turns depending on scheduling. Both are valid — the
 	// important invariant is that text was preserved and turns did not exceed
 	// maxTurns + 2 (synthesis buffer).
-	if !strings.Contains(result, "[turns: 3/2]") && !strings.Contains(result, "[turns: 2/2]") {
+	if !strings.Contains(result, "turns:3/2") && !strings.Contains(result, "turns:2/2") {
 		t.Errorf("result should show turns 2/2 or 3/2, got: %q", result)
 	}
 }
@@ -1638,7 +1838,7 @@ func TestSubAgentPermanentErrorPropagation(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"auth test","mode":"explore"}`))
 	if err != nil {
@@ -1676,7 +1876,7 @@ func TestSubAgentTransientErrorExhaustsRetries(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"retry test","mode":"explore"}`))
 	if err != nil {
@@ -1717,7 +1917,7 @@ func TestSubAgentErrorDuringToolExecution(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{failingTool}, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{failingTool}, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"tool error test","mode":"explore"}`))
 	if err != nil {
@@ -1742,7 +1942,7 @@ func TestSubAgentOutputTruncationClarity(t *testing.T) {
 	largeOutput := strings.Repeat("Detailed analysis of the codebase.\n", 100) // ~3500 bytes, well over 500
 	client := newTestClient(largeOutput)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"large output","mode":"explore"}`))
 	if err != nil {
@@ -1815,7 +2015,7 @@ func TestSubAgentStreamStallTimeout(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.streamTimeout = 200 * time.Millisecond // very short for test
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"stall test","mode":"explore"}`))
@@ -1848,7 +2048,7 @@ func TestSubAgentBackgroundFatalErrorSurfacing(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	var completedResult string
 	var completedMu sync.Mutex
@@ -1863,7 +2063,7 @@ func TestSubAgentBackgroundFatalErrorSurfacing(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for background agent to complete.
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
@@ -1900,7 +2100,7 @@ func TestSubAgentBackgroundErrorIncludesAgentContext(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	var completedResult string
 	var completedMu sync.Mutex
@@ -1915,20 +2115,20 @@ func TestSubAgentBackgroundErrorIncludesAgentContext(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 30*time.Second) // 500 is retryable, retries take time
 
 	completedMu.Lock()
 	got := completedResult
 	completedMu.Unlock()
 
-	// Result should include agent_id.
-	if !strings.Contains(got, "[agent_id:") {
-		t.Errorf("result should contain agent_id, got: %q", got)
+	// Result should include compact agent header.
+	if !strings.Contains(got, "[agent:") {
+		t.Errorf("result should contain [agent: header, got: %q", got)
 	}
 	// Result should include turn context.
-	if !strings.Contains(got, "turn") {
-		t.Errorf("result should contain turn context, got: %q", got)
+	if !strings.Contains(got, "turns:") {
+		t.Errorf("result should contain turns: context, got: %q", got)
 	}
 }
 
@@ -1938,7 +2138,7 @@ func TestSubAgentBackgroundCompletionInjection(t *testing.T) {
 	// calls agent.InjectBackgroundResult. Verify the result is injectable.
 	client := newTestClient("bg output text")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Create a parent agent to receive the injection.
 	parentAgent := NewAgent(nil, nil, nil, "", "test-model", 0)
@@ -1950,7 +2150,7 @@ func TestSubAgentBackgroundCompletionInjection(t *testing.T) {
 		t.Fatalf("Execute error: %v", err)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 
 	// The parent agent should have pending background results.
@@ -1975,7 +2175,7 @@ func TestSubAgentConcurrentForegroundRace(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	const n = 5
 	results := make([]string, n)
@@ -2022,7 +2222,7 @@ func TestSubAgentConcurrentBackgroundRace(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	parentEvents := make(chan AgentEvent, 256)
 	tool.parentEvents = parentEvents
@@ -2052,7 +2252,7 @@ func TestSubAgentConcurrentBackgroundRace(t *testing.T) {
 		if result == "" {
 			continue
 		}
-		id := extractAgentID(t, result)
+		id := extractBgAgentID(t, result)
 		agentIDs[id] = true
 		waitForBgAgent(t, tool, id, 10*time.Second)
 	}
@@ -2083,7 +2283,7 @@ func TestSubAgentConcurrentMixedRace(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	parentEvents := make(chan AgentEvent, 256)
 	tool.parentEvents = parentEvents
@@ -2119,17 +2319,22 @@ func TestSubAgentConcurrentMixedRace(t *testing.T) {
 		if results[i] == "" {
 			continue
 		}
-		id := extractAgentID(t, results[i])
+		id := extractBgAgentID(t, results[i])
 		waitForBgAgent(t, tool, id, 10*time.Second)
 	}
 
 	// All should have unique agent_ids.
 	agentIDs := make(map[string]bool)
-	for _, result := range results {
+	for i, result := range results {
 		if result == "" {
 			continue
 		}
-		id := extractAgentID(t, result)
+		var id string
+		if i >= 3 {
+			id = extractBgAgentID(t, result)
+		} else {
+			id = extractAgentID(t, result)
+		}
 		if agentIDs[id] {
 			t.Errorf("duplicate agent_id %q", id)
 		}
@@ -2152,7 +2357,7 @@ func TestSubAgentStreamErrorMidResponse(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"stream error test","mode":"explore"}`))
 	if err != nil {
@@ -2166,7 +2371,7 @@ func TestSubAgentStreamErrorMidResponse(t *testing.T) {
 }
 
 func TestWaitForBackgroundAgents_NoAgents(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "m", "", 10, 1, 0, t.TempDir(), "", "")
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
 	results := tool.WaitForBackgroundAgents(time.Second)
 	if results != nil {
 		t.Errorf("expected nil for no bg agents, got %v", results)
@@ -2174,7 +2379,7 @@ func TestWaitForBackgroundAgents_NoAgents(t *testing.T) {
 }
 
 func TestWaitForBackgroundAgents_AllDone(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "m", "", 10, 1, 0, t.TempDir(), "", "")
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
 
 	// Manually inject two already-completed background agents.
 	tool.mu.Lock()
@@ -2193,7 +2398,7 @@ func TestWaitForBackgroundAgents_AllDone(t *testing.T) {
 }
 
 func TestWaitForBackgroundAgents_WaitsForCompletion(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "m", "", 10, 1, 0, t.TempDir(), "", "")
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
 
 	state := &bgAgentState{task: "slow-task", started: time.Now()}
 	tool.mu.Lock()
@@ -2222,7 +2427,7 @@ func TestWaitForBackgroundAgents_WaitsForCompletion(t *testing.T) {
 }
 
 func TestWaitForBackgroundAgents_Timeout(t *testing.T) {
-	tool := NewSubAgentTool(nil, nil, nil, "m", "", 10, 1, 0, t.TempDir(), "", "")
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
 
 	// One done, one still running.
 	tool.mu.Lock()
@@ -2250,30 +2455,30 @@ func TestWaitForBackgroundAgents_Timeout(t *testing.T) {
 func TestSubAgentResumeInheritsMode(t *testing.T) {
 	client := newTestClient("resumed output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	// Spawn in implement mode.
-	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"implement"}`))
+	// Spawn in general mode.
+	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"write code","mode":"general"}`))
 	if err != nil {
 		t.Fatalf("first Execute error: %v", err)
 	}
 	agentID := extractAgentID(t, result1)
 
-	// Resume without providing mode — should inherit "implement".
+	// Resume without providing mode — should inherit "general".
 	result2, err := tool.Execute(context.Background(), json.RawMessage(
 		`{"task":"continue","agent_id":"`+agentID+`"}`))
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
-	if !strings.Contains(result2, "agent_id:") {
-		t.Errorf("expected agent_id in result, got %q", result2)
+	if !strings.Contains(result2, "[agent:") {
+		t.Errorf("expected [agent: in result, got %q", result2)
 	}
 }
 
 func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
 	client := newTestClient("resumed output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Spawn in explore mode.
 	result1, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"search","mode":"explore"}`))
@@ -2282,9 +2487,9 @@ func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
 	}
 	agentID := extractAgentID(t, result1)
 
-	// Resume with mode:"implement" — should still use "explore" (original).
+	// Resume with mode:"general" — should still use "explore" (original).
 	_, err = tool.Execute(context.Background(), json.RawMessage(
-		`{"task":"continue","mode":"implement","agent_id":"`+agentID+`"}`))
+		`{"task":"continue","mode":"general","agent_id":"`+agentID+`"}`))
 	if err != nil {
 		t.Fatalf("resume Execute error: %v", err)
 	}
@@ -2293,22 +2498,22 @@ func TestSubAgentResumeIgnoresProvidedMode(t *testing.T) {
 	tool.mu.Lock()
 	state := tool.agentNodes[agentID]
 	tool.mu.Unlock()
-	if state.mode != "explore" {
-		t.Errorf("stored mode = %q, want \"explore\"", state.mode)
+	if state.mode != ModeExplore {
+		t.Errorf("stored mode = %q, want %q", state.mode, ModeExplore)
 	}
 }
 
 func TestSubAgentNewAgentWithoutModeStillFails(t *testing.T) {
 	client := newTestClient("ok")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "main-model", "cheap-model", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "main-model", ExplorationModel: "cheap-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// New agent (no agent_id) without mode should still fail validation.
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test"}`))
 	if err == nil {
 		t.Fatal("expected error for new agent without mode")
 	}
-	if !strings.Contains(err.Error(), `mode must be "explore" or "implement"`) {
+	if !strings.Contains(err.Error(), `mode must be "explore" or "general"`) {
 		t.Errorf("error = %q, want mode validation error", err.Error())
 	}
 }
@@ -2316,7 +2521,7 @@ func TestSubAgentNewAgentWithoutModeStillFails(t *testing.T) {
 func TestBackgroundToolResultContainsSuppressionGuidance(t *testing.T) {
 	client := newTestClient("suppression test output")
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, nil, nil, "test-model", "", 10, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test task","mode":"explore","background":true}`))
 	if err != nil {
@@ -2330,7 +2535,7 @@ func TestBackgroundToolResultContainsSuppressionGuidance(t *testing.T) {
 		t.Errorf("background tool result should tell agent to move on, got: %q", result)
 	}
 
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 	waitForBgAgent(t, tool, agentID, 10*time.Second)
 }
 
@@ -2344,7 +2549,7 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 		&testTool{name: "edit_file", result: "ok"},
 		&testTool{name: "write_file", result: "ok"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 
 	// Explore mode: no edit/write tools → should include exploration strategy.
 	exploreTools := tool.buildSubAgentTools("explore")
@@ -2356,12 +2561,12 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 		}
 	}
 
-	// Implement mode: has edit/write tools → should NOT include exploration strategy.
-	implTools := tool.buildSubAgentTools("implement")
-	implPrompt := buildSubAgentSystemPrompt(implTools, nil, "/workspace", "alpine:latest", nil)
+	// General mode: has edit/write tools → should NOT include exploration strategy.
+	generalTools := tool.buildSubAgentTools(ModeGeneral)
+	generalPrompt := buildSubAgentSystemPrompt(generalTools, nil, "/workspace", "alpine:latest", nil)
 
-	if strings.Contains(implPrompt, "Exploration strategy") {
-		t.Error("implement prompt should NOT contain exploration strategy section")
+	if strings.Contains(generalPrompt, "Exploration strategy") {
+		t.Error("general prompt should NOT contain exploration strategy section")
 	}
 }
 
@@ -2415,10 +2620,11 @@ func TestDeltaBatchingReducesEvents(t *testing.T) {
 
 	parentCh := make(chan AgentEvent, 4096)
 	tool := &SubAgentTool{
-		parentEvents: parentCh,
-		agentNodes:   make(map[string]agentNodeState),
-		maxTurns:     10,
-		doneTimeout:  2 * time.Second,
+		parentEvents:    parentCh,
+		agentNodes:      make(map[string]agentNodeState),
+		exploreMaxTurns: 10,
+		generalMaxTurns: 10,
+		doneTimeout:     2 * time.Second,
 	}
 
 	agent := NewAgent(client, nil, nil, "", "test-model", 0)
@@ -2431,7 +2637,7 @@ func TestDeltaBatchingReducesEvents(t *testing.T) {
 	go func() {
 		tool.runBackground(ctx, agent, agent.ID(),
 			subAgentInput{Task: "test", Mode: "explore"},
-			"test-model", subTC, state)
+			"test-model", 10, subTC, state)
 		close(doneRun)
 	}()
 
@@ -2588,7 +2794,7 @@ func TestSubAgentSynthesisTurnOnExceedMaxTurns(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
 	// maxTurns=2: turns 1,2 complete. Turn 3 triggers synthesis.
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 2, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 2, GeneralMaxTurns: 2, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"deep exploration","mode":"explore"}`))
 	if err != nil {
@@ -2660,7 +2866,7 @@ func TestSubAgentHardCancelAtMaxTurnsPlusOne(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
 	// maxTurns=1: turn 2 triggers synthesis, turn 3 triggers hard cancel.
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 1, GeneralMaxTurns: 1, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"runaway agent","mode":"explore"}`))
 	if err != nil {
@@ -2675,18 +2881,73 @@ func TestSubAgentHardCancelAtMaxTurnsPlusOne(t *testing.T) {
 	// The error message should indicate synthesis was attempted (not just "partial output").
 	// Due to the race between doneCh and eventCh, the error may or may not be captured.
 	// What we CAN verify: the agent terminated and produced partial output.
-	if !strings.Contains(result, "[agent_id:") {
-		t.Errorf("result should contain agent_id, got: %q", result)
+	if !strings.Contains(result, "[agent:") {
+		t.Errorf("result should contain [agent: header, got: %q", result)
 	}
 }
 
-func TestSubAgentSynthesisPromptConstant(t *testing.T) {
-	// Verify the synthesis prompt constant is well-formed.
-	if !strings.Contains(subAgentSynthesisPrompt, "Turn limit reached") {
-		t.Errorf("synthesis prompt should mention turn limit, got: %q", subAgentSynthesisPrompt)
+func TestSynthesisPromptFunction(t *testing.T) {
+	// Sub-agent synthesis (turn limit).
+	got := synthesisPrompt("Turn limit reached")
+	if !strings.Contains(got, "Turn limit reached") {
+		t.Errorf("synthesis prompt should mention reason, got: %q", got)
 	}
-	if !strings.Contains(subAgentSynthesisPrompt, "Do not request tools") {
-		t.Errorf("synthesis prompt should instruct no tools, got: %q", subAgentSynthesisPrompt)
+	if !strings.Contains(got, "Do not request tools") {
+		t.Errorf("synthesis prompt should instruct no tools, got: %q", got)
+	}
+	if !strings.Contains(got, "Key findings") {
+		t.Errorf("synthesis prompt should request structured output, got: %q", got)
+	}
+
+	// Main-agent synthesis (iteration limit).
+	got2 := synthesisPrompt("Tool iteration limit reached")
+	if !strings.Contains(got2, "Tool iteration limit reached") {
+		t.Errorf("synthesis prompt should mention iteration reason, got: %q", got2)
+	}
+	if !strings.Contains(got2, "Do not request tools") {
+		t.Errorf("synthesis prompt should instruct no tools, got: %q", got2)
+	}
+}
+
+func TestBuildResultSkipsSummarizationWhenSynthesisUsed(t *testing.T) {
+	// When synthesisUsed is true, buildResult should skip the model summarization
+	// call and use the output as-is (or truncate via summarizeOutput).
+	client := newTestClient("")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExplorationModel: "explore-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+
+	// Short output with synthesis — should pass through verbatim, no model call.
+	shortOutput := "STATUS: success\nFILES: main.go\nFINDINGS:\n- Found the bug\nNEXT: none"
+	result := tool.buildResult(context.Background(), "synth-agent", []string{shortOutput}, nil, 5, 10, true)
+	if !strings.Contains(result, shortOutput) {
+		t.Errorf("synthesis output should pass through verbatim, got: %q", result)
+	}
+	// Should NOT have "summary:model" since we skipped model summarization.
+	if strings.Contains(result, "summary:model") {
+		t.Errorf("should not use model summarization when synthesis was used, got: %q", result)
+	}
+
+	// Long output (>2KB) with synthesis — should use summarizeOutput truncation, not model.
+	longOutput := strings.Repeat("x", subAgentSummaryBytes+500)
+	result2 := tool.buildResult(context.Background(), "synth-long", []string{longOutput}, nil, 5, 10, true)
+	if strings.Contains(result2, "summary:model") {
+		t.Errorf("should not use model summarization for long synthesis output, got: %q", result2)
+	}
+	if !strings.Contains(result2, "full output in file above") {
+		t.Errorf("long synthesis output should be truncated, got: %q", result2)
+	}
+}
+
+func TestBuildResultUsesSummarizationWhenNoSynthesis(t *testing.T) {
+	// When synthesisUsed is false and output is short, should pass through without model.
+	client := newTestClient("")
+	tmpDir := t.TempDir()
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+
+	shortOutput := "Found function foo in bar.go"
+	result := tool.buildResult(context.Background(), "no-synth", []string{shortOutput}, nil, 3, 10, false)
+	if !strings.Contains(result, shortOutput) {
+		t.Errorf("short non-synthesis output should pass through, got: %q", result)
 	}
 }
 
@@ -2721,7 +2982,7 @@ func TestSubAgentTwoStageErrorMessage(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", 1, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 1, GeneralMaxTurns: 1, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"fast runaway","mode":"explore"}`))
 	if err != nil {
@@ -2883,7 +3144,7 @@ func TestIntegrationBudgetAwareSubAgentLifecycle(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", maxTurns, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: maxTurns, GeneralMaxTurns: maxTurns, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"analyze codebase","mode":"explore"}`))
 	if err != nil {
@@ -2927,17 +3188,17 @@ func TestIntegrationBudgetAwareSubAgentLifecycle(t *testing.T) {
 	}
 
 	// Result should show turns within budget (4 tool-call turns counted).
-	if !strings.Contains(result, "[turns:") {
+	if !strings.Contains(result, "turns:") {
 		t.Errorf("result should contain turns metadata, got: %q", result)
 	}
 	// The turn count should be 4 (tool-call turns only; text-only response doesn't count).
-	if !strings.Contains(result, fmt.Sprintf("[turns: 4/%d]", maxTurns)) {
+	if !strings.Contains(result, fmt.Sprintf("turns:4/%d", maxTurns)) {
 		t.Logf("turns metadata (may vary due to event races): %q", result)
 	}
 
-	// Token usage should be tracked.
-	if !strings.Contains(result, "[tokens:") {
-		t.Errorf("result should contain token metadata, got: %q", result)
+	// Token counts are omitted from the compact header (tracked via EventUsage).
+	if strings.Contains(result, "[tokens:") {
+		t.Errorf("compact result should NOT contain [tokens:], got: %q", result)
 	}
 }
 
@@ -2982,7 +3243,7 @@ func TestIntegrationSubAgentIgnoresBudgetGetsForcedSynthesis(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", maxTurns, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: maxTurns, GeneralMaxTurns: maxTurns, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"runaway exploration","mode":"explore"}`))
 	if err != nil {
@@ -2995,7 +3256,7 @@ func TestIntegrationSubAgentIgnoresBudgetGetsForcedSynthesis(t *testing.T) {
 	}
 
 	// The turn counter should show the agent exceeded its budget.
-	if !strings.Contains(result, "[turns:") {
+	if !strings.Contains(result, "turns:") {
 		t.Errorf("result should contain turns metadata, got: %q", result)
 	}
 
@@ -3060,7 +3321,7 @@ func TestIntegrationBackgroundSubAgentBudgetAwareness(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
 	parentEvents := make(chan AgentEvent, 256)
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", maxTurns, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: maxTurns, GeneralMaxTurns: maxTurns, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	tool.parentEvents = parentEvents
 
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"bg budget test","mode":"explore","background":true}`))
@@ -3069,9 +3330,9 @@ func TestIntegrationBackgroundSubAgentBudgetAwareness(t *testing.T) {
 	}
 
 	if !strings.Contains(result, "[agent_id:") {
-		t.Fatalf("expected [agent_id:] in result, got: %q", result)
+		t.Fatalf("expected [agent_id:] in background launch result, got: %q", result)
 	}
-	agentID := extractAgentID(t, result)
+	agentID := extractBgAgentID(t, result)
 
 	// Wait for background agent to complete.
 	waitForBgAgent(t, tool, agentID, 15*time.Second)
@@ -3164,7 +3425,7 @@ func TestIntegrationSubAgentSystemPromptIncludesTurnBudget(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", maxTurns, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: maxTurns, GeneralMaxTurns: maxTurns, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"verify prompts","mode":"explore"}`))
 	if err != nil {
@@ -3207,14 +3468,18 @@ func TestIntegrationSubAgentSystemPromptIncludesTurnBudget(t *testing.T) {
 	// Verify the loaded tool description for "agent" mentions the default turn budget.
 	// The tool's Definition().Description uses a fallback when the package-level
 	// toolDescriptions cache isn't initialized, so test the loader directly.
-	descs := loadToolDescriptions("alpine:latest", tmpDir)
+	descs := loadToolDescriptions("alpine:latest", tmpDir, 0, 0)
 	agentDesc, ok := descs["agent"]
 	if !ok {
 		t.Fatal("loadToolDescriptions should include 'agent' tool")
 	}
-	budgetStr := fmt.Sprintf("%d turns per sub-agent", defaultSubAgentMaxTurns)
-	if !strings.Contains(agentDesc.Full, budgetStr) {
-		t.Errorf("agent tool description should mention %q", budgetStr)
+	exploreStr := fmt.Sprintf("Explore mode gets %d turns", defaultExploreMaxTurns)
+	if !strings.Contains(agentDesc.Full, exploreStr) {
+		t.Errorf("agent tool description should mention %q", exploreStr)
+	}
+	generalStr := fmt.Sprintf("general mode gets %d turns", defaultGeneralMaxTurns)
+	if !strings.Contains(agentDesc.Full, generalStr) {
+		t.Errorf("agent tool description should mention %q", generalStr)
 	}
 }
 
@@ -3314,7 +3579,7 @@ func TestPromptCachingPreservedAcrossTurns(t *testing.T) {
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
 	tmpDir := t.TempDir()
-	tool := NewSubAgentTool(client, []Tool{mockTool}, nil, "test-model", "", maxTurns, 3, 0, tmpDir, "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: maxTurns, GeneralMaxTurns: maxTurns, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test caching","mode":"explore"}`))
 	if err != nil {
@@ -3351,5 +3616,206 @@ func TestPromptCachingPreservedAcrossTurns(t *testing.T) {
 		if !strings.Contains(reminder, "Budget:") {
 			t.Errorf("call %d <system-reminder> should contain Budget line, got: %q", i+1, reminder)
 		}
+	}
+}
+
+// --- Phase 2d: Shared drain loop tests ---
+
+// TestDrainConsistencyForegroundBackground verifies that the shared drain loop
+// produces equivalent text content and turn counts for foreground and background.
+func TestDrainConsistencyForegroundBackground(t *testing.T) {
+	const expectedText = "shared drain output"
+	tmpDir := t.TempDir()
+
+	// Foreground.
+	fgClient := newTestClient(expectedText)
+	fgTool := NewSubAgentTool(SubAgentConfig{Client: fgClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+	fgResult, err := fgTool.Execute(context.Background(), json.RawMessage(`{"task":"drain test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("foreground Execute error: %v", err)
+	}
+
+	// Background.
+	bgClient := newTestClient(expectedText)
+	parentEvents := make(chan AgentEvent, 4096)
+	bgTool := NewSubAgentTool(SubAgentConfig{Client: bgClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+	bgTool.parentEvents = parentEvents
+
+	launchResult, err := bgTool.Execute(context.Background(), json.RawMessage(`{"task":"drain test","mode":"explore","background":true}`))
+	if err != nil {
+		t.Fatalf("background Execute error: %v", err)
+	}
+
+	// Extract agentID from background launch result.
+	prefix := "[agent_id: "
+	idx := strings.Index(launchResult, prefix)
+	if idx < 0 {
+		t.Fatalf("launch result missing agent_id: %q", launchResult)
+	}
+	rest := launchResult[idx+len(prefix):]
+	end := strings.Index(rest, "]")
+	agentID := rest[:end]
+
+	waitForBgAgent(t, bgTool, agentID, 10*time.Second)
+
+	bgFinalResult, err := bgTool.bgAgentStatus(agentID)
+	if err != nil {
+		t.Fatalf("bgAgentStatus error: %v", err)
+	}
+
+	// Both should contain the expected text.
+	if !strings.Contains(fgResult, expectedText) {
+		t.Errorf("foreground missing text: %q", fgResult)
+	}
+	if !strings.Contains(bgFinalResult, expectedText) {
+		t.Errorf("background missing text: %q", bgFinalResult)
+	}
+
+	// Both should report turns:0/10 (text-only response, no tool calls).
+	if !strings.Contains(fgResult, "turns:0/10") {
+		t.Errorf("foreground missing turn count turns:0/10: %q", fgResult)
+	}
+	if !strings.Contains(bgFinalResult, "turns:0/10") {
+		t.Errorf("background missing turn count turns:0/10: %q", bgFinalResult)
+	}
+
+	// Token counts are omitted from the compact header (tracked via EventUsage).
+	if strings.Contains(fgResult, "[tokens:") {
+		t.Errorf("foreground should NOT contain [tokens:]: %q", fgResult)
+	}
+	if strings.Contains(bgFinalResult, "[tokens:") {
+		t.Errorf("background should NOT contain [tokens:]: %q", bgFinalResult)
+	}
+
+	// Wait for background goroutine to fully exit before TempDir cleanup.
+	bgTool.DrainGoroutines(5 * time.Second)
+}
+
+// TestDrainForegroundDeltaForwarderReceivesAllText verifies that the foreground
+// deltaForwarder callback (t.forward) receives all text from the drain loop.
+func TestDrainForegroundDeltaForwarderReceivesAllText(t *testing.T) {
+	const expectedText = "all deltas forwarded"
+	client := newTestClient(expectedText)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 256)
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+	tool.parentEvents = parentEvents
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test deltas","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Collect all delta text from forwarded events.
+	close(parentEvents)
+	var deltaText strings.Builder
+	for ev := range parentEvents {
+		if ev.Type == EventSubAgentDelta {
+			deltaText.WriteString(ev.Text)
+		}
+	}
+
+	// The combined delta text should match the agent's output.
+	if !strings.Contains(deltaText.String(), expectedText) {
+		t.Errorf("delta forwarder text = %q, want to contain %q", deltaText.String(), expectedText)
+	}
+}
+
+// TestDrainBackgroundDeltaBatchingCallbackInvoked verifies that the background
+// delta batching callback accumulates text and eventually forwards it.
+func TestDrainBackgroundDeltaBatchingCallbackInvoked(t *testing.T) {
+	const expectedText = "batched delta output"
+	client := newTestClient(expectedText)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 4096)
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+	tool.parentEvents = parentEvents
+
+	_, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"test batching","mode":"explore","background":true}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Wait for done event (background completion).
+	deadline := time.After(10 * time.Second)
+	var deltaText strings.Builder
+	gotDone := false
+	for !gotDone {
+		select {
+		case ev := <-parentEvents:
+			switch ev.Type {
+			case EventSubAgentDelta:
+				deltaText.WriteString(ev.Text)
+			case EventSubAgentStatus:
+				if ev.Text == "done" {
+					gotDone = true
+				}
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for background agent done")
+		}
+	}
+
+	// Wait for background goroutine to fully exit before TempDir cleanup.
+	tool.DrainGoroutines(5 * time.Second)
+
+	// The accumulated delta text should contain the expected output.
+	if !strings.Contains(deltaText.String(), expectedText) {
+		t.Errorf("batched delta text = %q, want to contain %q", deltaText.String(), expectedText)
+	}
+}
+
+// TestDrainConsistencyWithToolCalls verifies that the shared drain loop correctly
+// counts turns and forwards tool status events for both foreground and background
+// when the agent makes tool calls.
+func TestDrainConsistencyWithToolCalls(t *testing.T) {
+	mockTool := &firstFreeBlockingTool{name: "test_tool", free: 2, release: make(chan struct{})}
+	defer close(mockTool.release)
+
+	prov := &failThenSucceedProvider{
+		model:       "test-model",
+		failOnCalls: map[int]error{},
+		responses: []scriptedResponse{
+			{
+				text: "Turn one.",
+				toolCalls: []types.ContentBlock{
+					{Type: "tool_use", ID: "tu1", Name: "test_tool", Input: json.RawMessage(`{}`)},
+				},
+				tokensIn: 100, tokensOut: 50,
+			},
+			{text: "Turn two result.", tokensIn: 100, tokensOut: 50},
+		},
+	}
+	store := newMockStorage()
+	client := langdag.NewWithDeps(store, prov)
+	tmpDir := t.TempDir()
+
+	parentEvents := make(chan AgentEvent, 4096)
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, Tools: []Tool{mockTool}, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
+	tool.parentEvents = parentEvents
+
+	result, err := tool.Execute(context.Background(), json.RawMessage(`{"task":"tool call test","mode":"explore"}`))
+	if err != nil {
+		t.Fatalf("Execute error: %v", err)
+	}
+
+	// Should have 1 turn (the response with a tool call). The final text-only
+	// response does not increment the turn counter since it has no tool calls.
+	if !strings.Contains(result, "turns:1/10") {
+		t.Errorf("expected turns:1/10 in result: %q", result)
+	}
+
+	// Verify tool status was forwarded.
+	close(parentEvents)
+	gotToolStatus := false
+	for ev := range parentEvents {
+		if ev.Type == EventSubAgentStatus && strings.Contains(ev.Text, "tool: test_tool") {
+			gotToolStatus = true
+		}
+	}
+	if !gotToolStatus {
+		t.Error("expected tool status event to be forwarded during drain")
 	}
 }

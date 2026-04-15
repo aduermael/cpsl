@@ -190,7 +190,7 @@ type AgentEvent struct {
 
 	// EventSubAgentStart
 	Task    string // sub-agent task description
-	Mode    string // sub-agent mode ("explore" or "implement")
+	Mode    string // sub-agent mode ("explore" or "general")
 	RetryOf string // ID of the failed agent being retried (empty for new agents)
 
 	// EventSubAgentStatus (done)
@@ -577,14 +577,9 @@ func (a *Agent) gracefulExhaustion(ctx context.Context, lastNodeID string) strin
 	// These haven't been shown to the model yet.
 	bgResults := a.drainBackgroundResults()
 
-	// Build the final synthesis message. Budget stats go in the user message
-	// as a <system-reminder> so the model sees its budget state for scoping.
+	// Build the final synthesis message.
 	var msg strings.Builder
-	if reminder := a.budgetReminderBlock(); reminder.Text != "" {
-		msg.WriteString(reminder.Text)
-		msg.WriteString("\n\n")
-	}
-	msg.WriteString("[SYSTEM: Tool iteration limit reached. Synthesize a final response from the conversation so far. Do NOT request any tools — this is your last turn.]")
+	msg.WriteString(synthesisPrompt("Tool iteration limit reached"))
 	if len(bgResults) > 0 {
 		msg.WriteString("\n\n[Background agent results:]\n")
 		for i, r := range bgResults {
@@ -796,16 +791,14 @@ func (a *Agent) turnBudgetLine() string {
 
 	switch {
 	case progress >= turnBudgetFinalThreshold:
-		return fmt.Sprintf("Budget: Turn %d/%d — %d turn remaining | %d tokens used\n"+
-			"🛑 FINAL TURN: Produce your complete summary NOW. Do not make any more tool calls. Write your findings as a final response.",
-			used, maxT, remaining, totalTokens)
+		return fmt.Sprintf("Budget: Turn %d/%d — FINAL, produce summary, no tools.",
+			used, maxT)
 	case progress >= turnBudgetLateThreshold:
-		return fmt.Sprintf("Budget: Turn %d/%d — %d turns remaining | %d tokens used\n"+
-			"⚠️ Wrap up: You're running low on turns. Stop exploring and begin synthesizing your findings. Your next response should start producing output.",
-			used, maxT, remaining, totalTokens)
+		return fmt.Sprintf("Budget: Turn %d/%d — %d left, wrap up NOW.",
+			used, maxT, remaining)
 	case progress >= turnBudgetMidThreshold:
-		return fmt.Sprintf("Budget: Turn %d/%d | %d tokens used — you're past halfway. Start narrowing your focus.",
-			used, maxT, totalTokens)
+		return fmt.Sprintf("Budget: Turn %d/%d — past halfway, narrow focus.",
+			used, maxT)
 	default:
 		return fmt.Sprintf("Budget: Turn %d/%d | %d tokens used",
 			used, maxT, totalTokens)
@@ -820,6 +813,20 @@ func (a *Agent) turnBudgetLine() string {
 // This block is prepended to the user message (tool results) on follow-up LLM
 // calls, keeping the system prompt fully static for prompt caching.
 func (a *Agent) budgetReminderBlock() types.ContentBlock {
+	// Sub-agent fast path: only emit the turn budget line. Sub-agents have
+	// maxTurns > 0 and contextWindow == 0, so session stats, context window
+	// utilization, and iteration warnings are all dead/redundant for them.
+	if a.maxTurns > 0 && a.contextWindow == 0 {
+		budget := a.turnBudgetLine()
+		if budget == "" {
+			return types.ContentBlock{}
+		}
+		return types.ContentBlock{
+			Type: "text",
+			Text: "<system-reminder>\n" + budget + "\n</system-reminder>",
+		}
+	}
+
 	var extra []string
 
 	// Session stats line: tokens, agent calls, and cost.
@@ -858,7 +865,9 @@ func (a *Agent) budgetReminderBlock() types.ContentBlock {
 		extra = append(extra, fmt.Sprintf("You're past halfway through your tool iterations (%d/%d remaining). Start focusing on your most important tasks.", remaining, maxIter))
 	}
 
-	// Turn budget display for sub-agents.
+	// Turn budget display for sub-agents (main agent path — maxTurns == 0 so
+	// this is a no-op, but kept for completeness if maxTurns is ever used for
+	// main agents with a context window).
 	if budget := a.turnBudgetLine(); budget != "" {
 		extra = append(extra, budget)
 	}
@@ -927,8 +936,13 @@ func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTok
 		return clearable[i].size > clearable[j].size
 	})
 
+	// Track estimated input tokens; stop clearing once below threshold.
+	estimatedTokens := inputTokens
 	storage := a.client.Storage()
 	for _, c := range clearable {
+		if estimatedTokens < threshold {
+			break
+		}
 		// Already cleared?
 		if strings.Contains(c.node.Content, `"[output cleared]"`) {
 			continue
@@ -938,8 +952,11 @@ func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTok
 		if replaced == c.node.Content {
 			continue
 		}
+		// Estimate tokens freed: ~4 bytes per token.
+		freedTokens := (c.size - len(replaced)) / 4
 		c.node.Content = replaced
 		_ = storage.UpdateNode(ctx, c.node)
+		estimatedTokens -= freedTokens
 	}
 }
 

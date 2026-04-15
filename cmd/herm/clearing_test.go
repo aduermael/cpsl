@@ -338,3 +338,76 @@ func TestClearOldToolResultsTooFewCandidates(t *testing.T) {
 		}
 	}
 }
+
+// TestClearOldToolResultsStopsEarlyWhenBelowBudget verifies that clearing stops
+// once estimated input tokens drop below the 80% threshold, preserving context
+// when only a few large tool results are the bottleneck.
+func TestClearOldToolResultsStopsEarlyWhenBelowBudget(t *testing.T) {
+	store := newClearingMockStorage()
+	prov := &mockProvider{model: "test-model"}
+	client := langdag.NewWithDeps(store, prov)
+
+	// Context window: 100k tokens. Threshold: 80k (80%).
+	// Input tokens: 85000 (5000 over threshold).
+	// Create 6 tool result nodes: keep last 4, first 2 are clearable.
+	// result-a: 24000 bytes ≈ 6000 tokens freed — enough to drop below 80k.
+	// result-b: 10000 bytes ≈ 2500 tokens freed — should NOT be cleared.
+	now := time.Now()
+	nodes := []*types.Node{
+		{ID: "root", NodeType: types.NodeTypeUser, Content: "hello", CreatedAt: now},
+	}
+
+	sizes := []int{24000, 10000, 4000, 4000, 4000, 4000}
+	for i := 0; i < 6; i++ {
+		parentID := nodes[len(nodes)-1].ID
+		assistantID := "asst-" + string(rune('a'+i))
+		resultID := "result-" + string(rune('a'+i))
+
+		assistantContent, _ := json.Marshal([]types.ContentBlock{
+			{Type: "text", Text: "Let me check."},
+			{Type: "tool_use", ID: "call_" + string(rune('a'+i)), Name: "bash", Input: json.RawMessage(`{"command":"ls"}`)},
+		})
+		nodes = append(nodes, &types.Node{
+			ID: assistantID, ParentID: parentID, NodeType: types.NodeTypeAssistant,
+			Content: string(assistantContent), Model: "test-model",
+		})
+
+		resultContent := toolResultContent("call_"+string(rune('a'+i)), strings.Repeat("x", sizes[i]))
+		nodes = append(nodes, &types.Node{
+			ID: resultID, ParentID: assistantID, NodeType: types.NodeTypeUser,
+			Content: resultContent,
+		})
+	}
+
+	nodes = append(nodes, &types.Node{
+		ID: "final-asst", ParentID: nodes[len(nodes)-1].ID,
+		NodeType: types.NodeTypeAssistant, Content: "done", Model: "test-model",
+	})
+
+	var ancestorIDs []string
+	for _, n := range nodes {
+		_ = store.CreateNode(context.Background(), n)
+		ancestorIDs = append(ancestorIDs, n.ID)
+	}
+	store.ancestorChains["final-asst"] = ancestorIDs
+
+	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+
+	// 85000 input tokens, threshold 80000. Clearing result-a (24000 bytes ≈
+	// 6000 tokens) brings estimated tokens below 80000, so result-b should
+	// be preserved.
+	agent.clearOldToolResults(context.Background(), "final-asst", 85000)
+
+	resultA, _ := store.GetNode(context.Background(), "result-a")
+	resultB, _ := store.GetNode(context.Background(), "result-b")
+
+	// result-a (largest, cleared first) should be cleared.
+	if !strings.Contains(resultA.Content, "[output cleared]") {
+		t.Error("result-a should have been cleared (largest, first in sort order)")
+	}
+
+	// result-b should be preserved — clearing result-a was sufficient.
+	if strings.Contains(resultB.Content, "[output cleared]") {
+		t.Error("result-b should NOT have been cleared (budget already below threshold after clearing result-a)")
+	}
+}

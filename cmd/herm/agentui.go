@@ -193,15 +193,19 @@ func (a *App) startAgent(userMessage string) {
 		containerImage = defaultContainerImage
 	}
 
-	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
-	toolDescriptions = loadToolDescriptions(containerImage, workDir)
-
 	// Sub-agent tool: output-only communication, no shared memory.
 	// Uses exploration model if configured, otherwise falls back to active model.
-	maxTurns := a.config.SubAgentMaxTurns
-	if maxTurns <= 0 {
-		maxTurns = defaultSubAgentMaxTurns
+	exploreMaxTurns := a.config.ExploreMaxTurns
+	if exploreMaxTurns <= 0 {
+		exploreMaxTurns = a.config.SubAgentMaxTurns // legacy fallback
 	}
+	generalMaxTurns := a.config.GeneralMaxTurns
+	if generalMaxTurns <= 0 {
+		generalMaxTurns = a.config.SubAgentMaxTurns // legacy fallback
+	}
+
+	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
+	toolDescriptions = loadToolDescriptions(containerImage, workDir, exploreMaxTurns, generalMaxTurns)
 	maxDepth := a.config.MaxAgentDepth
 	if maxDepth <= 0 {
 		maxDepth = defaultMaxAgentDepth
@@ -211,7 +215,19 @@ func (a *App) startAgent(userMessage string) {
 	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
 		subAgentServerTools = nil
 	}
-	subAgentTool := NewSubAgentTool(a.langdagClient, tools, subAgentServerTools, modelID, explorationModelID, maxTurns, maxDepth, 0, workDir, a.config.Personality, containerImage)
+	subAgentTool := NewSubAgentTool(SubAgentConfig{
+		Client:           a.langdagClient,
+		Tools:            tools,
+		ServerTools:      subAgentServerTools,
+		MainModel:        modelID,
+		ExplorationModel: explorationModelID,
+		ExploreMaxTurns:  exploreMaxTurns,
+		GeneralMaxTurns:  generalMaxTurns,
+		MaxDepth:         maxDepth,
+		WorkDir:          workDir,
+		Personality:      a.config.Personality,
+		ContainerImage:   containerImage,
+	})
 	tools = append(tools, subAgentTool)
 
 	var wtBranch string

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // --- Phase 4: fetchProjectSnapshot tests ---
@@ -345,5 +346,151 @@ func TestBuildProjectTree_HiddenFilesExcluded(t *testing.T) {
 	}
 	if !strings.Contains(result, "visible.txt") {
 		t.Error("visible files should be included")
+	}
+}
+
+// --- Phase 5: snapshot caching and explore-mode context stripping ---
+
+func TestCachedSnapshot_ReusedWithinTTL(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
+
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
+
+	// First call populates the cache.
+	snap1 := tool.cachedSnapshot()
+	if snap1.TopLevel == "" {
+		t.Fatal("first cachedSnapshot should return non-empty TopLevel")
+	}
+	cacheTime1 := tool.snapTime
+
+	// Second call within TTL should return the cached snapshot.
+	snap2 := tool.cachedSnapshot()
+	cacheTime2 := tool.snapTime
+
+	if cacheTime2 != cacheTime1 {
+		t.Error("snapTime should not change for a cache hit within TTL")
+	}
+	if snap2.TopLevel != snap1.TopLevel {
+		t.Error("cached snapshot should return identical TopLevel")
+	}
+}
+
+func TestCachedSnapshot_RefreshedAfterTTL(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
+
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
+
+	// Populate cache.
+	tool.cachedSnapshot()
+	originalTime := tool.snapTime
+
+	// Artificially expire the cache by backdating snapTime.
+	tool.snapMu.Lock()
+	tool.snapTime = time.Now().Add(-snapshotCacheTTL - time.Second)
+	tool.snapMu.Unlock()
+
+	// Next call should fetch a fresh snapshot.
+	tool.cachedSnapshot()
+	if !tool.snapTime.After(originalTime) {
+		t.Error("snapTime should be updated after TTL expiry")
+	}
+}
+
+func TestCachedSnapshot_ConcurrentAccess(t *testing.T) {
+	tmp := t.TempDir()
+	os.WriteFile(filepath.Join(tmp, "file.txt"), []byte("hello"), 0o644)
+
+	tool := NewSubAgentTool(SubAgentConfig{ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: tmp})
+
+	// Spawn multiple goroutines to exercise the mutex.
+	done := make(chan projectSnapshot, 10)
+	for i := 0; i < 10; i++ {
+		go func() {
+			done <- tool.cachedSnapshot()
+		}()
+	}
+
+	var first projectSnapshot
+	for i := 0; i < 10; i++ {
+		snap := <-done
+		if i == 0 {
+			first = snap
+		}
+		if snap.TopLevel != first.TopLevel {
+			t.Error("concurrent cachedSnapshot calls should return consistent results")
+		}
+	}
+}
+
+func TestExploreModeSkipsGitStatus(t *testing.T) {
+	snap := &projectSnapshot{
+		TopLevel:      "src/\npackage.json",
+		RecentCommits: "aaa111 fix bug",
+		GitStatus:     "M main.go\n?? new.txt",
+	}
+
+	allTools := []Tool{
+		&stubTool{"bash"},
+		&stubTool{"read_file"},
+		&stubTool{"glob"},
+		&stubTool{"grep"},
+		&stubTool{"edit_file"},
+		&stubTool{"write_file"},
+	}
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
+
+	// Explore mode: strip GitStatus before building prompt.
+	exploreSnap := *snap
+	exploreSnap.GitStatus = ""
+	exploreTools := tool.buildSubAgentTools(ModeExplore)
+	explorePrompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", &exploreSnap)
+
+	if strings.Contains(explorePrompt, "M main.go") {
+		t.Error("explore-mode prompt should NOT contain git status content")
+	}
+	if strings.Contains(explorePrompt, "Uncommitted changes") {
+		t.Error("explore-mode prompt should NOT contain 'Uncommitted changes' section")
+	}
+	// Should still have project tree and commits.
+	if !strings.Contains(explorePrompt, "src/") {
+		t.Error("explore-mode prompt should contain project tree")
+	}
+	if !strings.Contains(explorePrompt, "fix bug") {
+		t.Error("explore-mode prompt should contain recent commits")
+	}
+}
+
+func TestGeneralModeGetsFullContext(t *testing.T) {
+	snap := &projectSnapshot{
+		TopLevel:      "src/\npackage.json",
+		RecentCommits: "aaa111 fix bug",
+		GitStatus:     "M main.go\n?? new.txt",
+	}
+
+	allTools := []Tool{
+		&stubTool{"bash"},
+		&stubTool{"read_file"},
+		&stubTool{"glob"},
+		&stubTool{"grep"},
+		&stubTool{"edit_file"},
+		&stubTool{"write_file"},
+	}
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
+	generalTools := tool.buildSubAgentTools(ModeGeneral)
+	generalPrompt := buildSubAgentSystemPrompt(generalTools, nil, "/workspace", "alpine:latest", snap)
+
+	if !strings.Contains(generalPrompt, "M main.go") {
+		t.Error("general-mode prompt should contain git status content")
+	}
+	if !strings.Contains(generalPrompt, "Uncommitted changes") {
+		t.Error("general-mode prompt should contain 'Uncommitted changes' section")
+	}
+	if !strings.Contains(generalPrompt, "src/") {
+		t.Error("general-mode prompt should contain project tree")
+	}
+	if !strings.Contains(generalPrompt, "fix bug") {
+		t.Error("general-mode prompt should contain recent commits")
 	}
 }

@@ -88,7 +88,7 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 		Date:                    time.Now().Format("2006-01-02 15:04 MST"),
 		Personality:             personality,
 		Skills:                  skills,
-		DefaultSubAgentMaxTurns: defaultSubAgentMaxTurns,
+		DefaultSubAgentMaxTurns: defaultGeneralMaxTurns,
 	}
 
 	data.ContainerEnv = readContainerEnv(workDir)
@@ -160,7 +160,7 @@ func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition,
 		ContainerEnv:            readContainerEnv(workDir),
 		WorkDir:                 workDir,
 		Date:                    time.Now().Format("2006-01-02 15:04 MST"),
-		DefaultSubAgentMaxTurns: defaultSubAgentMaxTurns,
+		DefaultSubAgentMaxTurns: defaultGeneralMaxTurns,
 		// Personality, Skills, WorktreeBranch intentionally omitted for sub-agents.
 	}
 

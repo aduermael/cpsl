@@ -64,7 +64,7 @@ func TestSubAgentDisplayStateTransitions(t *testing.T) {
 	t.Run("done captures tokens and not failed", func(t *testing.T) {
 		app := &App{headless: true, width: 80}
 		app.handleAgentEvent(AgentEvent{
-			Type: EventSubAgentStart, AgentID: agentID, Task: "work", Mode: "implement",
+			Type: EventSubAgentStart, AgentID: agentID, Task: "work", Mode: ModeGeneral,
 		})
 		app.handleAgentEvent(AgentEvent{
 			Type:    EventSubAgentStatus,
@@ -195,12 +195,12 @@ func TestSubAgentGroupedDisplay(t *testing.T) {
 	t.Run("single agent shows singular header", func(t *testing.T) {
 		app := &App{headless: true, width: 80}
 		app.subAgents = map[string]*subAgentDisplay{
-			"a1": {task: "Implement feature", mode: "implement", startTime: time.Now()},
+			"a1": {task: "Implement feature", mode: ModeGeneral, startTime: time.Now()},
 		}
 		lines := app.subAgentDisplayLines()
 		header := stripANSI(lines[0])
-		if !strings.Contains(header, "Implement agent") {
-			t.Errorf("header = %q, want to contain 'Implement agent'", header)
+		if !strings.Contains(header, "General agent") {
+			t.Errorf("header = %q, want to contain 'General agent'", header)
 		}
 	})
 
@@ -209,7 +209,7 @@ func TestSubAgentGroupedDisplay(t *testing.T) {
 		now := time.Now()
 		app.subAgents = map[string]*subAgentDisplay{
 			"a1": {task: "Research", mode: "explore", startTime: now},
-			"a2": {task: "Write code", mode: "implement", startTime: now},
+			"a2": {task: "Write code", mode: ModeGeneral, startTime: now},
 		}
 		lines := app.subAgentDisplayLines()
 		// Should have 2 headers + 2 agent lines = 4.
@@ -361,7 +361,7 @@ func TestSubAgentFailedEmitsMessage(t *testing.T) {
 	// Verify that failed sub-agent completion does append a msgInfo message.
 	app := &App{headless: true, width: 80}
 	app.handleAgentEvent(AgentEvent{
-		Type: EventSubAgentStart, AgentID: "a1", Task: "risky work", Mode: "implement",
+		Type: EventSubAgentStart, AgentID: "a1", Task: "risky work", Mode: ModeGeneral,
 	})
 	app.handleAgentEvent(AgentEvent{
 		Type:    EventSubAgentStatus,
@@ -3378,7 +3378,7 @@ func TestSessionRestoreSuppressesBackgroundAgentToolMessages(t *testing.T) {
 		app := &App{width: 80}
 
 		assistantContent, _ := json.Marshal([]types.ContentBlock{
-			{Type: "tool_use", ID: "tc-fg", Name: "agent", Input: json.RawMessage(`{"task":"Implement feature","mode":"implement"}`)},
+			{Type: "tool_use", ID: "tc-fg", Name: "agent", Input: json.RawMessage(`{"task":"Implement feature","mode":"general"}`)},
 		})
 		toolResultContent, _ := json.Marshal([]types.ContentBlock{
 			{Type: "tool_result", ToolUseID: "tc-fg", Content: "Agent completed."},
@@ -3574,7 +3574,7 @@ func TestIntegrationExplorePromptProgressiveDepth(t *testing.T) {
 		&stubTool{"edit_file"},
 		&stubTool{"write_file"},
 	}
-	tool := NewSubAgentTool(nil, allTools, nil, "", "", 10, 1, 0, "/workspace", "", "alpine:latest")
+	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	exploreTools := tool.buildSubAgentTools("explore")
 	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
 

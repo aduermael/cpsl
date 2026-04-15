@@ -492,7 +492,7 @@ type subAgentDisplay struct {
 	task         string    // task label (first ~40 chars of the task description)
 	status       string    // current activity (tool name or text snippet)
 	done         bool
-	mode         string    // "explore" or "implement"
+	mode         string    // "explore" or "general"
 	toolCount    int       // number of tool calls executed
 	startTime    time.Time // when this sub-agent started
 	completedAt  time.Time // when this sub-agent finished (zero if still running)
@@ -573,8 +573,8 @@ func (a *App) subAgentDisplayLines() []string {
 		groups[mode] = append(groups[mode], sa)
 	}
 
-	// Stable ordering: explore first, then implement, then other.
-	modeOrder := []string{"explore", "implement"}
+	// Stable ordering: explore first, then general, then other.
+	modeOrder := []string{ModeExplore, ModeGeneral}
 	for mode := range groups {
 		found := false
 		for _, m := range modeOrder {
