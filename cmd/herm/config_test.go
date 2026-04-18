@@ -723,6 +723,7 @@ func defaultTestModels() []ModelDef {
 		{Provider: ProviderAnthropic, ID: "claude-sonnet-4-6"},
 		{Provider: ProviderAnthropic, ID: "claude-haiku-4-5"},
 		{Provider: ProviderAnthropic, ID: "claude-opus-4-6"},
+		{Provider: ProviderAnthropic, ID: "claude-opus-4-7"},
 		{Provider: ProviderOpenAI, ID: "gpt-4.1-2025-04-14"},
 		{Provider: ProviderOpenAI, ID: "gpt-4.1-mini-2025-04-14"},
 		{Provider: ProviderGrok, ID: "grok-3"},
