@@ -144,7 +144,7 @@ constrained.
 - [x] 1a: Scaffold `tools/ci-check/` — `go.mod`, `main.go` with subcommand
   dispatch, shared file-walker and AST-parse helpers, shared violation
   reporter. No rules wired yet.
-- [ ] 1b: Implement `file-length` rule in the new binary, parameterised by a
+- [x] 1b: Implement `file-length` rule in the new binary, parameterised by a
   max-lines flag (default 1000). Reuse the shared walker.
 - [ ] 1c: Implement `docstring` rule (floor 60 chars, ceiling 3 lines) using
   `ast.File.Doc`.
