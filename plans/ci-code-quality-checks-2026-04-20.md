@@ -87,24 +87,31 @@ constrained.
 - Variadic final parameter is allowed alongside at most one regular param
   (`func foo(x int, args ...string)` is fine).
 - Interface method declarations (`*ast.InterfaceType` fields) are **not**
-  checked in the first cut — see open questions.
-- `context.Context` as the first param: see open questions.
+  checked.
+- `context.Context` as the first param is **exempt** from the count.
 
 ---
 
-## Open Questions (resolve before Phase 4 starts)
+## Resolved Decisions
 
-1. **ctx exemption** — should `ctx context.Context` as the first param be
-   excluded from the positional count? Standard Go idiom argues yes; a strict
-   reading of "0 or 1" argues no. Default proposal: **yes, exempt**.
-2. **Interface method declarations** — check them, or skip? Default: **skip**.
-3. **Migration scope** — enforce positional-params rule against all directories
-   at once, or start with `cmd/herm` and extend? Default: **all at once** after
-   Phase 4 refactor completes.
-4. **Workflow consolidation scope** — merge the three length checks
-   (file-length, docstring, positional-params) into one workflow; keep
-   `prompt-length.yml` separate since prompts are not source code. Default:
-   **merge the three, keep prompts standalone**.
+1. **ctx exemption** — `ctx context.Context` as the first param is **exempt**
+   from the positional count. A signature like `func Foo(ctx context.Context,
+   x int)` passes; `func Foo(ctx context.Context, x int, y int)` does not
+   (still > 1 non-ctx positional param).
+2. **Interface method declarations** — **not checked**. Only `*ast.FuncDecl`
+   nodes are scanned; interface `*ast.InterfaceType` fields are skipped.
+3. **Migration scope** — refactor **all directories at once** in Phase 4. If a
+   specific call site turns out to be too invasive to refactor cleanly, flag it
+   on the commit and bring it back to the user rather than splitting into a
+   phased rollout.
+4. **Workflow consolidation** — merge the three source-code rules into a
+   single workflow file `.github/workflows/ci-checks.yml`, but use **one
+   GitHub Actions job per rule** so file-length, docstring, and
+   positional-params each show up as distinct status checks in the PR UI.
+   Jobs share a common `build-ci-check` job that compiles the binary once and
+   uploads it as an artifact (or, simpler, each job rebuilds — decide at
+   implementation time based on whichever is faster and DRYer). `prompt-length.yml`
+   stays standalone — prompts are not source code.
 
 ---
 
@@ -142,7 +149,8 @@ constrained.
 - [ ] 1c: Implement `docstring` rule (floor 60 chars, ceiling 3 lines) using
   `ast.File.Doc`.
 - [ ] 1d: Implement `positional-params` rule (receiver excluded, variadic
-  allowed, `context.Context` exempt pending open-question resolution).
+  allowed as final param, `context.Context` as first param exempt, interface
+  methods not scanned).
 - [ ] 1e: Add fixture-based tests in `tools/ci-check/` covering pass/fail for
   each rule, including exclusion-set edge cases.
 
@@ -171,10 +179,11 @@ constrained.
 
 ## Phase 3: Enforce file-length + docstring rules
 
-- [ ] 3a: Replace `.github/workflows/source-file-length.yml` with a unified
-  `.github/workflows/ci-checks.yml` that builds `tools/ci-check` and runs
-  `ci-check file-length` (max 1000) and `ci-check docstring`. Delete the
-  superseded workflow file.
+- [ ] 3a: Create `.github/workflows/ci-checks.yml` with one job per rule:
+  `file-length` (max 1000), `docstring`, and `positional-params`. The
+  `positional-params` job starts in warning mode (`continue-on-error: true`)
+  so it stays visible in the PR UI without blocking until Phase 5. Delete
+  `.github/workflows/source-file-length.yml`.
 - [ ] 3b: Run the new workflow locally, fix any stragglers surfaced by the
   docstring rule or by Phase 2 splits (e.g., new files missing doc comments).
 
@@ -195,10 +204,13 @@ constrained.
 
 ## Phase 5: Enforce positional-params rule
 
-- [ ] 5a: Turn `ci-check positional-params` from a warning into a hard fail in
-  `.github/workflows/ci-checks.yml` after confirming no remaining violations.
+- [ ] 5a: Flip the `positional-params` job in `.github/workflows/ci-checks.yml`
+  from `continue-on-error: true` to a hard fail after confirming no remaining
+  violations across `cmd/herm/` and `tools/`.
 - [ ] 5b: Update `GUIDELINES.md` with a short section describing the three
-  enforced rules and pointing at `tools/ci-check/`.
+  enforced rules (file length ≤ 1000, ≤ 1 positional param with `ctx`
+  exempt, file docstring ≥ 60 chars / ≤ 3 lines) and pointing at
+  `tools/ci-check/`.
 
 ## Phase 6: Cleanup
 
