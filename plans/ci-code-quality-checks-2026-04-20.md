@@ -141,7 +141,7 @@ constrained.
 
 ## Phase 1: CI checker foundation
 
-- [ ] 1a: Scaffold `tools/ci-check/` — `go.mod`, `main.go` with subcommand
+- [x] 1a: Scaffold `tools/ci-check/` — `go.mod`, `main.go` with subcommand
   dispatch, shared file-walker and AST-parse helpers, shared violation
   reporter. No rules wired yet.
 - [ ] 1b: Implement `file-length` rule in the new binary, parameterised by a
