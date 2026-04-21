@@ -167,10 +167,11 @@ constrained.
   `subagent_drain.go`. Move `drainSubAgentEvents`, `drainOptions`,
   `drainResult`, and event-processing logic to the new file. Keep
   `SubAgentTool`, config, and the public API in `subagent.go`.
-- [ ] 2c: Split `cmd/herm/main.go` (1180) into `main.go` + `wiring.go`. Move
+- [x] 2c: Split `cmd/herm/main.go` (1180) into `main.go` + `wiring.go`. Move
   initialization helpers (`startInit`, attachment helpers, clipboard helpers,
   `cleanupTmpDir`) to `wiring.go`. Keep `main`, `newApp`, `Run`, and the core
-  event loop in `main.go`.
+  event loop in `main.go`. Also moved `handleUpdateCommand` to keep main.go
+  under the 1000-line cap.
 - [ ] 2d: Split `cmd/herm/agent.go` (1474) into `agent.go` + `agent_loops.go`.
   Move `runLoop`, `gracefulExhaustion`, `backgroundCompletion`,
   `clearOldToolResults`, `maybeCompact`, and related retry/context helpers
