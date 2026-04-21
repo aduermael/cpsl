@@ -52,7 +52,7 @@ func execWrite(t *testing.T, in Input) Output {
 	out := Output{OK: true, Created: !existed}
 	if existed {
 		out.Summary = "Overwrote " + in.FilePath
-		out.Diff = unifiedDiff(in.FilePath, string(oldContent), in.Content)
+		out.Diff = unifiedDiff(unifiedDiffOptions{path: in.FilePath, a: string(oldContent), b: in.Content})
 	} else {
 		out.Summary = "Created " + in.FilePath
 	}

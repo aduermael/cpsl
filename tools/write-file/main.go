@@ -89,7 +89,7 @@ func main() {
 	out := Output{OK: true, Created: !existed}
 	if existed {
 		out.Summary = fmt.Sprintf("Overwrote %s (%d lines, %d bytes)", in.FilePath, lines, bytes)
-		out.Diff = unifiedDiff(in.FilePath, string(oldContent), in.Content)
+		out.Diff = unifiedDiff(unifiedDiffOptions{path: in.FilePath, a: string(oldContent), b: in.Content})
 	} else {
 		out.Summary = fmt.Sprintf("Created %s (%d lines, %d bytes)", in.FilePath, lines, bytes)
 	}
@@ -118,17 +118,22 @@ func writeJSON(out Output) {
 
 // --- Unified diff generation (same as edit-file) ---
 
-func unifiedDiff(path, a, b string) string {
-	aLines := splitLines(a)
-	bLines := splitLines(b)
+type unifiedDiffOptions struct {
+	path string
+	a, b string
+}
 
-	edits := myersDiff(aLines, bLines)
-	hunks := buildHunks(edits, 3)
+func unifiedDiff(opts unifiedDiffOptions) string {
+	aLines := splitLines(opts.a)
+	bLines := splitLines(opts.b)
+
+	edits := myersDiff(myersDiffOptions{a: aLines, b: bLines})
+	hunks := buildHunks(buildHunksOptions{edits: edits, context: 3})
 	if len(hunks) == 0 {
 		return ""
 	}
 
-	display := path
+	display := opts.path
 	if strings.HasPrefix(display, "/") {
 		display = display[1:]
 	}
@@ -172,7 +177,12 @@ type edit struct {
 	line string
 }
 
-func myersDiff(a, b []string) []edit {
+type myersDiffOptions struct {
+	a, b []string
+}
+
+func myersDiff(opts myersDiffOptions) []edit {
+	a, b := opts.a, opts.b
 	n, m := len(a), len(b)
 	if n == 0 && m == 0 {
 		return nil
@@ -219,27 +229,34 @@ func myersDiff(a, b []string) []edit {
 			}
 			v[off+k] = x
 			if x >= n && y >= m {
-				return backtrack(trace, a, b, d, off)
+				return backtrack(backtrackOptions{trace: trace, a: a, b: b, d: d, off: off})
 			}
 		}
 	}
 	return nil
 }
 
-func backtrack(trace [][]int, a, b []string, d, off int) []edit {
+type backtrackOptions struct {
+	trace  [][]int
+	a, b   []string
+	d, off int
+}
+
+func backtrack(opts backtrackOptions) []edit {
+	a, b := opts.a, opts.b
 	edits := make([]edit, 0, len(a)+len(b))
 	x, y := len(a), len(b)
 
-	for dd := d; dd > 0; dd-- {
-		v := trace[dd]
+	for dd := opts.d; dd > 0; dd-- {
+		v := opts.trace[dd]
 		k := x - y
 		var prevK int
-		if k == -dd || (k != dd && v[off+k-1] < v[off+k+1]) {
+		if k == -dd || (k != dd && v[opts.off+k-1] < v[opts.off+k+1]) {
 			prevK = k + 1
 		} else {
 			prevK = k - 1
 		}
-		prevX := v[off+prevK]
+		prevX := v[opts.off+prevK]
 		prevY := prevX - prevK
 
 		for x > prevX && y > prevY {
@@ -273,7 +290,13 @@ type hunk struct {
 	lines          []string
 }
 
-func buildHunks(edits []edit, context int) []hunk {
+type buildHunksOptions struct {
+	edits   []edit
+	context int
+}
+
+func buildHunks(opts buildHunksOptions) []hunk {
+	edits, context := opts.edits, opts.context
 	if len(edits) == 0 {
 		return nil
 	}
@@ -309,20 +332,26 @@ func buildHunks(edits []edit, context int) []hunk {
 
 		if len(hunks) > 0 {
 			prev := &hunks[len(hunks)-1]
-			prevEnd := prevHunkEditEnd(edits, prev)
+			prevEnd := prevHunkEditEnd(prevHunkEditEndOptions{edits: edits, hunk: prev})
 			if cStart <= prevEnd {
-				extendHunk(prev, edits, prevEnd, cEnd)
+				extendHunk(extendHunkOptions{hunk: prev, edits: edits, from: prevEnd, to: cEnd})
 				continue
 			}
 		}
 
-		h := newHunk(edits, cStart, cEnd)
+		h := newHunk(newHunkOptions{edits: edits, start: cStart, end: cEnd})
 		hunks = append(hunks, h)
 	}
 	return hunks
 }
 
-func newHunk(edits []edit, start, end int) hunk {
+type newHunkOptions struct {
+	edits      []edit
+	start, end int
+}
+
+func newHunk(opts newHunkOptions) hunk {
+	edits, start, end := opts.edits, opts.start, opts.end
 	var h hunk
 	aLine, bLine := 0, 0
 	for i := 0; i < start; i++ {
@@ -356,7 +385,13 @@ func newHunk(edits []edit, start, end int) hunk {
 	return h
 }
 
-func prevHunkEditEnd(edits []edit, h *hunk) int {
+type prevHunkEditEndOptions struct {
+	edits []edit
+	hunk  *hunk
+}
+
+func prevHunkEditEnd(opts prevHunkEditEndOptions) int {
+	edits, h := opts.edits, opts.hunk
 	aLine, bLine := 0, 0
 	for i := 0; i < len(edits); i++ {
 		if aLine >= h.aStart+h.aCount && bLine >= h.bStart+h.bCount {
@@ -375,8 +410,15 @@ func prevHunkEditEnd(edits []edit, h *hunk) int {
 	return len(edits)
 }
 
-func extendHunk(h *hunk, edits []edit, from, to int) {
-	for i := from; i < to; i++ {
+type extendHunkOptions struct {
+	hunk     *hunk
+	edits    []edit
+	from, to int
+}
+
+func extendHunk(opts extendHunkOptions) {
+	h, edits := opts.hunk, opts.edits
+	for i := opts.from; i < opts.to; i++ {
 		switch edits[i].op {
 		case opEqual:
 			h.lines = append(h.lines, " "+edits[i].line)
