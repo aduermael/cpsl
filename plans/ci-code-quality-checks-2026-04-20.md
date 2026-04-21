@@ -221,7 +221,7 @@ constrained.
   `buildHunks`, `newHunk`, `prevHunkEditEnd`, `extendHunk`.
 - [x] 6b: `tools/edit-file/` (7) — same diff/hunk helpers as 6a; mirror the
   options-struct design for consistency.
-- [ ] 6c: `tools/outline/` (3) — `formatFunc`, `formatGenDecl`, `outlineRegex`.
+- [x] 6c: `tools/outline/` (3) — `formatFunc`, `formatGenDecl`, `outlineRegex`.
 
 ## Phase 7: Refactor cmd/herm agent core (22 violations)
 

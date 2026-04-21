@@ -148,7 +148,7 @@ async def async_func():
 `
 	path := writeTemp(t, "test.py", src)
 	pattern := langPatterns[".py"]
-	lines, err := outlineRegex(path, pattern)
+	lines, err := outlineRegex(outlineRegexOptions{path: path, pattern: pattern})
 	if err != nil {
 		t.Fatalf("outlineRegex: %v", err)
 	}
@@ -187,7 +187,7 @@ enum Status {
 `
 	path := writeTemp(t, "test.ts", src)
 	pattern := langPatterns[".ts"]
-	lines, err := outlineRegex(path, pattern)
+	lines, err := outlineRegex(outlineRegexOptions{path: path, pattern: pattern})
 	if err != nil {
 		t.Fatalf("outlineRegex: %v", err)
 	}

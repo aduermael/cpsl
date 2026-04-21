@@ -45,7 +45,7 @@ func main() {
 	if ext == ".go" {
 		lines, err = outlineGo(path)
 	} else if pattern, ok := langPatterns[ext]; ok {
-		lines, err = outlineRegex(path, pattern)
+		lines, err = outlineRegex(outlineRegexOptions{path: path, pattern: pattern})
 	} else {
 		lines, err = outlineFallback(path)
 	}
@@ -95,7 +95,7 @@ func outlineGo(path string) ([]string, error) {
 	file, err := parser.ParseFile(fset, path, nil, parser.ParseComments|parser.AllErrors)
 	if err != nil && file == nil {
 		// Total parse failure — fall back to regex.
-		return outlineRegex(path, langPatterns[".go"])
+		return outlineRegex(outlineRegexOptions{path: path, pattern: langPatterns[".go"]})
 	}
 
 	var lines []string
@@ -109,17 +109,23 @@ func outlineGo(path string) ([]string, error) {
 	for _, decl := range file.Decls {
 		switch d := decl.(type) {
 		case *ast.FuncDecl:
-			lines = append(lines, formatFunc(fset, d))
+			lines = append(lines, formatFunc(formatFuncOptions{fset: fset, fn: d}))
 		case *ast.GenDecl:
-			lines = append(lines, formatGenDecl(fset, d)...)
+			lines = append(lines, formatGenDecl(formatGenDeclOptions{fset: fset, decl: d})...)
 		}
 	}
 
 	return lines, nil
 }
 
+type formatFuncOptions struct {
+	fset *token.FileSet
+	fn   *ast.FuncDecl
+}
+
 // formatFunc formats a function/method signature.
-func formatFunc(fset *token.FileSet, fn *ast.FuncDecl) string {
+func formatFunc(opts formatFuncOptions) string {
+	fset, fn := opts.fset, opts.fn
 	pos := fset.Position(fn.Pos())
 	var sb strings.Builder
 	sb.WriteString("func ")
@@ -152,8 +158,14 @@ func formatFunc(fset *token.FileSet, fn *ast.FuncDecl) string {
 	return fmt.Sprintf("%d\t%s", pos.Line, sb.String())
 }
 
+type formatGenDeclOptions struct {
+	fset *token.FileSet
+	decl *ast.GenDecl
+}
+
 // formatGenDecl formats type, const, var declarations.
-func formatGenDecl(fset *token.FileSet, decl *ast.GenDecl) []string {
+func formatGenDecl(opts formatGenDeclOptions) []string {
+	fset, decl := opts.fset, opts.decl
 	var lines []string
 
 	switch decl.Tok {
@@ -332,9 +344,14 @@ var langPatterns = map[string]*regexp.Regexp{
 	".hpp":  regexp.MustCompile(`^([a-zA-Z_].*\(|struct |typedef |enum |#define |class |namespace )`),
 }
 
+type outlineRegexOptions struct {
+	path    string
+	pattern *regexp.Regexp
+}
+
 // outlineRegex uses regex patterns for non-Go languages.
-func outlineRegex(path string, pattern *regexp.Regexp) ([]string, error) {
-	f, err := os.Open(path)
+func outlineRegex(opts outlineRegexOptions) ([]string, error) {
+	f, err := os.Open(opts.path)
 	if err != nil {
 		return nil, err
 	}
@@ -346,7 +363,7 @@ func outlineRegex(path string, pattern *regexp.Regexp) ([]string, error) {
 	for scanner.Scan() {
 		lineNum++
 		line := scanner.Text()
-		if pattern.MatchString(line) {
+		if opts.pattern.MatchString(line) {
 			// Trim trailing whitespace but preserve leading (shows nesting).
 			lines = append(lines, fmt.Sprintf("%d\t%s", lineNum, strings.TrimRight(line, " \t")))
 		}
