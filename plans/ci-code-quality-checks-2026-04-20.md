@@ -163,7 +163,7 @@ constrained.
   `formatSubAgentLine`, and related constants to the new file. Keep core
   rendering and input handling in `render.go`. Both files keep file-level
   doc comments.
-- [ ] 2b: Split `cmd/herm/subagent.go` (1169) into `subagent.go` +
+- [x] 2b: Split `cmd/herm/subagent.go` (1169) into `subagent.go` +
   `subagent_drain.go`. Move `drainSubAgentEvents`, `drainOptions`,
   `drainResult`, and event-processing logic to the new file. Keep
   `SubAgentTool`, config, and the public API in `subagent.go`.
