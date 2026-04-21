@@ -105,7 +105,7 @@ func main() {
 		return
 	}
 
-	diff := unifiedDiff(in.FilePath, text, newText)
+	diff := unifiedDiff(unifiedDiffOptions{path: in.FilePath, a: text, b: newText})
 	writeJSON(Output{OK: true, Diff: diff})
 }
 
@@ -117,23 +117,28 @@ func writeJSON(out Output) {
 	json.NewEncoder(os.Stdout).Encode(out)
 }
 
+type unifiedDiffOptions struct {
+	path string
+	a, b string
+}
+
 // unifiedDiff produces a unified diff between two strings.
-func unifiedDiff(path, a, b string) string {
-	aLines := splitLines(a)
-	bLines := splitLines(b)
+func unifiedDiff(opts unifiedDiffOptions) string {
+	aLines := splitLines(opts.a)
+	bLines := splitLines(opts.b)
 
 	// Myers diff algorithm — compute shortest edit script.
-	edits := myersDiff(aLines, bLines)
+	edits := myersDiff(myersDiffOptions{a: aLines, b: bLines})
 
 	// Group edits into hunks with 3 lines of context.
-	hunks := buildHunks(edits, 3)
+	hunks := buildHunks(buildHunksOptions{edits: edits, context: 3})
 	if len(hunks) == 0 {
 		return ""
 	}
 
 	var sb strings.Builder
 	// Strip leading / for cleaner diff headers.
-	display := path
+	display := opts.path
 	if strings.HasPrefix(display, "/") {
 		display = display[1:]
 	}
@@ -177,9 +182,14 @@ type edit struct {
 	line string
 }
 
+type myersDiffOptions struct {
+	a, b []string
+}
+
 // myersDiff computes the shortest edit script between two line slices
 // using the Myers O(ND) algorithm.
-func myersDiff(a, b []string) []edit {
+func myersDiff(opts myersDiffOptions) []edit {
+	a, b := opts.a, opts.b
 	n, m := len(a), len(b)
 	if n == 0 && m == 0 {
 		return nil
@@ -228,28 +238,35 @@ func myersDiff(a, b []string) []edit {
 			}
 			v[off+k] = x
 			if x >= n && y >= m {
-				return backtrack(trace, a, b, d, off)
+				return backtrack(backtrackOptions{trace: trace, a: a, b: b, d: d, off: off})
 			}
 		}
 	}
 	return nil
 }
 
-func backtrack(trace [][]int, a, b []string, d, off int) []edit {
+type backtrackOptions struct {
+	trace  [][]int
+	a, b   []string
+	d, off int
+}
+
+func backtrack(opts backtrackOptions) []edit {
+	a, b := opts.a, opts.b
 	edits := make([]edit, 0, len(a)+len(b))
 	x, y := len(a), len(b)
 
-	for dd := d; dd > 0; dd-- {
+	for dd := opts.d; dd > 0; dd-- {
 		// trace[dd] = v at the start of step dd = v after step dd-1
-		v := trace[dd]
+		v := opts.trace[dd]
 		k := x - y
 		var prevK int
-		if k == -dd || (k != dd && v[off+k-1] < v[off+k+1]) {
+		if k == -dd || (k != dd && v[opts.off+k-1] < v[opts.off+k+1]) {
 			prevK = k + 1
 		} else {
 			prevK = k - 1
 		}
-		prevX := v[off+prevK]
+		prevX := v[opts.off+prevK]
 		prevY := prevX - prevK
 
 		// Diagonal moves (equal lines).
@@ -289,7 +306,13 @@ type hunk struct {
 	lines  []string
 }
 
-func buildHunks(edits []edit, context int) []hunk {
+type buildHunksOptions struct {
+	edits   []edit
+	context int
+}
+
+func buildHunks(opts buildHunksOptions) []hunk {
+	edits, context := opts.edits, opts.context
 	if len(edits) == 0 {
 		return nil
 	}
@@ -332,21 +355,27 @@ func buildHunks(edits []edit, context int) []hunk {
 		if len(hunks) > 0 {
 			prev := &hunks[len(hunks)-1]
 			// Compute the edit index where the previous hunk ends.
-			prevEnd := prevHunkEditEnd(edits, prev)
+			prevEnd := prevHunkEditEnd(prevHunkEditEndOptions{edits: edits, hunk: prev})
 			if cStart <= prevEnd {
 				// Merge: extend the previous hunk.
-				extendHunk(prev, edits, prevEnd, cEnd)
+				extendHunk(extendHunkOptions{hunk: prev, edits: edits, from: prevEnd, to: cEnd})
 				continue
 			}
 		}
 
-		h := newHunk(edits, cStart, cEnd)
+		h := newHunk(newHunkOptions{edits: edits, start: cStart, end: cEnd})
 		hunks = append(hunks, h)
 	}
 	return hunks
 }
 
-func newHunk(edits []edit, start, end int) hunk {
+type newHunkOptions struct {
+	edits      []edit
+	start, end int
+}
+
+func newHunk(opts newHunkOptions) hunk {
+	edits, start, end := opts.edits, opts.start, opts.end
 	var h hunk
 	// Compute a/b line positions at start.
 	aLine, bLine := 0, 0
@@ -381,7 +410,13 @@ func newHunk(edits []edit, start, end int) hunk {
 	return h
 }
 
-func prevHunkEditEnd(edits []edit, h *hunk) int {
+type prevHunkEditEndOptions struct {
+	edits []edit
+	hunk  *hunk
+}
+
+func prevHunkEditEnd(opts prevHunkEditEndOptions) int {
+	edits, h := opts.edits, opts.hunk
 	// Walk edits to find where this hunk's content ends.
 	aLine, bLine := 0, 0
 	for i := 0; i < len(edits); i++ {
@@ -403,8 +438,15 @@ func prevHunkEditEnd(edits []edit, h *hunk) int {
 	return len(edits)
 }
 
-func extendHunk(h *hunk, edits []edit, from, to int) {
-	for i := from; i < to; i++ {
+type extendHunkOptions struct {
+	hunk     *hunk
+	edits    []edit
+	from, to int
+}
+
+func extendHunk(opts extendHunkOptions) {
+	h, edits := opts.hunk, opts.edits
+	for i := opts.from; i < opts.to; i++ {
 		switch edits[i].op {
 		case opEqual:
 			h.lines = append(h.lines, " "+edits[i].line)

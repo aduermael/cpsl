@@ -219,7 +219,7 @@ constrained.
 
 - [x] 6a: `tools/write-file/` (7) — `unifiedDiff`, `myersDiff`, `backtrack`,
   `buildHunks`, `newHunk`, `prevHunkEditEnd`, `extendHunk`.
-- [ ] 6b: `tools/edit-file/` (7) — same diff/hunk helpers as 6a; mirror the
+- [x] 6b: `tools/edit-file/` (7) — same diff/hunk helpers as 6a; mirror the
   options-struct design for consistency.
 - [ ] 6c: `tools/outline/` (3) — `formatFunc`, `formatGenDecl`, `outlineRegex`.
 

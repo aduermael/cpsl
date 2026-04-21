@@ -74,7 +74,7 @@ func execEdit(t *testing.T, in Input) Output {
 		return Output{OK: false, Error: "cannot write file: " + err.Error()}
 	}
 
-	diff := unifiedDiff(in.FilePath, text, newText)
+	diff := unifiedDiff(unifiedDiffOptions{path: in.FilePath, a: text, b: newText})
 	return Output{OK: true, Diff: diff}
 }
 
@@ -272,7 +272,7 @@ func TestMyersDiff(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			edits := myersDiff(tt.a, tt.b)
+			edits := myersDiff(myersDiffOptions{a: tt.a, b: tt.b})
 			var ops strings.Builder
 			for _, e := range edits {
 				switch e.op {
@@ -292,10 +292,11 @@ func TestMyersDiff(t *testing.T) {
 }
 
 func TestUnifiedDiffFormat(t *testing.T) {
-	diff := unifiedDiff("test.go",
-		"line1\nline2\nline3\n",
-		"line1\nchanged\nline3\n",
-	)
+	diff := unifiedDiff(unifiedDiffOptions{
+		path: "test.go",
+		a:    "line1\nline2\nline3\n",
+		b:    "line1\nchanged\nline3\n",
+	})
 	if !strings.Contains(diff, "--- a/") {
 		t.Error("diff missing --- header")
 	}
