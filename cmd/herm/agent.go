@@ -42,25 +42,31 @@ func langdagStoragePath() string {
 func newLangdagClient(cfg Config) (*langdag.Client, error) {
 	// Use the first available provider as default.
 	if cfg.AnthropicAPIKey != "" {
-		return newLangdagClientForProvider(cfg, ProviderAnthropic)
+		return newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: cfg, provider: ProviderAnthropic})
 	}
 	if cfg.OpenAIAPIKey != "" {
-		return newLangdagClientForProvider(cfg, ProviderOpenAI)
+		return newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: cfg, provider: ProviderOpenAI})
 	}
 	if cfg.GrokAPIKey != "" {
-		return newLangdagClientForProvider(cfg, ProviderGrok)
+		return newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: cfg, provider: ProviderGrok})
 	}
 	if cfg.GeminiAPIKey != "" {
-		return newLangdagClientForProvider(cfg, ProviderGemini)
+		return newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: cfg, provider: ProviderGemini})
 	}
 	if cfg.OllamaBaseURL != "" {
-		return newLangdagClientForProvider(cfg, ProviderOllama)
+		return newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: cfg, provider: ProviderOllama})
 	}
 	return nil, nil
 }
 
+// newLangdagClientForProviderOptions is the parameter bundle for newLangdagClientForProvider.
+type newLangdagClientForProviderOptions struct {
+	cfg      Config
+	provider string
+}
+
 // newLangdagClientForProvider creates a langdag client configured for a specific provider.
-func newLangdagClientForProvider(cfg Config, provider string) (*langdag.Client, error) {
+func newLangdagClientForProvider(opts newLangdagClientForProviderOptions) (*langdag.Client, error) {
 	langdagCfg := langdag.Config{
 		StoragePath: langdagStoragePath(),
 		RetryConfig: &langdag.RetryConfig{
@@ -68,24 +74,24 @@ func newLangdagClientForProvider(cfg Config, provider string) (*langdag.Client, 
 		},
 	}
 
-	switch provider {
+	switch opts.provider {
 	case ProviderAnthropic:
 		langdagCfg.Provider = "anthropic"
-		langdagCfg.APIKeys = map[string]string{"anthropic": cfg.AnthropicAPIKey}
+		langdagCfg.APIKeys = map[string]string{"anthropic": opts.cfg.AnthropicAPIKey}
 	case ProviderOpenAI:
 		langdagCfg.Provider = "openai"
-		langdagCfg.APIKeys = map[string]string{"openai": cfg.OpenAIAPIKey}
+		langdagCfg.APIKeys = map[string]string{"openai": opts.cfg.OpenAIAPIKey}
 	case ProviderGrok:
 		langdagCfg.Provider = "grok"
-		langdagCfg.APIKeys = map[string]string{"grok": cfg.GrokAPIKey}
+		langdagCfg.APIKeys = map[string]string{"grok": opts.cfg.GrokAPIKey}
 	case ProviderGemini:
 		langdagCfg.Provider = "gemini"
-		langdagCfg.APIKeys = map[string]string{"gemini": cfg.GeminiAPIKey}
+		langdagCfg.APIKeys = map[string]string{"gemini": opts.cfg.GeminiAPIKey}
 	case ProviderOllama:
 		langdagCfg.Provider = "ollama"
-		langdagCfg.OllamaConfig = &langdag.OllamaConfig{BaseURL: cfg.OllamaBaseURL}
+		langdagCfg.OllamaConfig = &langdag.OllamaConfig{BaseURL: opts.cfg.OllamaBaseURL}
 	default:
-		return nil, fmt.Errorf("unsupported provider: %s", provider)
+		return nil, fmt.Errorf("unsupported provider: %s", opts.provider)
 	}
 
 	return langdag.New(langdagCfg)
@@ -289,21 +295,33 @@ func WithMaxTurns(n int) AgentOption {
 	return func(a *Agent) { a.maxTurns = n }
 }
 
+// SetTurnProgressOptions is the parameter bundle for (*Agent).SetTurnProgress.
+type SetTurnProgressOptions struct {
+	Used int
+	Max  int
+}
+
 // SetTurnProgress updates the agent's turn progress from the external drain loop.
 // Thread-safe — called by the SubAgentTool drain loop on each turn boundary.
-func (a *Agent) SetTurnProgress(used, max int) {
+func (a *Agent) SetTurnProgress(opts SetTurnProgressOptions) {
 	a.turnMu.Lock()
-	a.turnsUsed = used
-	a.maxTurns = max
+	a.turnsUsed = opts.Used
+	a.maxTurns = opts.Max
 	a.turnMu.Unlock()
+}
+
+// SetTokenProgressOptions is the parameter bundle for (*Agent).SetTokenProgress.
+type SetTokenProgressOptions struct {
+	InputTokens  int
+	OutputTokens int
 }
 
 // SetTokenProgress updates the agent's cumulative token counts from the external drain loop.
 // Thread-safe — called by the SubAgentTool drain loop on each EventUsage.
-func (a *Agent) SetTokenProgress(inputTokens, outputTokens int) {
+func (a *Agent) SetTokenProgress(opts SetTokenProgressOptions) {
 	a.turnMu.Lock()
-	a.turnTokensIn = inputTokens
-	a.turnTokensOut = outputTokens
+	a.turnTokensIn = opts.InputTokens
+	a.turnTokensOut = opts.OutputTokens
 	a.turnMu.Unlock()
 }
 
@@ -315,33 +333,43 @@ func (a *Agent) SetSessionCost(cost float64) {
 	a.mu.Unlock()
 }
 
+// NewAgentOptions is the parameter bundle for NewAgent.
+type NewAgentOptions struct {
+	Client        *langdag.Client
+	Tools         []Tool
+	ServerTools   []types.ToolDefinition
+	SystemPrompt  string
+	Model         string
+	ContextWindow int
+}
+
 // NewAgent creates an agent with the given langdag client, tools, and configuration.
-// serverTools are provider-side tools (e.g. web search) that are declared in the
+// ServerTools are provider-side tools (e.g. web search) that are declared in the
 // tool list but executed by the LLM provider, not the client.
-func NewAgent(client *langdag.Client, tools []Tool, serverTools []types.ToolDefinition, systemPrompt, model string, contextWindow int, opts ...AgentOption) *Agent {
-	toolMap := make(map[string]Tool, len(tools))
-	toolDefs := make([]types.ToolDefinition, 0, len(tools)+len(serverTools))
-	for _, t := range tools {
+func NewAgent(opts NewAgentOptions, agentOpts ...AgentOption) *Agent {
+	toolMap := make(map[string]Tool, len(opts.Tools))
+	toolDefs := make([]types.ToolDefinition, 0, len(opts.Tools)+len(opts.ServerTools))
+	for _, t := range opts.Tools {
 		def := t.Definition()
 		toolMap[def.Name] = t
 		toolDefs = append(toolDefs, def)
 	}
-	toolDefs = append(toolDefs, serverTools...)
+	toolDefs = append(toolDefs, opts.ServerTools...)
 
 	a := &Agent{
 		id:                 generateAgentID(),
-		client:             client,
+		client:             opts.Client,
 		tools:              toolMap,
 		toolDefs:           toolDefs,
-		systemPrompt:       systemPrompt,
-		model:              model,
-		contextWindow:      contextWindow,
+		systemPrompt:       opts.SystemPrompt,
+		model:              opts.Model,
+		contextWindow:      opts.ContextWindow,
 		streamChunkTimeout: defaultStreamChunkTimeout,
 		events:             make(chan AgentEvent, 4096),
 		approval:           make(chan ApprovalResponse, 1),
 		doneCh:             make(chan struct{}),
 	}
-	for _, opt := range opts {
+	for _, opt := range agentOpts {
 		opt(a)
 	}
 	return a
@@ -410,11 +438,17 @@ func (a *Agent) Cancel() {
 	}
 }
 
+// RunOptions is the parameter bundle for (*Agent).Run.
+type RunOptions struct {
+	UserMessage  string
+	ParentNodeID string
+}
+
 // Run starts the agent loop for a user message. It streams LLM responses,
-// executes tool calls, and persists nodes via langdag. The parentNodeID is
+// executes tool calls, and persists nodes via langdag. ParentNodeID is
 // empty for new conversations or the last assistant node ID for continuations.
 // This method blocks until the loop completes; call it in a goroutine.
-func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string) {
+func (a *Agent) Run(ctx context.Context, opts RunOptions) {
 	a.mu.Lock()
 	if a.running {
 		a.mu.Unlock()
@@ -454,7 +488,7 @@ func (a *Agent) Run(ctx context.Context, userMessage string, parentNodeID string
 		}
 	}()
 
-	a.runLoop(ctx, userMessage, parentNodeID)
+	a.runLoop(ctx, runLoopOptions{userMessage: opts.UserMessage, parentNodeID: opts.ParentNodeID})
 }
 
 // ID returns the unique identifier for this agent instance.
@@ -501,22 +535,28 @@ func (a *Agent) emit(e AgentEvent) {
 	}
 }
 
+// emitUsageOptions is the parameter bundle for (*Agent).emitUsage.
+type emitUsageOptions struct {
+	nodeID     string
+	stopReason string
+}
+
 // emitUsage fetches the node by ID, emits an EventUsage with token counts,
 // accumulates session stats, and returns the input token count (for context
 // management decisions).
-func (a *Agent) emitUsage(ctx context.Context, nodeID, stopReason string) int {
-	if nodeID == "" {
+func (a *Agent) emitUsage(ctx context.Context, opts emitUsageOptions) int {
+	if opts.nodeID == "" {
 		return 0
 	}
-	node, err := a.client.GetNode(ctx, nodeID)
+	node, err := a.client.GetNode(ctx, opts.nodeID)
 	if err != nil || node == nil {
 		return 0
 	}
 	a.emit(AgentEvent{
 		Type:       EventUsage,
 		Model:      node.Model,
-		NodeID:     nodeID,
-		StopReason: stopReason,
+		NodeID:     opts.nodeID,
+		StopReason: opts.stopReason,
 		Usage: &types.Usage{
 			InputTokens:              node.TokensIn,
 			OutputTokens:             node.TokensOut,

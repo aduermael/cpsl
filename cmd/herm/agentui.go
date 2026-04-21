@@ -179,7 +179,7 @@ func (a *App) startAgent(userMessage string) {
 		if a.langdagClient != nil {
 			a.langdagClient.Close()
 		}
-		client, err := newLangdagClientForProvider(a.config, modelProvider)
+		client, err := newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: a.config, provider: modelProvider})
 		if err != nil {
 			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Error initializing %s provider: %v", modelProvider, err)})
 			return
@@ -277,7 +277,14 @@ func (a *App) startAgent(userMessage string) {
 	if mainMaxIter <= 0 {
 		mainMaxIter = defaultMaxToolIterations
 	}
-	agent := NewAgent(a.langdagClient, tools, serverTools, systemPrompt, modelID, ctxWindow,
+	agent := NewAgent(NewAgentOptions{
+		Client:        a.langdagClient,
+		Tools:         tools,
+		ServerTools:   serverTools,
+		SystemPrompt:  systemPrompt,
+		Model:         modelID,
+		ContextWindow: ctxWindow,
+	},
 		WithExplorationModel(explorationModelID),
 		WithMaxToolIterations(mainMaxIter),
 		WithThinking(a.config.Thinking))
@@ -310,7 +317,7 @@ func (a *App) startAgent(userMessage string) {
 	}(a.agentTicker, a.resultCh)
 
 	parentNodeID := a.agentNodeID
-	go agent.Run(context.Background(), userMessage, parentNodeID)
+	go agent.Run(context.Background(), RunOptions{UserMessage: userMessage, ParentNodeID: parentNodeID})
 }
 
 // hasActiveSubAgents returns true if any sub-agent in the display map is still running.

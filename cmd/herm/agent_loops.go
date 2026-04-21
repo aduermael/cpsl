@@ -25,19 +25,26 @@ const backgroundCompletionTimeout = 2 * time.Minute
 // model keeps spawning background agents and then stopping.
 const maxBackgroundCompletionCycles = 3
 
+// backgroundCompletionOptions is the parameter bundle for (*Agent).backgroundCompletion.
+type backgroundCompletionOptions struct {
+	lastNodeID    string
+	remainingIter int
+}
+
 // backgroundCompletion is called when the LLM chose to stop (end_turn) but
 // background sub-agents are still running. It waits for them, injects their
 // results, and re-calls the LLM with tools enabled so it can continue working.
 // remainingIter is the number of tool-loop iterations still available.
 // Returns the final node ID.
-func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, remainingIter int) string {
+func (a *Agent) backgroundCompletion(ctx context.Context, opts backgroundCompletionOptions) string {
 	ctx = a.retryCtx(ctx)
 	bw := a.findBackgroundWaiter()
 	if bw == nil {
-		return lastNodeID
+		return opts.lastNodeID
 	}
 
-	nodeID := lastNodeID
+	nodeID := opts.lastNodeID
+	remainingIter := opts.remainingIter
 	for cycle := 0; cycle < maxBackgroundCompletionCycles && remainingIter > 0; cycle++ {
 		if !bw.HasPendingBackgroundAgents() {
 			break
@@ -64,10 +71,10 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 		}
 
 		// Re-call LLM with tools enabled so the model can continue working.
-		opts := a.buildPromptOpts()
+		promptOpts := a.buildPromptOpts()
 		a.emit(AgentEvent{Type: EventLLMStart})
 		toolCalls, newNodeID, stopReason, err := a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
-			return a.client.PromptFrom(ctx, nodeID, msg.String(), opts...)
+			return a.client.PromptFrom(ctx, nodeID, msg.String(), promptOpts...)
 		})
 		if err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("background completion: %w", err)})
@@ -76,7 +83,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 		if newNodeID == "" {
 			return nodeID
 		}
-		a.emitUsage(ctx, newNodeID, stopReason)
+		a.emitUsage(ctx, emitUsageOptions{nodeID: newNodeID, stopReason: stopReason})
 		nodeID = newNodeID
 
 		// If the model requested tools, run a mini tool loop with the remaining budget.
@@ -147,7 +154,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 				})
 			}
 
-			opts = a.buildPromptOpts()
+			promptOpts = a.buildPromptOpts()
 			if reminder := a.budgetReminderBlock(); reminder.Text != "" {
 				toolResults = append(toolResults, reminder)
 			}
@@ -158,7 +165,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 			}
 			a.emit(AgentEvent{Type: EventLLMStart})
 			toolCalls, newNodeID, stopReason, err = a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
-				return a.client.PromptFrom(ctx, nodeID, string(toolResultJSON), opts...)
+				return a.client.PromptFrom(ctx, nodeID, string(toolResultJSON), promptOpts...)
 			})
 			if err != nil {
 				a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("background completion (tool results): %w", err)})
@@ -167,7 +174,7 @@ func (a *Agent) backgroundCompletion(ctx context.Context, lastNodeID string, rem
 			if newNodeID == "" {
 				return nodeID
 			}
-			a.emitUsage(ctx, newNodeID, stopReason)
+			a.emitUsage(ctx, emitUsageOptions{nodeID: newNodeID, stopReason: stopReason})
 			nodeID = newNodeID
 			remainingIter--
 		}
@@ -244,22 +251,28 @@ const clearThresholdFraction = 0.8
 // clearKeepRecent is the number of most-recent tool result nodes to keep intact.
 const clearKeepRecent = 4
 
+// clearOldToolResultsOptions is the parameter bundle for (*Agent).clearOldToolResults.
+type clearOldToolResultsOptions struct {
+	nodeID      string
+	inputTokens int
+}
+
 // clearOldToolResults replaces old tool result content with a short placeholder
 // when input tokens exceed a threshold of the context window. This reduces
 // context usage for long conversations while allowing the agent to re-read
 // files if needed. Only tool result nodes are cleared; the tool_use blocks in
 // assistant messages are left intact (providers accept tool_result with any
 // content string).
-func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTokens int) {
-	if a.contextWindow <= 0 || inputTokens <= 0 {
+func (a *Agent) clearOldToolResults(ctx context.Context, opts clearOldToolResultsOptions) {
+	if a.contextWindow <= 0 || opts.inputTokens <= 0 {
 		return
 	}
 	threshold := int(float64(a.contextWindow) * clearThresholdFraction)
-	if inputTokens < threshold {
+	if opts.inputTokens < threshold {
 		return
 	}
 
-	ancestors, err := a.client.GetAncestors(ctx, nodeID)
+	ancestors, err := a.client.GetAncestors(ctx, opts.nodeID)
 	if err != nil {
 		return
 	}
@@ -293,7 +306,7 @@ func (a *Agent) clearOldToolResults(ctx context.Context, nodeID string, inputTok
 	})
 
 	// Track estimated input tokens; stop clearing once below threshold.
-	estimatedTokens := inputTokens
+	estimatedTokens := opts.inputTokens
 	storage := a.client.Storage()
 	for _, c := range clearable {
 		if estimatedTokens < threshold {
@@ -341,15 +354,21 @@ func replaceToolResultContent(content string) string {
 	return string(out)
 }
 
+// maybeCompactOptions is the parameter bundle for (*Agent).maybeCompact.
+type maybeCompactOptions struct {
+	nodeID      string
+	inputTokens int
+}
+
 // maybeCompact triggers auto-compaction if input tokens exceed the compaction
 // threshold. Returns the (possibly new) nodeID to continue from.
-func (a *Agent) maybeCompact(ctx context.Context, nodeID string, inputTokens int) string {
-	if a.contextWindow <= 0 || inputTokens <= 0 {
-		return nodeID
+func (a *Agent) maybeCompact(ctx context.Context, opts maybeCompactOptions) string {
+	if a.contextWindow <= 0 || opts.inputTokens <= 0 {
+		return opts.nodeID
 	}
 	threshold := int(float64(a.contextWindow) * compactThresholdFraction)
-	if inputTokens < threshold {
-		return nodeID
+	if opts.inputTokens < threshold {
+		return opts.nodeID
 	}
 
 	// Use exploration model for cheap summarization, fall back to main model.
@@ -358,9 +377,9 @@ func (a *Agent) maybeCompact(ctx context.Context, nodeID string, inputTokens int
 		summaryModel = a.model
 	}
 
-	result, err := compactConversation(ctx, a.client, nodeID, summaryModel, "")
+	result, err := compactConversation(ctx, a.client, opts.nodeID, summaryModel, "")
 	if err != nil {
-		return nodeID // compaction failed — continue with the original node
+		return opts.nodeID // compaction failed — continue with the original node
 	}
 
 	a.emit(AgentEvent{
@@ -515,18 +534,24 @@ func (a *Agent) drainStream(ctx context.Context, result *langdag.PromptResult) (
 	}
 }
 
+// runLoopOptions is the parameter bundle for (*Agent).runLoop.
+type runLoopOptions struct {
+	userMessage  string
+	parentNodeID string
+}
+
 // runLoop is the core agent loop: call LLM, handle tool calls, repeat.
-func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID string) {
+func (a *Agent) runLoop(ctx context.Context, opts runLoopOptions) {
 	ctx = a.retryCtx(ctx)
-	opts := a.buildPromptOpts()
+	promptOpts := a.buildPromptOpts()
 
 	// Initial LLM call (langdag handles connection-level retries).
 	a.emit(AgentEvent{Type: EventLLMStart})
 	toolCalls, nodeID, stopReason, err := a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
-		if parentNodeID == "" {
-			return a.client.Prompt(ctx, userMessage, opts...)
+		if opts.parentNodeID == "" {
+			return a.client.Prompt(ctx, opts.userMessage, promptOpts...)
 		}
-		return a.client.PromptFrom(ctx, parentNodeID, userMessage, opts...)
+		return a.client.PromptFrom(ctx, opts.parentNodeID, opts.userMessage, promptOpts...)
 	})
 	if err != nil {
 		a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("prompt: %w", err)})
@@ -552,7 +577,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		a.emit(AgentEvent{Type: EventDone})
 		return
 	}
-	a.emitUsage(ctx, nodeID, stopReason)
+	a.emitUsage(ctx, emitUsageOptions{nodeID: nodeID, stopReason: stopReason})
 
 	// Tool loop
 	maxIter := a.maxToolIterations
@@ -764,7 +789,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		// Budget stats are injected as a <system-reminder> text block in the
 		// user message (not the system prompt) to preserve prompt caching.
 		a.currentIteration = iteration
-		opts = a.buildPromptOpts()
+		promptOpts = a.buildPromptOpts()
 		if reminder := a.budgetReminderBlock(); reminder.Text != "" {
 			toolResults = append(toolResults, reminder)
 		}
@@ -776,7 +801,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		toolResultStr := string(toolResultJSON)
 		a.emit(AgentEvent{Type: EventLLMStart})
 		toolCalls, nodeID, stopReason, err = a.retryableStream(ctx, func() (*langdag.PromptResult, error) {
-			return a.client.PromptFrom(ctx, nodeID, toolResultStr, opts...)
+			return a.client.PromptFrom(ctx, nodeID, toolResultStr, promptOpts...)
 		})
 		if err != nil {
 			a.emit(AgentEvent{Type: EventError, Error: fmt.Errorf("prompt (tool results): %w", err)})
@@ -794,9 +819,9 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 		if nodeID == "" {
 			break
 		}
-		inputTokens := a.emitUsage(ctx, nodeID, stopReason)
-		a.clearOldToolResults(ctx, nodeID, inputTokens)
-		nodeID = a.maybeCompact(ctx, nodeID, inputTokens)
+		inputTokens := a.emitUsage(ctx, emitUsageOptions{nodeID: nodeID, stopReason: stopReason})
+		a.clearOldToolResults(ctx, clearOldToolResultsOptions{nodeID: nodeID, inputTokens: inputTokens})
+		nodeID = a.maybeCompact(ctx, maybeCompactOptions{nodeID: nodeID, inputTokens: inputTokens})
 		iteration++
 	}
 
@@ -806,7 +831,7 @@ func (a *Agent) runLoop(ctx context.Context, userMessage string, parentNodeID st
 	// model can continue working. Capped to prevent infinite loops if the
 	// model keeps spawning background agents and stopping.
 	if len(toolCalls) == 0 && iteration < maxIter {
-		nodeID = a.backgroundCompletion(ctx, nodeID, maxIter-iteration)
+		nodeID = a.backgroundCompletion(ctx, backgroundCompletionOptions{lastNodeID: nodeID, remainingIter: maxIter - iteration})
 	}
 
 	// When the loop exhausts maxToolIterations while the LLM still wants

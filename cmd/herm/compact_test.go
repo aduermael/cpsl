@@ -184,10 +184,10 @@ func TestMaybeCompactBelowThreshold(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 200000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 200000})
 
 	// 100k tokens, threshold is 190k (95%) → should NOT compact.
-	result := agent.maybeCompact(context.Background(), "node-1", 100000)
+	result := agent.maybeCompact(context.Background(), maybeCompactOptions{nodeID: "node-1", inputTokens: 100000})
 	if result != "node-1" {
 		t.Errorf("should return same nodeID when below threshold, got %q", result)
 	}
@@ -198,9 +198,9 @@ func TestMaybeCompactNoContextWindow(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	result := agent.maybeCompact(context.Background(), "node-1", 500000)
+	result := agent.maybeCompact(context.Background(), maybeCompactOptions{nodeID: "node-1", inputTokens: 500000})
 	if result != "node-1" {
 		t.Errorf("should return same nodeID when context window is 0")
 	}

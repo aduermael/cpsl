@@ -71,7 +71,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 				r.turns++
 				responseCounted = true
 				if fullProcessing {
-					opts.agent.SetTurnProgress(r.turns, opts.maxTurns)
+					opts.agent.SetTurnProgress(SetTurnProgressOptions{Used: r.turns, Max: opts.maxTurns})
 				}
 			}
 			if fullProcessing {
@@ -115,7 +115,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 				r.totalInputTokens += event.Usage.InputTokens + event.Usage.CacheReadInputTokens
 				r.totalOutputTokens += event.Usage.OutputTokens
 				if fullProcessing {
-					opts.agent.SetTokenProgress(r.totalInputTokens, r.totalOutputTokens)
+					opts.agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: r.totalInputTokens, OutputTokens: r.totalOutputTokens})
 				}
 			}
 			opts.traceCollector.SetUsage(opts.agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)

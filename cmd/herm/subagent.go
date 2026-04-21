@@ -580,7 +580,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
 	}
-	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, model, 0, agentOpts...)
+	agent := NewAgent(NewAgentOptions{
+		Client:       t.client,
+		Tools:        subTools,
+		ServerTools:  t.serverTools,
+		SystemPrompt: systemPrompt,
+		Model:        model,
+	}, agentOpts...)
 	agentID := agent.ID()
 
 	// Create a local trace collector for this sub-agent's events.
@@ -594,7 +600,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		agent.Run(ctx, in.Task, parentNodeID)
+		agent.Run(ctx, RunOptions{UserMessage: in.Task, ParentNodeID: parentNodeID})
 	}()
 
 	// Drain events using the shared loop. Foreground forwards each delta immediately.
@@ -667,7 +673,13 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	if t.streamTimeout > 0 {
 		agentOpts = append(agentOpts, WithStreamChunkTimeout(t.streamTimeout))
 	}
-	agent := NewAgent(t.client, subTools, t.serverTools, systemPrompt, model, 0, agentOpts...)
+	agent := NewAgent(NewAgentOptions{
+		Client:       t.client,
+		Tools:        subTools,
+		ServerTools:  t.serverTools,
+		SystemPrompt: systemPrompt,
+		Model:        model,
+	}, agentOpts...)
 	agentID := agent.ID()
 
 	subTC := NewTraceCollector("")
@@ -704,7 +716,7 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		agent.Run(ctx, in.Task, "")
+		agent.Run(ctx, RunOptions{UserMessage: in.Task})
 	}()
 
 	// Delta batching: accumulate text deltas and forward them at most once

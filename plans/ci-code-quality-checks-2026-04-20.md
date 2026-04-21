@@ -227,7 +227,7 @@ constrained.
 
 **Parallel Tasks: 7a, 7b, 7c**
 
-- [ ] 7a: `cmd/herm/agent.go` + `agent_loops.go` (10) —
+- [x] 7a: `cmd/herm/agent.go` + `agent_loops.go` (10) —
   `newLangdagClientForProvider`, `SetTurnProgress`, `SetTokenProgress`,
   `NewAgent`, `Run`, `emitUsage`, `backgroundCompletion`,
   `clearOldToolResults`, `maybeCompact`, `runLoop`.

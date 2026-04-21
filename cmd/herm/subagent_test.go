@@ -2141,7 +2141,7 @@ func TestSubAgentBackgroundCompletionInjection(t *testing.T) {
 	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Create a parent agent to receive the injection.
-	parentAgent := NewAgent(nil, nil, nil, "", "test-model", 0)
+	parentAgent := NewAgent(NewAgentOptions{Client: nil, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	tool.onBgComplete = parentAgent.InjectBackgroundResult
 
@@ -2627,7 +2627,7 @@ func TestDeltaBatchingReducesEvents(t *testing.T) {
 		doneTimeout:     2 * time.Second,
 	}
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 	subTC := NewTraceCollector("test-session")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

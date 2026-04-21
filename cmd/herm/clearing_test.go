@@ -242,10 +242,10 @@ func TestClearOldToolResults(t *testing.T) {
 	store.ancestorChains["final-asst"] = ancestorIDs
 
 	// Create agent with a 100k context window.
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
 	// Input tokens = 90000, threshold = 80000 (80% of 100k) → should trigger clearing.
-	agent.clearOldToolResults(context.Background(), "final-asst", 90000)
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "final-asst", inputTokens: 90000})
 
 	// The 6 tool result nodes: keep last 4, clear first 2.
 	// First 2 should be cleared (largest first, but both are < threshold).
@@ -276,11 +276,11 @@ func TestClearOldToolResultsBelowThreshold(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
 	// Input tokens = 50000, threshold = 80000 → should NOT trigger clearing.
 	// (No ancestors needed since it won't even check.)
-	agent.clearOldToolResults(context.Background(), "some-node", 50000)
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "some-node", inputTokens: 50000})
 	// No panic, no errors = success.
 }
 
@@ -290,8 +290,8 @@ func TestClearOldToolResultsZeroContextWindow(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	// contextWindow = 0 → clearing disabled.
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
-	agent.clearOldToolResults(context.Background(), "some-node", 90000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "some-node", inputTokens: 90000})
 	// No panic = success.
 }
 
@@ -326,8 +326,8 @@ func TestClearOldToolResultsTooFewCandidates(t *testing.T) {
 	}
 	store.ancestorChains["leaf"] = ancestorIDs
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
-	agent.clearOldToolResults(context.Background(), "leaf", 90000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "leaf", inputTokens: 90000})
 
 	// All 3 should be untouched (not enough to clear any).
 	for i := 0; i < 3; i++ {
@@ -391,12 +391,12 @@ func TestClearOldToolResultsStopsEarlyWhenBelowBudget(t *testing.T) {
 	}
 	store.ancestorChains["final-asst"] = ancestorIDs
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
 	// 85000 input tokens, threshold 80000. Clearing result-a (24000 bytes ≈
 	// 6000 tokens) brings estimated tokens below 80000, so result-b should
 	// be preserved.
-	agent.clearOldToolResults(context.Background(), "final-asst", 85000)
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "final-asst", inputTokens: 85000})
 
 	resultA, _ := store.GetNode(context.Background(), "result-a")
 	resultB, _ := store.GetNode(context.Background(), "result-b")

@@ -64,7 +64,7 @@ func (t *blockingTool) HostTool() bool                        { return false }
 
 func TestNewAgentDefaults(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "system prompt", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "system prompt", Model: "test-model", ContextWindow: 100000})
 
 	if agent.client != client {
 		t.Error("client not set")
@@ -101,7 +101,7 @@ func TestNewAgentDefaults(t *testing.T) {
 
 func TestNewAgentWithContextWindow(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithContextWindow(200000))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithContextWindow(200000))
 
 	if agent.contextWindow != 200000 {
 		t.Errorf("contextWindow = %d, want 200000", agent.contextWindow)
@@ -110,7 +110,7 @@ func TestNewAgentWithContextWindow(t *testing.T) {
 
 func TestNewAgentWithExplorationModel(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithExplorationModel("cheap-model"))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithExplorationModel("cheap-model"))
 
 	if agent.explorationModel != "cheap-model" {
 		t.Errorf("explorationModel = %q, want %q", agent.explorationModel, "cheap-model")
@@ -119,7 +119,7 @@ func TestNewAgentWithExplorationModel(t *testing.T) {
 
 func TestNewAgentWithMaxToolIterations(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithMaxToolIterations(50))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithMaxToolIterations(50))
 
 	if agent.maxToolIterations != 50 {
 		t.Errorf("maxToolIterations = %d, want 50", agent.maxToolIterations)
@@ -128,11 +128,7 @@ func TestNewAgentWithMaxToolIterations(t *testing.T) {
 
 func TestNewAgentMultipleOptions(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "model-x", 0,
-		WithContextWindow(150000),
-		WithExplorationModel("summary-model"),
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "model-x", ContextWindow: 0}, WithContextWindow(150000), WithExplorationModel("summary-model"), WithMaxToolIterations(10))
 
 	if agent.contextWindow != 150000 {
 		t.Errorf("contextWindow = %d, want 150000", agent.contextWindow)
@@ -149,7 +145,7 @@ func TestNewAgentToolRegistration(t *testing.T) {
 	client := newTestClient("ok")
 	tools := []Tool{&testTool{name: "bash", result: "ok"}, &testTool{name: "read", result: "contents"}}
 
-	agent := NewAgent(client, tools, nil, "", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: tools, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0})
 
 	if len(agent.tools) != 2 {
 		t.Fatalf("tools map len = %d, want 2", len(agent.tools))
@@ -172,7 +168,7 @@ func TestNewAgentServerTools(t *testing.T) {
 		{Name: "web_search", Description: "Search the web"},
 	}
 
-	agent := NewAgent(client, tools, serverTools, "", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: tools, ServerTools: serverTools, SystemPrompt: "", Model: "", ContextWindow: 0})
 
 	// toolDefs should contain both client tools and server tools.
 	if len(agent.toolDefs) != 2 {
@@ -245,7 +241,7 @@ func TestNewLangdagClientForProviderBranches(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.provider, func(t *testing.T) {
-			client, err := newLangdagClientForProvider(tt.cfg, tt.provider)
+			client, err := newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: tt.cfg, provider: tt.provider})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -257,7 +253,7 @@ func TestNewLangdagClientForProviderBranches(t *testing.T) {
 }
 
 func TestNewLangdagClientForProviderInvalid(t *testing.T) {
-	_, err := newLangdagClientForProvider(Config{}, "unsupported-provider")
+	_, err := newLangdagClientForProvider(newLangdagClientForProviderOptions{cfg: Config{}, provider: "unsupported-provider"})
 	if err == nil {
 		t.Fatal("expected error for unsupported provider")
 	}
@@ -457,9 +453,9 @@ func TestRunTextStreaming(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hi", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hi"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Should have at least: TextDelta, Usage, Done
@@ -510,9 +506,9 @@ func TestRunToolCallDispatch(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "file1.txt\nfile2.txt"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "list files", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "list files"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasToolStart, hasToolDone, hasToolResult bool
@@ -565,9 +561,9 @@ func TestRunUnknownTool(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "do something", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "do something"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasToolError bool
@@ -599,9 +595,9 @@ func TestRunApprovalFlow(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "deleted", requiresApproval: true}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "delete everything", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "delete everything"})
 
 	// Wait for approval request, then approve.
 	var approvalReceived bool
@@ -650,9 +646,9 @@ func TestRunApprovalDenied(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "should not run", requiresApproval: true}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "do it", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "do it"})
 
 	var deniedResult bool
 	timeout := time.NewTimer(5 * time.Second)
@@ -699,9 +695,9 @@ func TestRunCancel(t *testing.T) {
 
 	// Tool that blocks until context is cancelled.
 	blockingTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{blockingTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{blockingTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "run", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "run"})
 
 	// Wait briefly for the run to start, then cancel.
 	time.Sleep(100 * time.Millisecond)
@@ -739,11 +735,9 @@ func TestRunMaxToolIterations(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(3),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(3))
 
-	go agent.Run(context.Background(), "loop", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "loop"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Count tool call starts — should be capped at 3 iterations.
@@ -777,10 +771,10 @@ func TestRunAlreadyRunning(t *testing.T) {
 
 	release := make(chan struct{})
 	bt := &blockingTool{name: "blocker", release: release}
-	agent := NewAgent(client, []Tool{bt}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bt}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	// Start first run — it will block in the tool execution.
-	go agent.Run(context.Background(), "first", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "first"})
 
 	// Wait for the tool call to start (agent is definitely running).
 	timeout := time.NewTimer(5 * time.Second)
@@ -798,7 +792,7 @@ func TestRunAlreadyRunning(t *testing.T) {
 
 secondRun:
 	// Start second run — should emit an error about already running.
-	go agent.Run(context.Background(), "second", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "second"})
 
 	// Collect the "already running" error, then release the blocker.
 	var gotAlreadyRunning bool
@@ -830,7 +824,7 @@ secondRun:
 
 func TestEmitSetsAgentID(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	agent.emit(AgentEvent{Type: EventTextDelta, Text: "hello"})
 
@@ -864,8 +858,8 @@ func TestEmitUsageReturnsInputTokens(t *testing.T) {
 		TokensReasoning:     100,
 	})
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
-	inputTokens := agent.emitUsage(context.Background(), "node-1", "end_turn")
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
+	inputTokens := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "node-1", stopReason: "end_turn"})
 
 	// Input tokens = TokensIn + TokensCacheRead = 5000 + 1000 = 6000.
 	if inputTokens != 6000 {
@@ -903,9 +897,9 @@ func TestEmitUsageReturnsInputTokens(t *testing.T) {
 
 func TestEmitUsageEmptyNodeID(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	inputTokens := agent.emitUsage(context.Background(), "", "")
+	inputTokens := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "", stopReason: ""})
 	if inputTokens != 0 {
 		t.Errorf("inputTokens = %d, want 0 for empty nodeID", inputTokens)
 	}
@@ -915,10 +909,10 @@ func TestEmitUsageMissingNode(t *testing.T) {
 	store := newMockStorage()
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	// Node doesn't exist in storage.
-	inputTokens := agent.emitUsage(context.Background(), "nonexistent", "")
+	inputTokens := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "nonexistent", stopReason: ""})
 	if inputTokens != 0 {
 		t.Errorf("inputTokens = %d, want 0 for missing node", inputTokens)
 	}
@@ -989,9 +983,9 @@ func TestRunParallelAgentCalls(t *testing.T) {
 
 	gate := make(chan struct{})
 	tracker := &parallelTracker{name: "agent", result: "agent result", gate: gate}
-	agent := NewAgent(client, []Tool{tracker}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tracker}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "spawn agents", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "spawn agents"})
 
 	// Wait for all 3 to be running concurrently.
 	deadline := time.After(5 * time.Second)
@@ -1062,9 +1056,9 @@ func TestRunMixedSequentialAndParallelCalls(t *testing.T) {
 
 	bashTool := &testTool{name: "bash", result: "bash output"}
 	agentTool := &testTool{name: "agent", result: "agent output"}
-	agent := NewAgent(client, []Tool{bashTool, agentTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool, agentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "do things", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "do things"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Collect all tool results by ID.
@@ -1105,10 +1099,10 @@ func TestRunParallelAgentCancellation(t *testing.T) {
 
 	gate := make(chan struct{}) // never closed — agents block until cancelled
 	tracker := &parallelTracker{name: "agent", result: "ok", gate: gate}
-	agent := NewAgent(client, []Tool{tracker}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tracker}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	go agent.Run(ctx, "go", "")
+	go agent.Run(ctx, RunOptions{UserMessage: "go"})
 
 	// Wait for both agents to be running.
 	deadline := time.After(5 * time.Second)
@@ -1165,9 +1159,9 @@ func TestRunParallelAgentEventIDs(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	agentTool := &testTool{name: "agent", result: "ok"}
-	agent := NewAgent(client, []Tool{agentTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{agentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "go", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "go"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Collect distinct tool IDs from EventToolCallStart for agent calls.
@@ -1189,7 +1183,7 @@ func TestRunParallelAgentEventIDs(t *testing.T) {
 
 func TestSystemPromptIsStatic(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.sessionInputTokens = 10000
 	agent.sessionOutputTokens = 2000
 	agent.sessionAgentCalls = 3
@@ -1203,7 +1197,7 @@ func TestSystemPromptIsStatic(t *testing.T) {
 
 func TestBudgetReminderBlockIncludesStats(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.sessionInputTokens = 10000
 	agent.sessionOutputTokens = 2000
 	agent.sessionAgentCalls = 3
@@ -1223,7 +1217,7 @@ func TestBudgetReminderBlockIncludesStats(t *testing.T) {
 
 func TestBudgetReminderBlockEmptyWhenNoStats(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 
 	block := agent.budgetReminderBlock()
 	if block.Text != "" {
@@ -1233,9 +1227,7 @@ func TestBudgetReminderBlockEmptyWhenNoStats(t *testing.T) {
 
 func TestBudgetReminderIterationWarningLowThreshold(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(20),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(20))
 	// Simulate being at iteration 16 of 20 (20% remaining < 25% low threshold).
 	agent.currentIteration = 16
 
@@ -1250,9 +1242,7 @@ func TestBudgetReminderIterationWarningLowThreshold(t *testing.T) {
 
 func TestBudgetReminderIterationWarningMidThreshold(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(20),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(20))
 	// Simulate being at iteration 12 of 20 (40% remaining < 50% mid threshold).
 	agent.currentIteration = 12
 
@@ -1267,9 +1257,7 @@ func TestBudgetReminderIterationWarningMidThreshold(t *testing.T) {
 
 func TestBudgetReminderNoIterationWarningAboveThreshold(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(20),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(20))
 	// Simulate being at iteration 5 of 20 (75% remaining > 50% mid threshold).
 	agent.currentIteration = 5
 
@@ -1295,7 +1283,7 @@ func TestSubAgentReceivesMaxToolIterations(t *testing.T) {
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(sat.generalMaxTurns + subAgentIterationBuffer),
 	}
-	agent := NewAgent(client, nil, nil, "", "", 0, agentOpts...)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, agentOpts...)
 	want := 15 + subAgentIterationBuffer
 	if agent.maxToolIterations != want {
 		t.Errorf("sub-agent maxToolIterations = %d, want %d", agent.maxToolIterations, want)
@@ -1324,11 +1312,11 @@ func TestSessionStatsAccumulateFromEmitUsage(t *testing.T) {
 		TokensCacheRead: 500,
 	})
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
-	agent.emitUsage(context.Background(), "node-1", "tool_use")
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
+	agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "node-1", stopReason: "tool_use"})
 	// Drain the event.
 	<-agent.Events()
-	agent.emitUsage(context.Background(), "node-2", "end_turn")
+	agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "node-2", stopReason: "end_turn"})
 	<-agent.Events()
 
 	// Input: (5000+1000) + (3000+500) = 9500
@@ -1361,9 +1349,9 @@ func TestSessionAgentCallsTracked(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	agentTool := &testTool{name: "agent", result: "ok"}
-	agent := NewAgent(client, []Tool{agentTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{agentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "go", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "go"})
 	drainEvents(t, agent.Events(), 5*time.Second)
 
 	if agent.sessionAgentCalls != 2 {
@@ -1373,7 +1361,7 @@ func TestSessionAgentCallsTracked(t *testing.T) {
 
 func TestBuildPromptOptsIncludesModel(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "prompt", Model: "test-model", ContextWindow: 0})
 
 	opts := agent.buildPromptOpts()
 	// Should have 5 options: system prompt, max tokens, max output group tokens, tools, model.
@@ -1384,7 +1372,7 @@ func TestBuildPromptOptsIncludesModel(t *testing.T) {
 
 func TestBuildPromptOptsNoModel(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "prompt", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "prompt", Model: "", ContextWindow: 0})
 
 	opts := agent.buildPromptOpts()
 	// No model → only 4 options: system prompt, max tokens, max output group tokens, tools.
@@ -1396,7 +1384,7 @@ func TestBuildPromptOptsNoModel(t *testing.T) {
 func TestBuildPromptOptsWithThinking(t *testing.T) {
 	client := newTestClient("ok")
 	thinkTrue := true
-	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0, WithThinking(&thinkTrue))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "prompt", Model: "test-model", ContextWindow: 0}, WithThinking(&thinkTrue))
 
 	opts := agent.buildPromptOpts()
 	// Should have 6 options: system prompt, max tokens, max output group tokens, tools, model, think.
@@ -1407,7 +1395,7 @@ func TestBuildPromptOptsWithThinking(t *testing.T) {
 
 func TestBuildPromptOptsThinkingNil(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "prompt", Model: "test-model", ContextWindow: 0})
 
 	opts := agent.buildPromptOpts()
 	// No thinking → 5 options: system prompt, max tokens, max output group tokens, tools, model.
@@ -1420,12 +1408,12 @@ func TestBuildPromptOptsMaxTokensDefault(t *testing.T) {
 	prov := &mockProvider{responses: []string{"ok"}, model: "test-model"}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "prompt", Model: "test-model", ContextWindow: 0})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	go agent.Run(ctx, "hello", "")
+	go agent.Run(ctx, RunOptions{UserMessage: "hello"})
 	// Drain events until done.
 	for ev := range agent.Events() {
 		if ev.Type == EventDone {
@@ -1466,7 +1454,7 @@ func (t *panicTool) HostTool() bool                        { return false }
 
 func TestEmitNonBlockingWhenChannelFull(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0})
 
 	// Fill the event channel to capacity.
 	for i := 0; i < cap(agent.events); i++ {
@@ -1505,9 +1493,9 @@ func TestRunPanicRecovery(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	pt := &panicTool{name: "panic_tool", msg: "intentional test panic"}
-	agent := NewAgent(client, []Tool{pt}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{pt}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "trigger panic", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "trigger panic"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasPanicError, hasDone bool
@@ -1620,9 +1608,9 @@ func TestExplorationFlowOutlineThenReadThenAgent(t *testing.T) {
 	readTool := &testTool{name: "read_file", result: "func handleError(err error) {\n\tos.Exit(1)\n}"}
 	agentTool := &testTool{name: "agent", result: "[agent:abc turns:3/15 summary:model]\n\n- Uses os.Exit"}
 
-	agent := NewAgent(client, []Tool{outlineTool, readTool, agentTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{outlineTool, readTool, agentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "understand error handling", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "understand error handling"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	// Collect tool call sequence and errors.
@@ -1702,9 +1690,9 @@ func TestExplorationFlowParallelSubAgents(t *testing.T) {
 
 	gate := make(chan struct{})
 	tracker := &parallelTracker{name: "agent", result: "[agent:x turns:2/15 summary:model]\n\n- module analyzed", gate: gate}
-	agent := NewAgent(client, []Tool{tracker}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tracker}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "explore the codebase architecture", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "explore the codebase architecture"})
 
 	// Wait for both agents to be running concurrently.
 	deadline := time.After(5 * time.Second)
@@ -1849,9 +1837,9 @@ func TestResilienceRetrySucceedsAfterTransientError(t *testing.T) {
 		MaxDelay:   10 * time.Millisecond,
 	})
 	client := langdag.NewWithDeps(store, retryProv)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	// Should have a retry event.
@@ -1894,9 +1882,9 @@ func TestResiliencePermanentErrorStopsImmediately(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasRetry, hasError bool
@@ -1946,9 +1934,9 @@ func TestResilienceRetryDuringToolLoop(t *testing.T) {
 	client := langdag.NewWithDeps(store, retryProv)
 
 	bashTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "run tool", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "run tool"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasRetry, hasToolStart bool
@@ -2021,9 +2009,9 @@ func TestResilienceNoDeadlockOnMultipleFailures(t *testing.T) {
 
 	// Tool that always returns an error.
 	failingTool := &testTool{name: "agent", err: fmt.Errorf("sub-agent crashed")}
-	agent := NewAgent(client, []Tool{failingTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{failingTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "go", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "go"})
 
 	// Must complete within timeout — no deadlock.
 	events := drainEvents(t, agent.Events(), 5*time.Second)
@@ -2051,7 +2039,7 @@ func TestResilienceNoDeadlockOnMultipleFailures(t *testing.T) {
 func TestDrainStreamTimeout(t *testing.T) {
 	// A stream that sends a few chunks then stalls should trigger a timeout.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithStreamChunkTimeout(100*time.Millisecond))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithStreamChunkTimeout(100*time.Millisecond))
 
 	stream := make(chan langdag.StreamChunk, 10)
 	// Send a couple of chunks, then stop (no Done, no close).
@@ -2094,7 +2082,7 @@ done:
 func TestDrainStreamSlowButSteady(t *testing.T) {
 	// A stream that sends chunks just within the timeout should complete normally.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithStreamChunkTimeout(200*time.Millisecond))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithStreamChunkTimeout(200*time.Millisecond))
 
 	stream := make(chan langdag.StreamChunk)
 	go func() {
@@ -2121,7 +2109,7 @@ func TestDrainStreamSlowButSteady(t *testing.T) {
 func TestDrainStreamContextCancellation(t *testing.T) {
 	// Canceling the context should make drainStream return immediately.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithStreamChunkTimeout(5*time.Second))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithStreamChunkTimeout(5*time.Second))
 
 	stream := make(chan langdag.StreamChunk) // never sends anything
 	result := &langdag.PromptResult{Stream: stream}
@@ -2147,7 +2135,7 @@ func TestDrainStreamContextCancellation(t *testing.T) {
 func TestDrainStreamErrorChunk(t *testing.T) {
 	// A stream that sends an error chunk should return streamOK=false.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0, WithStreamChunkTimeout(5*time.Second))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0}, WithStreamChunkTimeout(5*time.Second))
 
 	stream := make(chan langdag.StreamChunk, 10)
 	stream <- langdag.StreamChunk{Content: "partial"}
@@ -2168,9 +2156,9 @@ func TestDrainStreamErrorChunk(t *testing.T) {
 func TestDoneChClosedOnEventDone(t *testing.T) {
 	// Verify that doneCh is closed when EventDone is emitted.
 	client := newTestClient("hello")
-	agent := NewAgent(client, nil, nil, "", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 
 	// Drain events until done.
 	for range agent.Events() {
@@ -2220,7 +2208,7 @@ func TestDoneChClosedUnderBackpressure(t *testing.T) {
 func TestDoneChIdempotent(t *testing.T) {
 	// Emitting EventDone twice should not panic (sync.Once protects the close).
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "", ContextWindow: 0})
 
 	agent.emit(AgentEvent{Type: EventDone})
 	agent.emit(AgentEvent{Type: EventDone}) // should not panic
@@ -2453,9 +2441,9 @@ func TestStreamRetrySucceedsAfterInterruption(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hi", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hi"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasRetry, hasClear, hasDone bool
@@ -2498,9 +2486,9 @@ func TestStreamRetryGivesUpAfterMaxRetries(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hi", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hi"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasError, hasDone bool
@@ -2534,9 +2522,9 @@ func TestStreamRetryEmitsStreamClearBeforeRetry(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hi", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hi"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	// Find the relative positions of StreamClear and Retry.
@@ -2564,7 +2552,7 @@ func TestStreamRetryNoRetryOnContextCancel(t *testing.T) {
 	// Test retryableStream directly: when context is already canceled at the
 	// point of stream failure, no retry should be attempted.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	ctx, cancel := context.WithCancel(context.Background())
 	callCount := 0
@@ -2633,9 +2621,9 @@ func TestStreamRetryDuringToolLoop(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "run tool", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "run tool"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasRetry, hasToolStart, hasClear bool
@@ -2765,10 +2753,9 @@ func TestIntegrationStreamStallRetrySucceeds(t *testing.T) {
 
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0,
-		WithStreamChunkTimeout(200*time.Millisecond)) // short timeout for fast test
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithStreamChunkTimeout(200*time.Millisecond)) // short timeout for fast test
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasStreamClear, hasRetry, hasDone bool
@@ -2829,10 +2816,9 @@ func TestIntegrationStreamStallRetryAlsoFails(t *testing.T) {
 
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0,
-		WithStreamChunkTimeout(200*time.Millisecond))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithStreamChunkTimeout(200*time.Millisecond))
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	var hasDone bool
@@ -2893,14 +2879,14 @@ func TestIntegrationBackpressure(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "command output"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 	// Replace events channel with a tiny buffer to guarantee backpressure.
 	// The agent will generate ~8+ events (TextDelta, Usage, ToolCallStart,
 	// ToolCallDone, ToolResult, TextDelta, Usage, Done), so a buffer of 4
 	// guarantees that later events including EventDone will be dropped.
 	agent.events = make(chan AgentEvent, 4)
 
-	go agent.Run(context.Background(), "run tool", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "run tool"})
 
 	// Do NOT drain events — let the buffer fill up and force event drops.
 	// Wait for doneCh as the reliable completion signal.
@@ -2949,7 +2935,7 @@ drained:
 // --- Background result injection tests ---
 
 func TestAgentInjectAndDrainBackgroundResults(t *testing.T) {
-	agent := NewAgent(nil, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: nil, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	// Initially empty.
 	if results := agent.drainBackgroundResults(); results != nil {
@@ -2976,7 +2962,7 @@ func TestAgentInjectAndDrainBackgroundResults(t *testing.T) {
 }
 
 func TestAgentInjectBackgroundResultConcurrent(t *testing.T) {
-	agent := NewAgent(nil, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: nil, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	// Inject from multiple goroutines concurrently.
 	var wg sync.WaitGroup
@@ -3011,9 +2997,9 @@ func TestRunMaxTokensEmptyResponse(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "write a huge file", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "write a huge file"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasError, hasDone bool
@@ -3047,9 +3033,9 @@ func TestRunMaxTokensWithPartialText(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "write a huge file", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "write a huge file"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var allText string
@@ -3104,8 +3090,8 @@ func TestRunMaxTokensCrashChain_ConversationNotCorrupted(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	// First run: max_tokens with empty content → error expected.
-	agent1 := NewAgent(client, nil, nil, "", "test-model", 0)
-	go agent1.Run(context.Background(), "generate a huge file", "")
+	agent1 := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
+	go agent1.Run(context.Background(), RunOptions{UserMessage: "generate a huge file"})
 	events1 := drainEvents(t, agent1.Events(), 5*time.Second)
 
 	var hasError1, hasDone1 bool
@@ -3125,8 +3111,8 @@ func TestRunMaxTokensCrashChain_ConversationNotCorrupted(t *testing.T) {
 	}
 
 	// Second run: normal response — conversation state should not be corrupted.
-	agent2 := NewAgent(client, nil, nil, "", "test-model", 0)
-	go agent2.Run(context.Background(), "try something simpler", "")
+	agent2 := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
+	go agent2.Run(context.Background(), RunOptions{UserMessage: "try something simpler"})
 	events2 := drainEvents(t, agent2.Events(), 5*time.Second)
 
 	var hasText2, hasDone2, hasError2 bool
@@ -3183,10 +3169,10 @@ func TestEmitUsage_StorageError(t *testing.T) {
 	prov := &mockProvider{model: "test-model", responses: []string{"hello"}}
 	client := langdag.NewWithDeps(store, prov)
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	// emitUsage with a node ID that will fail in storage.
-	result := agent.emitUsage(context.Background(), "node-1", "end_turn")
+	result := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "node-1", stopReason: "end_turn"})
 	if result != 0 {
 		t.Errorf("emitUsage returned %d, want 0 on storage error", result)
 	}
@@ -3206,9 +3192,9 @@ func TestEmitUsage_EmptyNodeID(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	result := agent.emitUsage(context.Background(), "", "end_turn")
+	result := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "", stopReason: "end_turn"})
 	if result != 0 {
 		t.Errorf("emitUsage returned %d, want 0 for empty nodeID", result)
 	}
@@ -3220,9 +3206,9 @@ func TestEmitUsage_NilNode(t *testing.T) {
 	store := newMockStorage() // has no nodes
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	result := agent.emitUsage(context.Background(), "nonexistent", "end_turn")
+	result := agent.emitUsage(context.Background(), emitUsageOptions{nodeID: "nonexistent", stopReason: "end_turn"})
 	if result != 0 {
 		t.Errorf("emitUsage returned %d, want 0 for nil node", result)
 	}
@@ -3259,11 +3245,11 @@ func TestClearOldToolResults_StorageError(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
 	// Input tokens above threshold → would normally clear, but GetAncestors fails.
 	// Should not panic or hang.
-	agent.clearOldToolResults(context.Background(), "some-node", 90000)
+	agent.clearOldToolResults(context.Background(), clearOldToolResultsOptions{nodeID: "some-node", inputTokens: 90000})
 }
 
 // TestClearOldToolResults_AgentContinuesOnFailure verifies the full agent loop
@@ -3295,9 +3281,9 @@ func TestClearOldToolResults_AgentContinuesOnFailure(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &testTool{name: "test_tool", result: "file.txt"}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
-	go agent.Run(context.Background(), "check files", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "check files"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasDone, hasText bool
@@ -3351,10 +3337,10 @@ func TestMaybeCompact_CompactionFailure(t *testing.T) {
 	leafID := nodes[len(nodes)-1].ID
 	store.ancestorChains[leafID] = ancestorIDs
 
-	agent := NewAgent(client, nil, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
 	// Input tokens at 96% of context window → above compactThresholdFraction (0.95).
-	result := agent.maybeCompact(context.Background(), leafID, 96000)
+	result := agent.maybeCompact(context.Background(), maybeCompactOptions{nodeID: leafID, inputTokens: 96000})
 	if result != leafID {
 		t.Errorf("maybeCompact returned %q, want %q (original) on failure", result, leafID)
 	}
@@ -3390,9 +3376,9 @@ func TestMaybeCompact_AgentContinuesAfterFailure(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &testTool{name: "test_tool", result: "ok"}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 100000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 100000})
 
-	go agent.Run(context.Background(), "do something", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "do something"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasDone, hasFinished bool
@@ -3490,9 +3476,9 @@ func TestToolExecution_VeryLongError(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &testTool{name: "failing_tool", err: fmt.Errorf("%s", longMsg)}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "run it", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "run it"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var foundToolResult, hasDone bool
@@ -3539,9 +3525,9 @@ func TestToolExecution_Panic(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &panicTool{name: "panic_tool", msg: "tool exploded!"}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "do it", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "do it"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var hasError, hasDone bool
@@ -3590,9 +3576,9 @@ func TestToolExecution_UnknownTool(t *testing.T) {
 
 	// Register a different tool — nonexistent_tool is not registered.
 	tool := &testTool{name: "other_tool", result: "ok"}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "use tool", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "use tool"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var foundToolResult, hasDone, hasFollowup bool
@@ -3648,11 +3634,11 @@ func TestApprovalFlow_ContextCanceled(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &testTool{name: "risky_tool", result: "done", requiresApproval: true}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	go agent.Run(ctx, "do something dangerous", "")
+	go agent.Run(ctx, RunOptions{UserMessage: "do something dangerous"})
 
 	// Wait for the approval request to be emitted.
 	var approvalSeen bool
@@ -3723,9 +3709,9 @@ func TestApprovalFlow_Denied(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	tool := &testTool{name: "risky_tool", result: "done", requiresApproval: true}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "delete everything", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "delete everything"})
 
 	// Wait for approval request, then deny.
 	timeout2 := time.After(5 * time.Second)
@@ -3850,10 +3836,9 @@ func TestMaxToolIterations(t *testing.T) {
 
 	maxIter := 3
 	tool := &testTool{name: "step_tool", result: "ok"}
-	agent := NewAgent(client, []Tool{tool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(maxIter))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{tool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(maxIter))
 
-	go agent.Run(context.Background(), "loop forever", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "loop forever"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	// Count tool executions.
@@ -3893,7 +3878,7 @@ func TestMaxToolIterations(t *testing.T) {
 // TestMaxToolIterations_DefaultValue verifies that the default maxToolIterations
 // (200) is used when none is configured.
 func TestMaxToolIterations_DefaultValue(t *testing.T) {
-	agent := NewAgent(newTestClient("ok"), nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: newTestClient("ok"), Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 	if agent.maxToolIterations != 0 {
 		t.Errorf("maxToolIterations = %d, want 0 (uses default %d)", agent.maxToolIterations, defaultMaxToolIterations)
 	}
@@ -3918,9 +3903,9 @@ func TestE2EPermanentErrorChain(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Verify the complete event sequence.
@@ -4000,9 +3985,9 @@ func TestE2ETransientRetryChain(t *testing.T) {
 		MaxDelay:   10 * time.Millisecond,
 	})
 	client := langdag.NewWithDeps(store, retryProv)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hello", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hello"})
 	events := drainEvents(t, agent.Events(), 30*time.Second)
 
 	var retryEvents []AgentEvent
@@ -4071,9 +4056,9 @@ func TestE2EMidStreamFailureRetryChain(t *testing.T) {
 	}
 	store := newMockStorage()
 	client := langdag.NewWithDeps(store, prov)
-	agent := NewAgent(client, nil, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "hi", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "hi"})
 	events := drainEvents(t, agent.Events(), 10*time.Second)
 
 	// Verify the event sequence ordering: partial text → error → clear → retry → full text → usage → done.
@@ -4187,11 +4172,11 @@ func TestE2ESubAgentErrorChain(t *testing.T) {
 	tmpDir := t.TempDir()
 	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: parentClient, Tools: []Tool{subAgentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 	// Wire sub-agent events to the parent's event channel (as agentui.go does).
 	subAgentTool.parentEvents = agent.events
 
-	go agent.Run(context.Background(), "check if auth is working", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "check if auth is working"})
 	events := drainEvents(t, agent.Events(), 15*time.Second)
 
 	// Collect the tool result that the parent agent received.
@@ -4303,9 +4288,9 @@ func TestE2ECascadingFailureRecovery(t *testing.T) {
 	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 	simpleTool := &testTool{name: "simple_tool", result: "fallback result ok"}
 
-	agent := NewAgent(parentClient, []Tool{subAgentTool, simpleTool}, nil, "", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: parentClient, Tools: []Tool{subAgentTool, simpleTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0})
 
-	go agent.Run(context.Background(), "analyze the code", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "analyze the code"})
 	events := drainEvents(t, agent.Events(), 30*time.Second)
 
 	// Track the full sequence.
@@ -4418,11 +4403,9 @@ func TestGracefulExhaustion(t *testing.T) {
 	client := langdag.NewWithDeps(store, prov)
 
 	bashTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{bashTool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(3),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(3))
 
-	go agent.Run(context.Background(), "test graceful exhaustion", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "test graceful exhaustion"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	var (
@@ -4475,9 +4458,7 @@ func TestGracefulExhaustionCallsBackgroundWaiter(t *testing.T) {
 		testTool: testTool{name: "agent", result: "ok"},
 	}
 	bashTool := &testTool{name: "bash", result: "ok"}
-	agent := NewAgent(client, []Tool{bashTool, bgWaiter}, nil, "", "test-model", 0,
-		WithMaxToolIterations(3),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bashTool, bgWaiter}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(3))
 
 	// injectFn simulates background agents completing during WaitForBackgroundAgents,
 	// which is what happens in production (onBgComplete → InjectBackgroundResult).
@@ -4485,7 +4466,7 @@ func TestGracefulExhaustionCallsBackgroundWaiter(t *testing.T) {
 		agent.InjectBackgroundResult("bg-result-from-sub-agent")
 	}
 
-	go agent.Run(context.Background(), "test with bg waiter", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "test with bg waiter"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	if !bgWaiter.wasCalled() {
@@ -4568,15 +4549,13 @@ func TestE2EGracefulExhaustionWithBackgroundSubAgent(t *testing.T) {
 	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	const parentMaxIterations = 2
-	agent := NewAgent(parentClient, []Tool{bashTool, subAgentTool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(parentMaxIterations),
-	)
+	agent := NewAgent(NewAgentOptions{Client: parentClient, Tools: []Tool{bashTool, subAgentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(parentMaxIterations))
 
 	// Wire the background completion callback as production does (agentui.go:261).
 	subAgentTool.parentEvents = agent.events
 	subAgentTool.onBgComplete = agent.InjectBackgroundResult
 
-	go agent.Run(context.Background(), "plan auth module changes", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "plan auth module changes"})
 	events := drainEvents(t, agent.Events(), 15*time.Second)
 
 	var (
@@ -4654,16 +4633,14 @@ func TestBackgroundCompletionWaitsForPendingAgents(t *testing.T) {
 		// We need the agent reference, so we capture it below.
 	}
 
-	agent := NewAgent(client, []Tool{bgWaiter}, nil, "", "test-model", 0,
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bgWaiter}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(10))
 
 	// Wire up the inject function now that agent exists.
 	bgWaiter.injectFn = func() {
 		agent.InjectBackgroundResult("bg-agent-result: found the answer")
 	}
 
-	go agent.Run(context.Background(), "test background completion", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "test background completion"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	if !bgWaiter.wasCalled() {
@@ -4697,11 +4674,9 @@ func TestBackgroundCompletionSkipsWhenNoPending(t *testing.T) {
 		pending:  false,
 	}
 
-	agent := NewAgent(client, []Tool{bgWaiter}, nil, "", "test-model", 0,
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bgWaiter}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(10))
 
-	go agent.Run(context.Background(), "test no pending", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "test no pending"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	if bgWaiter.wasCalled() {
@@ -4745,9 +4720,7 @@ func TestBackgroundCompletionCycleCap(t *testing.T) {
 		pending:  true,
 	}
 
-	agent := NewAgent(client, []Tool{bgWaiter}, nil, "", "test-model", 0,
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: []Tool{bgWaiter}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(10))
 
 	bgWaiter.injectFn = func() {
 		atomic.AddInt32(&waitCount, 1)
@@ -4758,7 +4731,7 @@ func TestBackgroundCompletionCycleCap(t *testing.T) {
 		bgWaiter.mu.Unlock()
 	}
 
-	go agent.Run(context.Background(), "test cycle cap", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "test cycle cap"})
 	events := drainEvents(t, agent.Events(), 5*time.Second)
 
 	// Should have been called exactly maxBackgroundCompletionCycles times.
@@ -4905,9 +4878,7 @@ func TestE2EBackgroundLifecycleThreeAgents(t *testing.T) {
 	tmpDir := t.TempDir()
 	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: parentClient, Tools: []Tool{subAgentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(10))
 
 	// Wire callbacks as production does (agentui.go:260-261).
 	subAgentTool.parentEvents = agent.events
@@ -4921,7 +4892,7 @@ func TestE2EBackgroundLifecycleThreeAgents(t *testing.T) {
 		close(gate3)
 	}()
 
-	go agent.Run(context.Background(), "analyze architecture: auth, database, caching", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "analyze architecture: auth, database, caching"})
 	events := drainEvents(t, agent.Events(), 15*time.Second)
 
 	// --- Verify event stream ---
@@ -5034,15 +5005,13 @@ func TestE2EChannelSaturationThreeAgents(t *testing.T) {
 	tmpDir := t.TempDir()
 	subAgentTool := NewSubAgentTool(SubAgentConfig{Client: subClient, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	agent := NewAgent(parentClient, []Tool{subAgentTool}, nil, "", "test-model", 0,
-		WithMaxToolIterations(10),
-	)
+	agent := NewAgent(NewAgentOptions{Client: parentClient, Tools: []Tool{subAgentTool}, ServerTools: nil, SystemPrompt: "", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(10))
 	// Replace events channel with a small buffer to force saturation.
 	agent.events = make(chan AgentEvent, 64)
 	subAgentTool.parentEvents = agent.events
 	subAgentTool.onBgComplete = agent.InjectBackgroundResult
 
-	go agent.Run(context.Background(), "analyze architecture", "")
+	go agent.Run(context.Background(), RunOptions{UserMessage: "analyze architecture"})
 
 	// Drain events with a generous timeout. Use doneCh as a backup signal
 	// in case EventDone is dropped (the exact scenario we're testing).
@@ -5130,7 +5099,7 @@ func TestE2EChannelSaturationThreeAgents(t *testing.T) {
 
 func TestTurnBudgetNotShownWhenMaxTurnsZero(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	// Main agent: maxTurns == 0, no turn budget should appear.
 	got := agent.budgetReminderBlock().Text
 	if strings.Contains(got, "Budget:") {
@@ -5147,9 +5116,9 @@ func TestTurnBudgetEarlyTier(t *testing.T) {
 	}
 
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
-	agent.SetTurnProgress(turn, maxT)
-	agent.SetTokenProgress(6000, 2200)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(maxT))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: turn, Max: maxT})
+	agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: 6000, OutputTokens: 2200})
 
 	got := agent.budgetReminderBlock().Text
 	expected := fmt.Sprintf("Budget: Turn %d/%d | 8200 tokens used", turn, maxT)
@@ -5167,9 +5136,9 @@ func TestTurnBudgetMidTier(t *testing.T) {
 	turn := int(float64(maxT)*turnBudgetMidThreshold) + 1
 
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
-	agent.SetTurnProgress(turn, maxT)
-	agent.SetTokenProgress(25000, 9100)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(maxT))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: turn, Max: maxT})
+	agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: 25000, OutputTokens: 9100})
 
 	got := agent.budgetReminderBlock().Text
 	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
@@ -5187,9 +5156,9 @@ func TestTurnBudgetLateTier(t *testing.T) {
 	turn := int(float64(maxT)*turnBudgetLateThreshold) + 1
 
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
-	agent.SetTurnProgress(turn, maxT)
-	agent.SetTokenProgress(40000, 12300)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(maxT))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: turn, Max: maxT})
+	agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: 40000, OutputTokens: 12300})
 
 	got := agent.budgetReminderBlock().Text
 	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
@@ -5210,9 +5179,9 @@ func TestTurnBudgetFinalTier(t *testing.T) {
 	}
 
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
-	agent.SetTurnProgress(turn, maxT)
-	agent.SetTokenProgress(50000, 11800)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(maxT))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: turn, Max: maxT})
+	agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: 50000, OutputTokens: 11800})
 
 	got := agent.budgetReminderBlock().Text
 	expected := fmt.Sprintf("Budget: Turn %d/%d", turn, maxT)
@@ -5231,9 +5200,9 @@ func TestSubAgentBudgetReminderOnlyTurnBudget(t *testing.T) {
 	// Sub-agents (maxTurns > 0, contextWindow == 0) should only get the turn
 	// budget line, not session stats, context window, or iteration warnings.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(5, 20)
-	agent.SetTokenProgress(3000, 1000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(20))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: 5, Max: 20})
+	agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: 3000, OutputTokens: 1000})
 	// Set main-agent fields that should NOT appear for sub-agents.
 	agent.sessionInputTokens = 50000
 	agent.sessionOutputTokens = 10000
@@ -5258,8 +5227,8 @@ func TestSubAgentBudgetReminderOnlyTurnBudget(t *testing.T) {
 func TestSubAgentBudgetReminderCompactLate(t *testing.T) {
 	// Verify the compact late-tier message format for sub-agents.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(16, 20)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(20))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: 16, Max: 20})
 
 	got := agent.turnBudgetLine()
 	if got != "Budget: Turn 16/20 — 4 left, wrap up NOW." {
@@ -5270,8 +5239,8 @@ func TestSubAgentBudgetReminderCompactLate(t *testing.T) {
 func TestSubAgentBudgetReminderCompactFinal(t *testing.T) {
 	// Verify the compact final-tier message format for sub-agents.
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(20))
-	agent.SetTurnProgress(19, 20)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(20))
+	agent.SetTurnProgress(SetTurnProgressOptions{Used: 19, Max: 20})
 
 	got := agent.turnBudgetLine()
 	if got != "Budget: Turn 19/20 — FINAL, produce summary, no tools." {
@@ -5282,15 +5251,15 @@ func TestSubAgentBudgetReminderCompactFinal(t *testing.T) {
 func TestSetTurnProgressThreadSafe(t *testing.T) {
 	maxT := defaultGeneralMaxTurns
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0, WithMaxTurns(maxT))
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxTurns(maxT))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(turn int) {
 			defer wg.Done()
-			agent.SetTurnProgress(turn, maxT)
-			agent.SetTokenProgress(turn*1000, turn*200)
+			agent.SetTurnProgress(SetTurnProgressOptions{Used: turn, Max: maxT})
+			agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: turn*1000, OutputTokens: turn*200})
 			_ = agent.budgetReminderBlock()
 		}(i)
 	}
@@ -5302,7 +5271,7 @@ func TestSetTurnProgressThreadSafe(t *testing.T) {
 
 func TestContextWindowUtilizationShown(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 200000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 200000})
 	agent.lastInputTokens = 80000
 
 	got := agent.budgetReminderBlock().Text
@@ -5313,7 +5282,7 @@ func TestContextWindowUtilizationShown(t *testing.T) {
 
 func TestContextWindowNotShownWhenZero(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.lastInputTokens = 80000
 
 	got := agent.budgetReminderBlock().Text
@@ -5324,7 +5293,7 @@ func TestContextWindowNotShownWhenZero(t *testing.T) {
 
 func TestContextWindowNotShownWhenNoInputTokens(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 200000)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 200000})
 	// lastInputTokens defaults to 0
 
 	got := agent.budgetReminderBlock().Text
@@ -5335,7 +5304,7 @@ func TestContextWindowNotShownWhenNoInputTokens(t *testing.T) {
 
 func TestSessionCostShownInStats(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.sessionInputTokens = 50000
 	agent.sessionOutputTokens = 5000
 	agent.sessionAgentCalls = 2
@@ -5352,7 +5321,7 @@ func TestSessionCostShownInStats(t *testing.T) {
 
 func TestSessionCostNotShownWhenZero(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.sessionInputTokens = 50000
 	agent.sessionOutputTokens = 5000
 
@@ -5364,9 +5333,7 @@ func TestSessionCostNotShownWhenZero(t *testing.T) {
 
 func TestGraduatedIterationWarningLow(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(100),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(100))
 	// 20% remaining — below 25% low threshold.
 	agent.currentIteration = 80
 
@@ -5381,9 +5348,7 @@ func TestGraduatedIterationWarningLow(t *testing.T) {
 
 func TestGraduatedIterationWarningMid(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(100),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(100))
 	// 40% remaining — below 50% mid threshold but above 25% low.
 	agent.currentIteration = 60
 
@@ -5398,9 +5363,7 @@ func TestGraduatedIterationWarningMid(t *testing.T) {
 
 func TestGraduatedIterationWarningNone(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0,
-		WithMaxToolIterations(100),
-	)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0}, WithMaxToolIterations(100))
 	// 70% remaining — above all thresholds.
 	agent.currentIteration = 30
 
@@ -5412,7 +5375,7 @@ func TestGraduatedIterationWarningNone(t *testing.T) {
 
 func TestSetSessionCostThreadSafe(t *testing.T) {
 	client := newTestClient("ok")
-	agent := NewAgent(client, nil, nil, "base prompt", "test-model", 0)
+	agent := NewAgent(NewAgentOptions{Client: client, Tools: nil, ServerTools: nil, SystemPrompt: "base prompt", Model: "test-model", ContextWindow: 0})
 	agent.sessionInputTokens = 1000
 
 	var wg sync.WaitGroup
