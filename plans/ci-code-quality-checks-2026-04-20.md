@@ -151,7 +151,7 @@ constrained.
 - [x] 1d: Implement `positional-params` rule (receiver excluded, variadic
   allowed as final param, `context.Context` as first param exempt, interface
   methods not scanned).
-- [ ] 1e: Add fixture-based tests in `tools/ci-check/` covering pass/fail for
+- [x] 1e: Add fixture-based tests in `tools/ci-check/` covering pass/fail for
   each rule, including exclusion-set edge cases.
 
 ## Phase 2: Split oversize files

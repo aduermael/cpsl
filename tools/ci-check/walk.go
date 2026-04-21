@@ -16,6 +16,7 @@ var skipDirNames = []string{
 	"external-deps-workspace",
 	"vendor",
 	"node_modules",
+	"testdata",
 	".git",
 }
 

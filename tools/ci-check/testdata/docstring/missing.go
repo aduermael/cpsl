@@ -1,0 +1,3 @@
+package fixture
+
+func Missing() {}
