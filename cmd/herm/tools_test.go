@@ -334,7 +334,7 @@ func TestBashToolExecute_BasicCommand(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo hello world"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -368,7 +368,7 @@ func TestBashToolExecute_TruncatesOutput(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"cat bigfile"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -400,7 +400,7 @@ func TestBashToolExecute_NonZeroExitCode(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"ls /nonexistent"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -411,7 +411,7 @@ func TestBashToolExecute_NonZeroExitCode(t *testing.T) {
 }
 
 func TestBashToolExecute_EmptyCommand(t *testing.T) {
-	tool := NewBashTool(nil, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: nil, Timeout: 120})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":""}`))
 	if err == nil {
 		t.Fatal("expected error for empty command")
@@ -422,7 +422,7 @@ func TestBashToolExecute_EmptyCommand(t *testing.T) {
 }
 
 func TestBashToolExecute_InvalidJSON(t *testing.T) {
-	tool := NewBashTool(nil, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: nil, Timeout: 120})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -431,7 +431,7 @@ func TestBashToolExecute_InvalidJSON(t *testing.T) {
 
 func TestBashToolExecute_ContainerNotRunning(t *testing.T) {
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo hi"}`))
 	if err == nil {
 		t.Fatal("expected error when container not running")
@@ -460,7 +460,7 @@ func TestBashToolExecute_CustomTimeout(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	// Custom timeout in input should override default.
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"sleep 1","timeout":300}`))
 	if err != nil {
@@ -499,7 +499,7 @@ func TestBashToolExecute_HTMLUnescape(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	// HTML-encoded && should be unescaped before execution.
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo a &amp;&amp; echo b"}`))
 	if err != nil {
@@ -511,18 +511,18 @@ func TestBashToolExecute_HTMLUnescape(t *testing.T) {
 }
 
 func TestBashToolNoApproval(t *testing.T) {
-	tool := NewBashTool(nil, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: nil, Timeout: 120})
 	if tool.RequiresApproval(json.RawMessage(`{"command":"rm -rf /"}`)) {
 		t.Error("bash tool should never require approval")
 	}
 }
 
 func TestBashToolDefaultTimeout(t *testing.T) {
-	tool := NewBashTool(nil, 0)
+	tool := NewBashTool(NewBashToolOptions{Container: nil, Timeout: 0})
 	if tool.timeout != 120 {
 		t.Errorf("default timeout = %d, want 120", tool.timeout)
 	}
-	tool2 := NewBashTool(nil, -10)
+	tool2 := NewBashTool(NewBashToolOptions{Container: nil, Timeout: -10})
 	if tool2.timeout != 120 {
 		t.Errorf("negative timeout should default to 120, got %d", tool2.timeout)
 	}
@@ -540,7 +540,7 @@ func TestGitToolExecute_AllowedSubcommand(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 
-	tool := NewGitTool(tmp, false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"status"}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -552,7 +552,7 @@ func TestGitToolExecute_AllowedSubcommand(t *testing.T) {
 }
 
 func TestGitToolExecute_DisallowedSubcommand(t *testing.T) {
-	tool := NewGitTool(t.TempDir(), false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: t.TempDir(), CoAuthor: false})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"bisect"}`))
 	if err == nil {
 		t.Fatal("expected error for disallowed subcommand")
@@ -563,7 +563,7 @@ func TestGitToolExecute_DisallowedSubcommand(t *testing.T) {
 }
 
 func TestGitToolExecute_EmptySubcommand(t *testing.T) {
-	tool := NewGitTool(t.TempDir(), false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: t.TempDir(), CoAuthor: false})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":""}`))
 	if err == nil {
 		t.Fatal("expected error for empty subcommand")
@@ -574,7 +574,7 @@ func TestGitToolExecute_EmptySubcommand(t *testing.T) {
 }
 
 func TestGitToolExecute_InvalidJSON(t *testing.T) {
-	tool := NewGitTool(t.TempDir(), false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: t.TempDir(), CoAuthor: false})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
@@ -604,7 +604,7 @@ func TestGitToolExecute_CoAuthorOnCommit(t *testing.T) {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
 
-	tool := NewGitTool(tmp, true) // coAuthor enabled
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: true}) // coAuthor enabled
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"commit","args":["-m","test commit"]}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -645,7 +645,7 @@ func TestGitToolExecute_NoCoAuthorWithoutFlag(t *testing.T) {
 		t.Fatalf("git add: %v\n%s", err, out)
 	}
 
-	tool := NewGitTool(tmp, false) // coAuthor disabled
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false}) // coAuthor disabled
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"commit","args":["-m","test commit"]}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -664,7 +664,7 @@ func TestGitToolExecute_NoCoAuthorWithoutFlag(t *testing.T) {
 func TestGitToolExecute_GitError(t *testing.T) {
 	tmp := t.TempDir()
 	// Not a git repo → git status should fail.
-	tool := NewGitTool(tmp, false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"status"}`))
 	if err != nil {
 		// The implementation returns (result, nil) for ExitError, only err for other errors.
@@ -678,42 +678,42 @@ func TestGitToolExecute_GitError(t *testing.T) {
 }
 
 func TestGitToolRequiresApproval_Push(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push"}`)) {
 		t.Error("push should require approval")
 	}
 }
 
 func TestGitToolRequiresApproval_PushWithArgs(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push","args":["origin","main"]}`)) {
 		t.Error("push with args should require approval")
 	}
 }
 
 func TestGitToolRequiresApproval_ForcePush(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"push","args":["--force"]}`)) {
 		t.Error("force push should require approval")
 	}
 }
 
 func TestGitToolRequiresApproval_ResetHard(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"reset","args":["--hard","HEAD~1"]}`)) {
 		t.Error("reset --hard should require approval")
 	}
 }
 
 func TestGitToolRequiresApproval_ResetSoft(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	if tool.RequiresApproval(json.RawMessage(`{"subcommand":"reset","args":["--soft","HEAD~1"]}`)) {
 		t.Error("reset --soft should not require approval")
 	}
 }
 
 func TestGitToolRequiresApproval_SafeCommands(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	safe := []string{
 		`{"subcommand":"status"}`,
 		`{"subcommand":"diff"}`,
@@ -731,7 +731,7 @@ func TestGitToolRequiresApproval_SafeCommands(t *testing.T) {
 }
 
 func TestGitToolRequiresApproval_InvalidJSON(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	// Invalid JSON should return false (fail open on parse error).
 	if tool.RequiresApproval(json.RawMessage(`not json`)) {
 		t.Error("invalid JSON should return false")
@@ -739,7 +739,7 @@ func TestGitToolRequiresApproval_InvalidJSON(t *testing.T) {
 }
 
 func TestGitToolRequiresApproval_ForceFlag(t *testing.T) {
-	tool := NewGitTool("", false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: "", CoAuthor: false})
 	// Any subcommand with --force should require approval.
 	if !tool.RequiresApproval(json.RawMessage(`{"subcommand":"rebase","args":["--force"]}`)) {
 		t.Error("rebase --force should require approval")
@@ -778,7 +778,7 @@ func TestGitToolExecute_CredentialHintInResult(t *testing.T) {
 		}
 	}
 
-	tool := NewGitTool(tmp, false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"push","args":["origin","HEAD"]}`))
 	if err != nil {
 		t.Fatalf("expected exit-code result, got error: %v", err)
@@ -809,7 +809,7 @@ func TestGitToolExecute_StderrOnSuccess(t *testing.T) {
 
 	// git checkout -b writes "Switched to a new branch 'x'" to stderr with exit 0.
 	// CombinedOutput should capture it.
-	tool := NewGitTool(tmp, false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false})
 	result, err := tool.Execute(context.Background(), json.RawMessage(`{"subcommand":"checkout","args":["-b","test-branch"]}`))
 	if err != nil {
 		t.Fatalf("Execute error: %v", err)
@@ -832,7 +832,7 @@ func TestGitToolExecute_CanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	tool := NewGitTool(tmp, false)
+	tool := NewGitTool(NewGitToolOptions{WorkDir: tmp, CoAuthor: false})
 	_, err := tool.Execute(ctx, json.RawMessage(`{"subcommand":"status"}`))
 	if err == nil {
 		t.Fatal("expected error with canceled context")
@@ -867,7 +867,7 @@ func TestBashToolExecute_DockerExecFailure(t *testing.T) {
 	_ = container.Start("/workspace", nil)
 	defer container.Stop()
 
-	tool := NewBashTool(container, 120)
+	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{"command":"echo hello"}`))
 	if err == nil {
 		t.Fatal("expected error when docker daemon is unreachable")

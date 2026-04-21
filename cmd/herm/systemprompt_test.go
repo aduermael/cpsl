@@ -341,7 +341,7 @@ func TestSubAgentPromptHostToolsOmittedWhenAbsent(t *testing.T) {
 }
 
 func TestToolHostToolReturnValues(t *testing.T) {
-	gt := NewGitTool("/tmp", false)
+	gt := NewGitTool(NewGitToolOptions{WorkDir: "/tmp", CoAuthor: false})
 	if !gt.HostTool() {
 		t.Error("GitTool.HostTool() should return true")
 	}
@@ -352,7 +352,7 @@ func TestToolHostToolReturnValues(t *testing.T) {
 }
 
 func TestGitToolForcePushApproval(t *testing.T) {
-	gt := NewGitTool("/tmp", false)
+	gt := NewGitTool(NewGitToolOptions{WorkDir: "/tmp", CoAuthor: false})
 
 	tests := []struct {
 		name     string

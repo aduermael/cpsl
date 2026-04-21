@@ -135,7 +135,7 @@ ENV PATH="/usr/local/go/bin:$PATH"
 }
 
 func TestManifestPath(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp/.herm", "/tmp", nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: "/tmp/.herm", Workspace: "/tmp", Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	got := tool.manifestPath()
 	if got != "/tmp/.herm/environment.md" {
 		t.Errorf("manifestPath() = %q, want /tmp/.herm/environment.md", got)
@@ -146,7 +146,7 @@ func TestGenerateManifest_NoDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if err := tool.generateManifest(); err != nil {
 		t.Fatalf("generateManifest: %v", err)
 	}
@@ -172,7 +172,7 @@ func TestGenerateManifest_WithDockerfile(t *testing.T) {
 	dockerfile := "FROM aduermael/herm:__HERM_VERSION__\nENV GOLANG_VERSION=1.22.5\nRUN apt-get update && apt-get install -y wget && rm -rf /var/lib/apt/lists/*\n"
 	os.WriteFile(filepath.Join(hermDir, "Dockerfile"), []byte(dockerfile), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if err := tool.generateManifest(); err != nil {
 		t.Fatalf("generateManifest: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestManifestStale_Missing(t *testing.T) {
 	os.MkdirAll(hermDir, 0o755)
 	os.WriteFile(filepath.Join(hermDir, "Dockerfile"), []byte("FROM x\n"), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if !tool.manifestStale() {
 		t.Error("manifest should be stale when missing")
 	}
@@ -211,7 +211,7 @@ func TestManifestStale_OlderThanDockerfile(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	os.WriteFile(filepath.Join(hermDir, "Dockerfile"), []byte("FROM x\n"), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if !tool.manifestStale() {
 		t.Error("manifest should be stale when older than Dockerfile")
 	}
@@ -226,7 +226,7 @@ func TestManifestStale_Fresh(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 	os.WriteFile(filepath.Join(hermDir, manifestFile), []byte("fresh\n"), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if tool.manifestStale() {
 		t.Error("manifest should not be stale when newer than Dockerfile")
 	}
@@ -236,7 +236,7 @@ func TestManifestStale_NothingExists(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if !tool.manifestStale() {
 		t.Error("manifest should be stale when nothing exists")
 	}

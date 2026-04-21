@@ -738,7 +738,7 @@ func (t *OutlineTool) outlineOne(displayPath string) (string, error) {
 
 	// Binary not found (old container image) — fall back to grep.
 	if result.ExitCode == 127 || (result.ExitCode != 0 && strings.Contains(stderr, "not found")) {
-		return t.outlineFallback(filePath, displayPath)
+		return t.outlineFallback(outlineFallbackOptions{filePath: filePath, displayPath: displayPath})
 	}
 
 	if result.ExitCode != 0 {
@@ -755,8 +755,16 @@ func (t *OutlineTool) outlineOne(displayPath string) (string, error) {
 	return output, nil
 }
 
+// outlineFallbackOptions holds the parameters for outlineFallback.
+type outlineFallbackOptions struct {
+	filePath    string
+	displayPath string
+}
+
 // outlineFallback uses grep when the outline binary is missing (old container image).
-func (t *OutlineTool) outlineFallback(filePath, displayPath string) (string, error) {
+func (t *OutlineTool) outlineFallback(opts outlineFallbackOptions) (string, error) {
+	filePath := opts.filePath
+	displayPath := opts.displayPath
 	ext := ""
 	if dot := strings.LastIndex(displayPath, "."); dot >= 0 {
 		ext = displayPath[dot:]

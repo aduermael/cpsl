@@ -209,7 +209,7 @@ constrained.
   `ollamaContextWindow`, `filterModelsByProviders`, `findModelByID`,
   `sortModelsByCol`, `formatPricePerM`, `formatModelMenuLines`, `computeCost`,
   `matchSWEScores`.
-- [ ] 5b: `cmd/herm/tools.go` + `filetools.go` + `commands.go` (6) —
+- [x] 5b: `cmd/herm/tools.go` + `filetools.go` + `commands.go` (6) —
   `NewBashTool`, `NewGitTool`, `NewDevEnvTool`, `outlineFallback`,
   `promptForWorktreeName`, `switchToWorktree`.
 

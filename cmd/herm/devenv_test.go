@@ -10,7 +10,7 @@ import (
 )
 
 func TestDevEnvTool_Definition(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp/herm", "/tmp/workspace", nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: "/tmp/herm", Workspace: "/tmp/workspace", Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	def := tool.Definition()
 	if def.Name != "devenv" {
 		t.Errorf("Name = %q, want %q", def.Name, "devenv")
@@ -29,7 +29,7 @@ func TestDevEnvTool_ReadNoDockerfile(t *testing.T) {
 	hermDir := filepath.Join(dir, ".herm")
 	workspace := dir
 
-	tool := NewDevEnvTool(nil, hermDir, workspace, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: workspace, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -52,7 +52,7 @@ func TestDevEnvTool_ReadExistingDockerfile(t *testing.T) {
 	content := "FROM alpine:latest\nRUN apk add go\n"
 	os.WriteFile(filepath.Join(hermDir, "Dockerfile"), []byte(content), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -75,7 +75,7 @@ func TestDevEnvTool_ReadDetectsRootDockerfile(t *testing.T) {
 	rootContent := "FROM node:20\nWORKDIR /app\n"
 	os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(rootContent), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -102,7 +102,7 @@ func TestDevEnvTool_ReadSurfacesNamedDockerfiles(t *testing.T) {
 	os.WriteFile(filepath.Join(hermDir, "go.Dockerfile"), []byte("FROM golang:1.22\n"), 0o644)
 	os.WriteFile(filepath.Join(hermDir, "node.Dockerfile"), []byte("FROM node:22\n"), 0o644)
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "read"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -121,7 +121,7 @@ func TestDevEnvTool_WriteDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	content := "FROM aduermael/herm:__HERM_VERSION__\nRUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*\n"
 	input, _ := json.Marshal(devenvInput{Action: "write", Content: content})
 
@@ -147,7 +147,7 @@ func TestDevEnvTool_WriteRejectsWrongBase(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	content := "FROM ubuntu:22.04\nRUN apt-get update\n"
 	input, _ := json.Marshal(devenvInput{Action: "write", Content: content})
 
@@ -164,7 +164,7 @@ func TestDevEnvTool_WriteEmptyContent(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "write", Content: ""})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -180,7 +180,7 @@ func TestDevEnvTool_BuildNoDockerfile(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "build"})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -221,7 +221,7 @@ func TestDevEnvTool_BuildCallsRebuild(t *testing.T) {
 	container.containerID = "oldcontainer456"
 
 	mounts := []MountSpec{{Source: dir, Destination: "/workspace"}}
-	tool := NewDevEnvTool(container, hermDir, dir, mounts, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: container, HermDir: hermDir, Workspace: dir, Mounts: mounts, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "build"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -237,7 +237,7 @@ func TestDevEnvTool_BuildCallsRebuild(t *testing.T) {
 }
 
 func TestDevEnvTool_InvalidAction(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: "/tmp", Workspace: "/tmp", Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "delete"})
 
 	_, err := tool.Execute(context.Background(), input)
@@ -250,7 +250,7 @@ func TestDevEnvTool_InvalidAction(t *testing.T) {
 }
 
 func TestDevEnvTool_InvalidJSON(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: "/tmp", Workspace: "/tmp", Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 
 	_, err := tool.Execute(context.Background(), json.RawMessage(`{invalid`))
 	if err == nil {
@@ -259,7 +259,7 @@ func TestDevEnvTool_InvalidJSON(t *testing.T) {
 }
 
 func TestDevEnvTool_RequiresApproval(t *testing.T) {
-	tool := NewDevEnvTool(nil, "/tmp", "/tmp", nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: "/tmp", Workspace: "/tmp", Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	if tool.RequiresApproval(nil) {
 		t.Error("DevEnvTool should not require approval")
 	}
@@ -297,7 +297,7 @@ func TestDevEnvTool_OnRebuildCallback(t *testing.T) {
 	onRebuild := func(img string) { callbackImage = img }
 
 	mounts := []MountSpec{{Source: dir, Destination: "/workspace"}}
-	tool := NewDevEnvTool(container, hermDir, dir, mounts, "abcdef1234567890", onRebuild, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: container, HermDir: hermDir, Workspace: dir, Mounts: mounts, ProjectID: "abcdef1234567890", OnRebuild: onRebuild, OnStatus: nil})
 	input, _ := json.Marshal(devenvInput{Action: "build"})
 
 	result, err := tool.Execute(context.Background(), input)
@@ -368,7 +368,7 @@ func TestDevEnvTool_NameParamIgnored(t *testing.T) {
 	dir := t.TempDir()
 	hermDir := filepath.Join(dir, ".herm")
 
-	tool := NewDevEnvTool(nil, hermDir, dir, nil, "", nil, nil)
+	tool := NewDevEnvTool(NewDevEnvToolOptions{Container: nil, HermDir: hermDir, Workspace: dir, Mounts: nil, ProjectID: "", OnRebuild: nil, OnStatus: nil})
 	content := "FROM aduermael/herm:__HERM_VERSION__\nRUN apt-get update && apt-get install -y golang && rm -rf /var/lib/apt/lists/*\n"
 	// Pass name:"go" — it should be ignored.
 	input, _ := json.Marshal(devenvInput{Action: "write", Name: "go", Content: content})

@@ -116,7 +116,7 @@ func (a *App) startAgent(userMessage string) {
 
 	var tools []Tool
 	if a.containerReady && a.container != nil {
-		tools = append(tools, NewBashTool(a.container, 120))
+		tools = append(tools, NewBashTool(NewBashToolOptions{Container: a.container, Timeout: 120}))
 		tools = append(tools, NewGlobTool(a.container))
 		tools = append(tools, NewGrepTool(a.container))
 		tools = append(tools, NewReadFileTool(a.container))
@@ -141,11 +141,19 @@ func (a *App) startAgent(userMessage string) {
 			onStatus := func(text string) {
 				a.resultCh <- containerStatusMsg{text: text}
 			}
-			tools = append(tools, NewDevEnvTool(a.container, hermDir, a.worktreePath, mounts, projectID, onRebuild, onStatus))
+			tools = append(tools, NewDevEnvTool(NewDevEnvToolOptions{
+				Container: a.container,
+				HermDir:   hermDir,
+				Workspace: a.worktreePath,
+				Mounts:    mounts,
+				ProjectID: projectID,
+				OnRebuild: onRebuild,
+				OnStatus:  onStatus,
+			}))
 		}
 	}
 	if a.worktreePath != "" {
-		tools = append(tools, NewGitTool(a.worktreePath, a.config.effectiveGitCoAuthor()))
+		tools = append(tools, NewGitTool(NewGitToolOptions{WorkDir: a.worktreePath, CoAuthor: a.config.effectiveGitCoAuthor()}))
 	}
 
 	modelID := a.config.resolveActiveModel(a.models)

@@ -33,12 +33,19 @@ type BashTool struct {
 	timeout   int // default timeout in seconds
 }
 
+// NewBashToolOptions holds the parameters for NewBashTool.
+type NewBashToolOptions struct {
+	Container *ContainerClient
+	Timeout   int
+}
+
 // NewBashTool creates a BashTool with the given container client and default timeout.
-func NewBashTool(container *ContainerClient, timeout int) *BashTool {
+func NewBashTool(opts NewBashToolOptions) *BashTool {
+	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = 120
 	}
-	return &BashTool{container: container, timeout: timeout}
+	return &BashTool{container: opts.Container, timeout: timeout}
 }
 
 func (t *BashTool) Definition() types.ToolDefinition {
@@ -161,9 +168,15 @@ var allowedGitSubcommands = map[string]bool{
 	"tag":      true,
 }
 
+// NewGitToolOptions holds the parameters for NewGitTool.
+type NewGitToolOptions struct {
+	WorkDir  string
+	CoAuthor bool
+}
+
 // NewGitTool creates a GitTool that runs in the given worktree directory.
-func NewGitTool(workDir string, coAuthor bool) *GitTool {
-	return &GitTool{workDir: workDir, coAuthor: coAuthor}
+func NewGitTool(opts NewGitToolOptions) *GitTool {
+	return &GitTool{workDir: opts.WorkDir, coAuthor: opts.CoAuthor}
 }
 
 func (t *GitTool) Definition() types.ToolDefinition {
@@ -304,16 +317,27 @@ type DevEnvTool struct {
 	onStatus  func(text string)      // called with container status updates
 }
 
+// NewDevEnvToolOptions holds the parameters for NewDevEnvTool.
+type NewDevEnvToolOptions struct {
+	Container *ContainerClient
+	HermDir   string
+	Workspace string
+	Mounts    []MountSpec
+	ProjectID string
+	OnRebuild func(imageName string)
+	OnStatus  func(text string)
+}
+
 // NewDevEnvTool creates a DevEnvTool with the given container client and paths.
-func NewDevEnvTool(container *ContainerClient, hermDir, workspace string, mounts []MountSpec, projectID string, onRebuild func(string), onStatus func(string)) *DevEnvTool {
+func NewDevEnvTool(opts NewDevEnvToolOptions) *DevEnvTool {
 	return &DevEnvTool{
-		container: container,
-		hermDir:   hermDir,
-		workspace: workspace,
-		mounts:    mounts,
-		projectID: projectID,
-		onRebuild: onRebuild,
-		onStatus:  onStatus,
+		container: opts.Container,
+		hermDir:   opts.HermDir,
+		workspace: opts.Workspace,
+		mounts:    opts.Mounts,
+		projectID: opts.ProjectID,
+		onRebuild: opts.OnRebuild,
+		onStatus:  opts.OnStatus,
 	}
 }
 
