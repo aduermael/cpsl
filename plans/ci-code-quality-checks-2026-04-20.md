@@ -180,7 +180,7 @@ constrained.
 
 ## Phase 3: Enforce file-length + docstring rules
 
-- [ ] 3a: Create `.github/workflows/ci-checks.yml` with one job per rule:
+- [x] 3a: Create `.github/workflows/ci-checks.yml` with one job per rule:
   `file-length` (max 1000), `docstring`, and `positional-params`. The
   `positional-params` job starts in warning mode (`continue-on-error: true`)
   so it stays visible in the PR UI without blocking until Phase 5. Delete

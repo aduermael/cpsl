@@ -1,0 +1,35 @@
+name: CI Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  check:
+    name: ${{ matrix.rule }}
+    runs-on: ubuntu-latest
+    continue-on-error: ${{ matrix.continue-on-error }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rule: file-length
+            continue-on-error: false
+          - rule: docstring
+            continue-on-error: false
+          - rule: positional-params
+            continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.24"
+
+      - name: Build ci-check
+        run: cd tools/ci-check && go build -o "$RUNNER_TEMP/ci-check" .
+
+      - name: Run ${{ matrix.rule }}
+        run: "$RUNNER_TEMP/ci-check" ${{ matrix.rule }} .
