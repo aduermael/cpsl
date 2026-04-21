@@ -148,7 +148,7 @@ constrained.
   max-lines flag (default 1000). Reuse the shared walker.
 - [x] 1c: Implement `docstring` rule (floor 60 chars, ceiling 3 lines) using
   `ast.File.Doc`.
-- [ ] 1d: Implement `positional-params` rule (receiver excluded, variadic
+- [x] 1d: Implement `positional-params` rule (receiver excluded, variadic
   allowed as final param, `context.Context` as first param exempt, interface
   methods not scanned).
 - [ ] 1e: Add fixture-based tests in `tools/ci-check/` covering pass/fail for
