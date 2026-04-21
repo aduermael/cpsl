@@ -573,5 +573,5 @@ type wrapLineCountOptions struct {
 // wrapLineCount returns the number of visual lines that `line` would occupy
 // when word-wrapped to `width` columns. It delegates to wrapString.
 func wrapLineCount(opts wrapLineCountOptions) int {
-	return len(wrapString(opts.line, 0, opts.width))
+	return len(wrapString(wrapStringOptions{s: opts.line, w: opts.width}))
 }

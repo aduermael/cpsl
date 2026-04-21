@@ -416,7 +416,7 @@ func TestWrapString(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := wrapString(tt.s, tt.startCol, tt.w)
+			got := wrapString(wrapStringOptions{s: tt.s, startCol: tt.startCol, w: tt.w})
 			if len(got) != len(tt.want) {
 				t.Fatalf("wrapString(%q, %d, %d) = %v (len %d), want %v (len %d)",
 					tt.s, tt.startCol, tt.w, got, len(got), tt.want, len(tt.want))
@@ -449,7 +449,7 @@ func TestGetVisualLines(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			runes := []rune(tt.input)
-			got := getVisualLines(runes, len(runes), tt.width)
+			got := getVisualLines(getVisualLinesOptions{input: runes, cursor: len(runes), width: tt.width})
 			if len(got) != tt.want {
 				t.Errorf("getVisualLines(%q, w=%d) = %d lines, want %d; lines=%+v",
 					tt.input, tt.width, len(got), tt.want, got)
@@ -461,7 +461,7 @@ func TestGetVisualLines(t *testing.T) {
 func TestGetVisualLinesContent(t *testing.T) {
 	// Verify exact line breaks for word wrapping
 	input := []rune("hello world foo")
-	lines := getVisualLines(input, len(input), 12) // avail first=10, then 12
+	lines := getVisualLines(getVisualLinesOptions{input: input, cursor: len(input), width: 12}) // avail first=10, then 12
 	// "hello " (6) + prefix 2 = 8 < 12; "world " would push to 14 → wrap at space
 	// Expected: "hello " | "world foo"
 	if len(lines) != 2 {
@@ -484,20 +484,20 @@ func TestCursorVisualPosWordWrap(t *testing.T) {
 	// Line 0: {0, 4, 2} = "abc ", Line 1: {4, 4, 0} = "defg"
 
 	// Cursor on space (pos 3) → line 0, col 5
-	line, col := cursorVisualPos(input, 3, 7)
+	line, col := cursorVisualPos(cursorVisualPosOptions{input: input, cursor: 3, width: 7})
 	if line != 0 || col != 5 {
 		t.Errorf("cursor at space: got (%d,%d), want (0,5)", line, col)
 	}
 
 	// Cursor on 'd' (pos 4) → line 1, col 0
-	line, col = cursorVisualPos(input, 4, 7)
+	line, col = cursorVisualPos(cursorVisualPosOptions{input: input, cursor: 4, width: 7})
 	if line != 1 || col != 0 {
 		t.Errorf("cursor at 'd': got (%d,%d), want (1,0)", line, col)
 	}
 
 	// Cursor at newline boundary still works
 	input2 := []rune("ab\ncd")
-	line, col = cursorVisualPos(input2, 2, 80) // at '\n'
+	line, col = cursorVisualPos(cursorVisualPosOptions{input: input2, cursor: 2, width: 80}) // at '\n'
 	if line != 0 || col != 4 { // prefix 2 + 2 = 4
 		t.Errorf("cursor at newline: got (%d,%d), want (0,4)", line, col)
 	}
@@ -583,7 +583,7 @@ func TestPadCodeBlockRow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := padCodeBlockRow(tt.row, tt.width)
+			got := padCodeBlockRow(padCodeBlockRowOptions{row: tt.row, width: tt.width})
 			if got != tt.want {
 				t.Errorf("padCodeBlockRow(%q, %d)\n  got  %q\n  want %q", tt.row, tt.width, got, tt.want)
 			}
@@ -1100,7 +1100,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolCall, content: "~ glob", toolName: "glob"},
 			{kind: msgToolResult, content: "file1\nfile2", toolName: "glob"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 1 {
 			t.Fatalf("entries = %d, want 1", len(g.entries))
 		}
@@ -1124,7 +1124,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolCall, content: "~ glob", toolName: "glob"},
 			{kind: msgToolResult, content: "file.go"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 3 {
 			t.Fatalf("entries = %d, want 3", len(g.entries))
 		}
@@ -1142,7 +1142,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolResult, content: "content"},
 			{kind: msgToolCall, content: "~ bash", toolName: "bash"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 2 {
 			t.Fatalf("entries = %d, want 2", len(g.entries))
 		}
@@ -1165,7 +1165,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolCall, content: "~ edit", toolName: "edit_file"},
 			{kind: msgToolResult, content: "ok"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 1 {
 			t.Errorf("entries = %d, want 1 (group should break at assistant)", len(g.entries))
 		}
@@ -1180,7 +1180,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolCall, content: "~ bash", toolName: "bash"},
 			{kind: msgToolResult, content: "output"},
 		}
-		g := collectToolGroup(msgs, 1)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 1})
 		if len(g.entries) != 1 {
 			t.Fatalf("entries = %d, want 1", len(g.entries))
 		}
@@ -1196,7 +1196,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolResult, content: "content1", toolName: "read_file"},
 			{kind: msgToolResult, content: "content2", toolName: "read_file"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 2 {
 			t.Fatalf("entries = %d, want 2", len(g.entries))
 		}
@@ -1220,7 +1220,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolCall, content: "~ agent spawn2", toolName: "agent"},
 			{kind: msgToolResult, content: "result1", toolName: "agent"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 2 {
 			t.Fatalf("entries = %d, want 2", len(g.entries))
 		}
@@ -1245,7 +1245,7 @@ func TestCollectToolGroup(t *testing.T) {
 			{kind: msgToolResult, content: "file content", toolName: "read_file"},
 			{kind: msgToolResult, content: "matches", toolName: "grep"},
 		}
-		g := collectToolGroup(msgs, 0)
+		g := collectToolGroup(collectToolGroupOptions{messages: msgs, startIdx: 0})
 		if len(g.entries) != 2 {
 			t.Fatalf("entries = %d, want 2", len(g.entries))
 		}

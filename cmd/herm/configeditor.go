@@ -604,7 +604,7 @@ func (a *App) handleConfigByte(ch byte, stdinCh chan byte, readByte func() (byte
 			}
 			a.renderInput()
 		case '2': // modifyOtherKeys (Ctrl+S, Ctrl+C, etc.)
-			a.handleCSIDigit2(readByte, func(string) {})
+			a.handleCSIDigit2(handleCSIDigit2Options{readByte: readByte, onPaste: func(string) {}})
 		default:
 			// Consume modified key sequences (ESC [ 1 ; mod letter)
 			if b == '1' {
@@ -687,14 +687,14 @@ func (a *App) handleConfigEditByte(ch byte, stdinCh chan byte, readByte func() (
 			a.cfgEditCursor = len(a.cfgEditBuf)
 			a.renderInput()
 		case '2': // Bracketed paste or modifyOtherKeys
-			a.handleCSIDigit2(readByte, func(s string) {
+			a.handleCSIDigit2(handleCSIDigit2Options{readByte: readByte, onPaste: func(s string) {
 				pasted := []rune(s)
 				tail := make([]rune, len(a.cfgEditBuf[a.cfgEditCursor:]))
 				copy(tail, a.cfgEditBuf[a.cfgEditCursor:])
 				a.cfgEditBuf = append(a.cfgEditBuf[:a.cfgEditCursor], append(pasted, tail...)...)
 				a.cfgEditCursor += len(pasted)
 				a.renderInput()
-			})
+			}})
 		case '3': // Delete
 			if t, ok := readByte(); ok && t == '~' {
 				if a.cfgEditCursor < len(a.cfgEditBuf) {

@@ -137,11 +137,11 @@ func (a *App) killToStart() {
 }
 
 func (a *App) moveUp() {
-	lineIdx, col := cursorVisualPos(a.input, a.cursor, a.width)
+	lineIdx, col := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
 	if lineIdx == 0 {
 		return
 	}
-	vlines := getVisualLines(a.input, a.cursor, a.width)
+	vlines := getVisualLines(getVisualLinesOptions{input: a.input, cursor: a.cursor, width: a.width})
 	prev := vlines[lineIdx-1]
 	targetCol := col
 	if targetCol > prev.startCol+prev.length {
@@ -154,12 +154,12 @@ func (a *App) moveUp() {
 }
 
 func (a *App) moveDown() {
-	lineIdx, _ := cursorVisualPos(a.input, a.cursor, a.width)
-	vlines := getVisualLines(a.input, a.cursor, a.width)
+	lineIdx, _ := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
+	vlines := getVisualLines(getVisualLinesOptions{input: a.input, cursor: a.cursor, width: a.width})
 	if lineIdx >= len(vlines)-1 {
 		return
 	}
-	_, col := cursorVisualPos(a.input, a.cursor, a.width)
+	_, col := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
 	next := vlines[lineIdx+1]
 	targetCol := col
 	if targetCol > next.startCol+next.length {
@@ -277,8 +277,15 @@ func (a *App) stopStdinReader() {
 
 // ─── Key dispatch and byte handling ───
 
+type handleByteOptions struct {
+	ch       byte
+	stdinCh  chan byte
+	readByte func() (byte, bool)
+}
+
 // handleByte processes a single byte from stdin. Returns true if the app should quit.
-func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool)) bool {
+func (a *App) handleByte(opts handleByteOptions) bool {
+	ch, stdinCh, readByte := opts.ch, opts.stdinCh, opts.readByte
 	// Config editor mode intercept (unless a model picker menu is active)
 	if a.cfgActive && !a.menuActive {
 		a.handleConfigByte(ch, stdinCh, readByte)
@@ -287,7 +294,7 @@ func (a *App) handleByte(ch byte, stdinCh chan byte, readByte func() (byte, bool
 
 	// Escape sequence
 	if ch == '\033' {
-		a.handleEscapeSequence(stdinCh, readByte)
+		a.handleEscapeSequence(handleEscapeSequenceOptions{stdinCh: stdinCh, readByte: readByte})
 		return false
 	}
 
@@ -513,7 +520,13 @@ func (a *App) handlePlainEscape() {
 	a.renderInput()
 }
 
-func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, bool)) {
+type handleEscapeSequenceOptions struct {
+	stdinCh  chan byte
+	readByte func() (byte, bool)
+}
+
+func (a *App) handleEscapeSequence(opts handleEscapeSequenceOptions) {
+	stdinCh, readByte := opts.stdinCh, opts.readByte
 	// Use a short timeout to distinguish plain ESC from escape sequences.
 	// Escape sequences (arrow keys, etc.) send bytes in rapid succession,
 	// so if no byte arrives within 50ms, it's a standalone ESC press.
@@ -558,7 +571,7 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 			return
 		}
 		if !a.awaitingApproval {
-			a.handleNavKey(ss3, nil)
+			a.handleNavKey(handleNavKeyOptions{final: ss3})
 		}
 		return
 	}
@@ -608,7 +621,7 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 			if strings.HasPrefix(ps, "27;") {
 				var mod, code int
 				if n, _ := fmt.Sscanf(ps[3:], "%d;%d", &mod, &code); n == 2 {
-					a.handleModifyOtherKeys(mod, code)
+					a.handleModifyOtherKeys(handleModifyOtherKeysOptions{mod: mod, code: code})
 				}
 			}
 			// All other tilde sequences (Insert, PgUp, etc.) silently consumed
@@ -621,14 +634,20 @@ func (a *App) handleEscapeSequence(stdinCh chan byte, readByte func() (byte, boo
 	}
 
 	// Navigation keys (arrows, Home, End) — shared by CSI and SS3
-	a.handleNavKey(final, params)
+	a.handleNavKey(handleNavKeyOptions{final: final, params: params})
 	// Unknown final bytes (mode responses, etc.): already fully consumed by
 	// the collection loop above — silently discarded.
 }
 
+type handleNavKeyOptions struct {
+	final  byte
+	params []byte
+}
+
 // handleNavKey dispatches a navigation key (A/B/C/D/H/F) with optional CSI
 // parameters. Called for both CSI (ESC [ ... X) and SS3 (ESC O X) sequences.
-func (a *App) handleNavKey(final byte, params []byte) {
+func (a *App) handleNavKey(opts handleNavKeyOptions) {
+	final, params := opts.final, opts.params
 	// Parse modifier from params (e.g. "1;5" in ESC [ 1;5 C → mod 5 = Ctrl).
 	// CSI modifier encoding: value = 1 + bitmask (Shift=1, Alt=2, Ctrl=4).
 	mod := 0
@@ -656,7 +675,7 @@ func (a *App) handleNavKey(final byte, params []byte) {
 				a.autocompleteIdx = len(matches) - 1
 			}
 		} else {
-			lineIdx, _ := cursorVisualPos(a.input, a.cursor, a.width)
+			lineIdx, _ := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
 			if lineIdx == 0 && a.history != nil {
 				if val, changed := a.history.Up(a.inputValue()); changed {
 					a.setInputValue(val)
@@ -687,8 +706,8 @@ func (a *App) handleNavKey(final byte, params []byte) {
 				a.autocompleteIdx = 0
 			}
 		} else {
-			lineIdx, _ := cursorVisualPos(a.input, a.cursor, a.width)
-			vlines := getVisualLines(a.input, a.cursor, a.width)
+			lineIdx, _ := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
+			vlines := getVisualLines(getVisualLinesOptions{input: a.input, cursor: a.cursor, width: a.width})
 			if lineIdx >= len(vlines)-1 && a.history != nil {
 				if val, changed := a.history.Down(a.inputValue()); changed {
 					a.setInputValue(val)
@@ -735,11 +754,17 @@ func (a *App) handleNavKey(final byte, params []byte) {
 	}
 }
 
+type handleModifyOtherKeysOptions struct {
+	mod  int
+	code int
+}
+
 // handleModifyOtherKeys processes a modifyOtherKeys sequence (CSI 27;mod;code~).
 // With modifyOtherKeys mode 2, the terminal encodes modified keys that would
 // otherwise be ambiguous (e.g., Ctrl+C as CSI 27;5;99~ instead of byte 0x03).
 // We translate these back to the actions the app already handles.
-func (a *App) handleModifyOtherKeys(mod, code int) {
+func (a *App) handleModifyOtherKeys(opts handleModifyOtherKeysOptions) {
+	mod, code := opts.mod, opts.code
 	if a.awaitingApproval {
 		return
 	}
@@ -807,7 +832,13 @@ func readBracketedPaste(readByte func() (byte, bool)) string {
 	return string(content)
 }
 
-func (a *App) handleCSIDigit2(readByte func() (byte, bool), onPaste func(string)) {
+type handleCSIDigit2Options struct {
+	readByte func() (byte, bool)
+	onPaste  func(string)
+}
+
+func (a *App) handleCSIDigit2(opts handleCSIDigit2Options) {
+	readByte, onPaste := opts.readByte, opts.onPaste
 	// We've read ESC [ 2, check for 0 0 ~
 	b0, ok := readByte()
 	if !ok {
@@ -848,7 +879,7 @@ func (a *App) handleCSIDigit2(readByte func() (byte, bool), onPaste func(string)
 		parts := string(seq)
 		var mod, code int
 		if n, _ := fmt.Sscanf(parts, "%d;%d", &mod, &code); n == 2 {
-			a.handleModifyOtherKeys(mod, code)
+			a.handleModifyOtherKeys(handleModifyOtherKeysOptions{mod: mod, code: code})
 		}
 		return
 	}

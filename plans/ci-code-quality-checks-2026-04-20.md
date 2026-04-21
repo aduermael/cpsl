@@ -196,7 +196,7 @@ constrained.
   `styledToolResult`, `renderToolBox`, `renderToolGroup`,
   `shouldShowToolOutput`, `hslToRGB`, `approvalGradientSep`, `wrapLineCount`.
   Introduce per-function `*Options` structs; update call sites.
-- [ ] 4b: `cmd/herm/render.go` + `input.go` (10) — `getVisualLines`,
+- [x] 4b: `cmd/herm/render.go` + `input.go` (10) — `getVisualLines`,
   `cursorVisualPos`, `padCodeBlockRow`, `wrapString`, `collectToolGroup`,
   `handleByte`, `handleEscapeSequence`, `handleNavKey`,
   `handleModifyOtherKeys`, `handleCSIDigit2`.

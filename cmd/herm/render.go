@@ -21,11 +21,18 @@ type vline struct {
 	startCol int // visual column where text starts
 }
 
+type getVisualLinesOptions struct {
+	input  []rune
+	cursor int
+	width  int
+}
+
 // getVisualLines splits the input runes into visual lines, accounting for
 // the prompt prefix on the first line and terminal-width wrapping.
 // It prefers word boundaries (spaces) for wrapping, falling back to
 // character-level breaks for words longer than the available width.
-func getVisualLines(input []rune, cursor int, width int) []vline {
+func getVisualLines(opts getVisualLinesOptions) []vline {
+	input, width := opts.input, opts.width
 	var lines []vline
 	start := 0
 	startCol := promptPrefixCols
@@ -68,8 +75,15 @@ func getVisualLines(input []rune, cursor int, width int) []vline {
 	return lines
 }
 
-func cursorVisualPos(input []rune, cursor int, width int) (int, int) {
-	vlines := getVisualLines(input, cursor, width)
+type cursorVisualPosOptions struct {
+	input  []rune
+	cursor int
+	width  int
+}
+
+func cursorVisualPos(opts cursorVisualPosOptions) (int, int) {
+	input, cursor, width := opts.input, opts.cursor, opts.width
+	vlines := getVisualLines(getVisualLinesOptions{input: input, cursor: cursor, width: width})
 	for i, vl := range vlines {
 		end := vl.start + vl.length
 		if cursor >= vl.start && cursor <= end {
@@ -86,9 +100,15 @@ func cursorVisualPos(input []rune, cursor int, width int) (int, int) {
 	return last, vl.startCol + vl.length
 }
 
+type padCodeBlockRowOptions struct {
+	row   string
+	width int
+}
+
 // padCodeBlockRow pads a code block row with spaces so the background fills
 // the full terminal width. It ensures \033[0m comes after the padding.
-func padCodeBlockRow(row string, width int) string {
+func padCodeBlockRow(opts padCodeBlockRowOptions) string {
+	row, width := opts.row, opts.width
 	const reset = "\033[0m"
 	stripped := row
 	hasReset := strings.HasSuffix(row, reset)
@@ -102,13 +122,20 @@ func padCodeBlockRow(row string, width int) string {
 	return stripped + reset
 }
 
+type wrapStringOptions struct {
+	s        string
+	startCol int
+	w        int
+}
+
 // wrapString splits a string into visual rows of at most `w` columns.
 // It is ANSI-aware: escape sequences don't count toward visual width, and
 // active styling is re-emitted on continuation lines. Character widths are
 // measured with uniseg.StringWidth (so wide chars like emoji count as 2).
 // Wrapping prefers word boundaries (spaces); words longer than `w` columns
 // fall back to character-level breaking.
-func wrapString(s string, startCol int, w int) []string {
+func wrapString(opts wrapStringOptions) []string {
+	s, startCol, w := opts.s, opts.startCol, opts.w
 	if w <= 0 {
 		return []string{s}
 	}
@@ -273,7 +300,13 @@ type toolGroup struct {
 // parallel (call, call, result, result) patterns. The group continues as long
 // as tool calls or tool results appear without a different message kind in
 // between. inProgress is set when there are more calls than results.
-func collectToolGroup(messages []chatMessage, startIdx int) toolGroup {
+type collectToolGroupOptions struct {
+	messages []chatMessage
+	startIdx int
+}
+
+func collectToolGroup(opts collectToolGroupOptions) toolGroup {
+	messages, startIdx := opts.messages, opts.startIdx
 	var g toolGroup
 	i := startIdx
 
@@ -322,7 +355,7 @@ done:
 func (a *App) buildBlockRows() []string {
 	var rows []string
 	for _, line := range buildLogo(a.width) {
-		rows = append(rows, wrapString(line, 0, a.width)...)
+		rows = append(rows, wrapString(wrapStringOptions{s: line, w: a.width})...)
 	}
 	inCodeBlock := false
 	skipUntil := 0
@@ -333,7 +366,7 @@ func (a *App) buildBlockRows() []string {
 
 		// Consecutive tool calls → collect into a group and render as a single block.
 		if msg.kind == msgToolCall {
-			group := collectToolGroup(a.messages, i)
+			group := collectToolGroup(collectToolGroupOptions{messages: a.messages, startIdx: i})
 			skipUntil = i + group.consumed
 			if msg.leadBlank {
 				rows = append(rows, "")
@@ -344,7 +377,7 @@ func (a *App) buildBlockRows() []string {
 			}
 			block := renderToolGroup(renderToolGroupOptions{entries: group.entries, maxWidth: a.width, inProgress: group.inProgress, liveDur: liveDur})
 			for _, logLine := range strings.Split(block, "\n") {
-				rows = append(rows, wrapString(logLine, 0, a.width)...)
+				rows = append(rows, wrapString(wrapStringOptions{s: logLine, w: a.width})...)
 			}
 			// Blank line after group unless next message has leadBlank.
 			if skipUntil >= len(a.messages) || !a.messages[skipUntil].leadBlank {
@@ -361,7 +394,7 @@ func (a *App) buildBlockRows() []string {
 				rows = append(rows, "")
 			}
 			for _, logLine := range strings.Split(box, "\n") {
-				rows = append(rows, wrapString(logLine, 0, a.width)...)
+				rows = append(rows, wrapString(wrapStringOptions{s: logLine, w: a.width})...)
 			}
 			nextIdx := i + 1
 			if nextIdx >= len(a.messages) || !a.messages[nextIdx].leadBlank {
@@ -374,7 +407,7 @@ func (a *App) buildBlockRows() []string {
 		if msg.kind == msgSubAgentGroup {
 			if subLines := a.subAgentDisplayLines(); len(subLines) > 0 {
 				for _, line := range subLines {
-					rows = append(rows, wrapString(line, 0, a.width)...)
+					rows = append(rows, wrapString(wrapStringOptions{s: line, w: a.width})...)
 				}
 				rows = append(rows, "")
 			}
@@ -392,10 +425,10 @@ func (a *App) buildBlockRows() []string {
 						continue
 					}
 				}
-				wrapped := wrapString(logLine, 0, a.width)
+				wrapped := wrapString(wrapStringOptions{s: logLine, w: a.width})
 				if wasInCodeBlock && msg.kind == msgAssistant {
 					for j := range wrapped {
-						wrapped[j] = padCodeBlockRow(wrapped[j], a.width)
+						wrapped[j] = padCodeBlockRow(padCodeBlockRowOptions{row: wrapped[j], width: a.width})
 					}
 				}
 				rows = append(rows, wrapped...)
@@ -420,10 +453,10 @@ func (a *App) buildBlockRows() []string {
 			var skip bool
 			logLine, inCodeBlock, skip = processMarkdownLine(logLine, inCodeBlock)
 			if !skip {
-				wrapped := wrapString(logLine, 0, a.width)
+				wrapped := wrapString(wrapStringOptions{s: logLine, w: a.width})
 				if wasInCodeBlock {
 					for j := range wrapped {
-						wrapped[j] = padCodeBlockRow(wrapped[j], a.width)
+						wrapped[j] = padCodeBlockRow(padCodeBlockRowOptions{row: wrapped[j], width: a.width})
 					}
 				}
 				rows = append(rows, wrapped...)
@@ -440,7 +473,7 @@ func (a *App) buildBlockRows() []string {
 			text, a.mainAgentToolCount, elapsed.Seconds(),
 			formatTokenCount(int(math.Round(a.agentDisplayInTok))),
 			formatTokenCount(int(math.Round(a.agentDisplayOutTok))))
-		rows = append(rows, wrapString(label, 0, a.width)...)
+		rows = append(rows, wrapString(wrapStringOptions{s: label, w: a.width})...)
 		rows = append(rows, "")
 	} else if a.agentRunning {
 		elapsed := a.agentElapsedTime()
@@ -451,14 +484,14 @@ func (a *App) buildBlockRows() []string {
 			spinner, color, text, a.mainAgentToolCount, elapsed.Seconds(),
 			formatTokenCount(int(math.Round(a.agentDisplayInTok))),
 			formatTokenCount(int(math.Round(a.agentDisplayOutTok))))
-		rows = append(rows, wrapString(label, 0, a.width)...)
+		rows = append(rows, wrapString(wrapStringOptions{s: label, w: a.width})...)
 		rows = append(rows, "")
 	} else if a.agentElapsed > 0 {
 		elapsed := fmt.Sprintf("\033[32m✓\033[2m %d 🛠️  | %.2fs | ↑%s ↓%s\033[0m",
 			a.mainAgentToolCount, a.agentElapsed.Seconds(),
 			formatTokenCount(a.mainAgentInputTokens),
 			formatTokenCount(a.mainAgentOutputTokens))
-		rows = append(rows, wrapString(elapsed, 0, a.width)...)
+		rows = append(rows, wrapString(wrapStringOptions{s: elapsed, w: a.width})...)
 		rows = append(rows, "")
 	}
 	return collapseBlankRows(rows)
@@ -576,7 +609,7 @@ func (a *App) buildInputRows() []string {
 		rows = append(rows, fmt.Sprintf("\033[33;1m%s\033[0m", a.promptLabel))
 	}
 
-	vlines := getVisualLines(a.input, a.cursor, a.width)
+	vlines := getVisualLines(getVisualLinesOptions{input: a.input, cursor: a.cursor, width: a.width})
 	for i, vl := range vlines {
 		line := string(a.input[vl.start : vl.start+vl.length])
 		if i == 0 {
@@ -723,7 +756,7 @@ func (a *App) positionCursor(buf *strings.Builder) {
 		return
 	}
 	buf.WriteString("\033[?25h")
-	curLine, curCol := cursorVisualPos(a.input, a.cursor, a.width)
+	curLine, curCol := cursorVisualPos(cursorVisualPosOptions{input: a.input, cursor: a.cursor, width: a.width})
 	buf.WriteString(fmt.Sprintf("\033[%d;%dH", a.inputStartRow+curLine-s, curCol+1))
 }
 

@@ -385,7 +385,7 @@ func (a *App) Run() error {
 				}
 				a.drainResults()
 				a.drainAgentEvents()
-				if a.handleByte(ch, a.stdinCh, a.readByte) {
+				if a.handleByte(handleByteOptions{ch: ch, stdinCh: a.stdinCh, readByte: a.readByte}) {
 					goto done
 				}
 			case event, ok := <-a.agent.Events():
@@ -408,7 +408,7 @@ func (a *App) Run() error {
 				}
 				a.drainResults()
 				a.drainAgentEvents()
-				if a.handleByte(ch, a.stdinCh, a.readByte) {
+				if a.handleByte(handleByteOptions{ch: ch, stdinCh: a.stdinCh, readByte: a.readByte}) {
 					goto done
 				}
 			case event, ok := <-a.agent.Events():
@@ -434,7 +434,7 @@ func (a *App) Run() error {
 				}
 				a.drainResults()
 				a.drainAgentEvents()
-				if a.handleByte(ch, a.stdinCh, a.readByte) {
+				if a.handleByte(handleByteOptions{ch: ch, stdinCh: a.stdinCh, readByte: a.readByte}) {
 					goto done
 				}
 			case result := <-a.resultCh:
