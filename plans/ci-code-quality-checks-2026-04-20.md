@@ -188,35 +188,103 @@ constrained.
 - [x] 3b: Run the new workflow locally, fix any stragglers surfaced by the
   docstring rule or by Phase 2 splits (e.g., new files missing doc comments).
 
-## Phase 4: Refactor functions to ≤ 1 positional param
+## Phase 4: Refactor cmd/herm rendering (20 violations)
 
-**Parallel Tasks: 4a, 4b, 4c, 4d**
+**Parallel Tasks: 4a, 4b**
 
-- [ ] 4a: `cmd/herm/style.go` hotspots — `renderToolBox`, `renderToolGroup`,
-  `lerpColor`, and sibling rendering helpers. Introduce per-function
-  `*Options` structs; update call sites.
-- [ ] 4b: `cmd/herm/render.go` + `input.go` hotspots — `cursorVisualPos`,
-  wrapping/positioning helpers. Options-struct refactor with call-site
-  updates.
-- [ ] 4c: `cmd/herm/models.go`, `tools.go`, `filetools.go`, `commands.go`
-  remaining violations. Options-struct refactor.
-- [ ] 4d: `tools/write-file/`, `tools/edit-file/`, `tools/outline/` — update
-  any multi-param diff/hunk helpers.
+- [ ] 4a: `cmd/herm/style.go` (10) — `lerpColor`, `progressBar`, `writeRows`,
+  `styledToolResult`, `renderToolBox`, `renderToolGroup`,
+  `shouldShowToolOutput`, `hslToRGB`, `approvalGradientSep`, `wrapLineCount`.
+  Introduce per-function `*Options` structs; update call sites.
+- [ ] 4b: `cmd/herm/render.go` + `input.go` (10) — `getVisualLines`,
+  `cursorVisualPos`, `padCodeBlockRow`, `wrapString`, `collectToolGroup`,
+  `handleByte`, `handleEscapeSequence`, `handleNavKey`,
+  `handleModifyOtherKeys`, `handleCSIDigit2`.
 
-## Phase 5: Enforce positional-params rule
+## Phase 5: Refactor cmd/herm models/tools/commands (15 violations)
 
-- [ ] 5a: Flip the `positional-params` job in `.github/workflows/ci-checks.yml`
-  from `continue-on-error: true` to a hard fail after confirming no remaining
-  violations across `cmd/herm/` and `tools/`.
-- [ ] 5b: Update `GUIDELINES.md` with a short section describing the three
+**Parallel Tasks: 5a, 5b**
+
+- [ ] 5a: `cmd/herm/models.go` (9) — `supportsServerTools`,
+  `ollamaContextWindow`, `filterModelsByProviders`, `findModelByID`,
+  `sortModelsByCol`, `formatPricePerM`, `formatModelMenuLines`, `computeCost`,
+  `matchSWEScores`.
+- [ ] 5b: `cmd/herm/tools.go` + `filetools.go` + `commands.go` (6) —
+  `NewBashTool`, `NewGitTool`, `NewDevEnvTool`, `outlineFallback`,
+  `promptForWorktreeName`, `switchToWorktree`.
+
+## Phase 6: Refactor tools/ binaries (17 violations)
+
+**Parallel Tasks: 6a, 6b, 6c**
+
+- [ ] 6a: `tools/write-file/` (7) — `unifiedDiff`, `myersDiff`, `backtrack`,
+  `buildHunks`, `newHunk`, `prevHunkEditEnd`, `extendHunk`.
+- [ ] 6b: `tools/edit-file/` (7) — same diff/hunk helpers as 6a; mirror the
+  options-struct design for consistency.
+- [ ] 6c: `tools/outline/` (3) — `formatFunc`, `formatGenDecl`, `outlineRegex`.
+
+## Phase 7: Refactor cmd/herm agent core (22 violations)
+
+**Parallel Tasks: 7a, 7b, 7c**
+
+- [ ] 7a: `cmd/herm/agent.go` + `agent_loops.go` (10) —
+  `newLangdagClientForProvider`, `SetTurnProgress`, `SetTokenProgress`,
+  `NewAgent`, `Run`, `emitUsage`, `backgroundCompletion`,
+  `clearOldToolResults`, `maybeCompact`, `runLoop`.
+- [ ] 7b: `cmd/herm/subagent.go` (7) — `forwardBlockingWithTimeout`,
+  `saveNodeID`, `runBackground`, `gracefulSubAgentSynthesis`, `buildResult`,
+  `formatSubAgentResult`, `writeOutputFile`.
+- [ ] 7c: `cmd/herm/systemprompt.go` + `tooldesc.go` + `agentui.go` (5) —
+  `buildSystemPrompt`, `buildSubAgentSystemPrompt`, `loadToolDescriptions`,
+  `getToolDescription`, `formatToolDefinitions`.
+
+## Phase 8: Refactor cmd/herm runtime/infra (22 violations)
+
+**Parallel Tasks: 8a, 8b, 8c**
+
+- [ ] 8a: `cmd/herm/trace.go` (10) — `SetGitInfo`, `AddTextDelta`, `SetUsage`,
+  `StartToolCall`, `EndToolCall`, `AddApproval`, `AddCompaction`, `AddRetry`,
+  `BuildSubAgentEvent`, `writeTraceFile`.
+- [ ] 8b: `cmd/herm/background.go` + `container.go` (8) — `bootContainerCmd`,
+  `ensureImageLocal`, `buildContainerImage`, `buildProjectTree`, `Start`,
+  `Exec`, `ExecWithStdin`, `Rebuild`.
+- [ ] 8c: `cmd/herm/worktree.go` + `compact.go` (4) — `createWorktree`,
+  `lockWorktree`, `compactConversation`, `callLLMDirect`.
+
+## Phase 9: Refactor cmd/herm config + content (22 violations)
+
+**Parallel Tasks: 9a, 9b, 9c**
+
+- [ ] 9a: `cmd/herm/config.go` + `configeditor.go` (9) — `preferredDefault`,
+  `ollamaModelProvider`, `mergeConfigs`, `saveConfigTo`, `saveProjectConfig`,
+  `openConfigModelPicker`, `doOpenConfigModelPicker`, `handleConfigByte`,
+  `handleConfigEditByte`.
+- [ ] 9b: `cmd/herm/content.go` (8) — `expandPastes`, `expandAttachments`,
+  `isAgentStatusCheck`, `isSleepWaitCommand`, `isBackgroundAgentCall`,
+  `toolCallSummary`, `approvalCmdDesc`, `approvalShortDesc`.
+- [ ] 9c: `cmd/herm/helpers.go` + `history.go` (5) — `truncateWithEllipsis`,
+  `truncateVisual`, `truncateForLog`, `newDebouncer`, `newHistory`.
+
+## Phase 10: Refactor cmd/herm markdown/tree (6 violations)
+
+- [ ] 10a: `cmd/herm/markdown.go` + `tree.go` (6) — `processMarkdownLine`,
+  `indexByte`, `indexPair`, `indexDouble`, `indexSingleStar`, `truncate`.
+
+## Phase 11: Enforce positional-params rule
+
+- [ ] 11a: Flip the `positional-params` job in
+  `.github/workflows/ci-checks.yml` from `continue-on-error: true` to a hard
+  fail after confirming no remaining violations across `cmd/herm/` and
+  `tools/`.
+- [ ] 11b: Update `GUIDELINES.md` with a short section describing the three
   enforced rules (file length ≤ 1000, ≤ 1 positional param with `ctx`
   exempt, file docstring ≥ 60 chars / ≤ 3 lines) and pointing at
   `tools/ci-check/`.
 
-## Phase 6: Cleanup
+## Phase 12: Cleanup
 
-- [ ] 6a: Audit `.github/workflows/` — confirm `test.yml`, `ci-checks.yml`,
+- [ ] 12a: Audit `.github/workflows/` — confirm `test.yml`, `ci-checks.yml`,
   `prompt-length.yml`, and release workflows are the full set. Remove any
   dead references to the old `source-file-length.yml`.
-- [ ] 6b: Smoke-test the full pipeline against `main` by opening a dry-run PR
+- [ ] 12b: Smoke-test the full pipeline against `main` by opening a dry-run PR
   or running the workflow locally; confirm green across all rules.
