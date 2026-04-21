@@ -137,7 +137,7 @@ func TestOllamaContextWindow_Success(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{}
-	got := ollamaContextWindow(client, srv.URL, "llama3:latest")
+	got := ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: srv.URL, modelName: "llama3:latest"})
 	if got != 32768 {
 		t.Errorf("ollamaContextWindow = %d, want 32768", got)
 	}
@@ -154,7 +154,7 @@ func TestOllamaContextWindow_GemmaKey(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{}
-	got := ollamaContextWindow(client, srv.URL, "gemma3:latest")
+	got := ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: srv.URL, modelName: "gemma3:latest"})
 	if got != 131072 {
 		t.Errorf("ollamaContextWindow = %d, want 131072", got)
 	}
@@ -171,7 +171,7 @@ func TestOllamaContextWindow_NoContextKey(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{}
-	got := ollamaContextWindow(client, srv.URL, "some-model")
+	got := ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: srv.URL, modelName: "some-model"})
 	if got != 0 {
 		t.Errorf("ollamaContextWindow = %d, want 0 when no context_length key", got)
 	}
@@ -184,7 +184,7 @@ func TestOllamaContextWindow_ServerError(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{}
-	got := ollamaContextWindow(client, srv.URL, "some-model")
+	got := ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: srv.URL, modelName: "some-model"})
 	if got != 0 {
 		t.Errorf("ollamaContextWindow = %d, want 0 on server error", got)
 	}
@@ -192,7 +192,7 @@ func TestOllamaContextWindow_ServerError(t *testing.T) {
 
 func TestOllamaContextWindow_Unreachable(t *testing.T) {
 	client := &http.Client{Timeout: 100 * time.Millisecond}
-	got := ollamaContextWindow(client, "http://127.0.0.1:1", "some-model")
+	got := ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: "http://127.0.0.1:1", modelName: "some-model"})
 	if got != 0 {
 		t.Errorf("ollamaContextWindow = %d, want 0 for unreachable server", got)
 	}

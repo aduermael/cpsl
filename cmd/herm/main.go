@@ -271,8 +271,8 @@ func (a *App) refreshModelMenu() {
 		cursorID = a.menuModels[a.menuCursor].ID
 	}
 	asc := a.menuSortAsc[a.menuSortCol]
-	sortModelsByCol(a.menuModels, a.menuSortCol, asc)
-	header, lines := formatModelMenuLines(a.menuModels, a.menuActiveID, a.menuSortCol, asc)
+	sortModelsByCol(sortModelsByColOptions{models: a.menuModels, col: a.menuSortCol, asc: asc})
+	header, lines := formatModelMenuLines(formatModelMenuLinesOptions{models: a.menuModels, activeID: a.menuActiveID, sortCol: a.menuSortCol, sortAsc: asc})
 	a.menuHeader = header
 	a.menuLines = lines
 	// Restore cursor position
@@ -734,7 +734,7 @@ func (a *App) handleResult(result any) {
 		if msg.err == nil {
 			a.sweScores = msg.scores
 			if a.models != nil {
-				matchSWEScores(a.models, a.sweScores)
+				matchSWEScores(matchSWEScoresOptions{models: a.models, scores: a.sweScores})
 			}
 		}
 
@@ -743,7 +743,7 @@ func (a *App) handleResult(result any) {
 			a.modelCatalog = msg.catalog
 			a.models = modelsFromCatalog(msg.catalog)
 			if a.sweLoaded && a.sweScores != nil {
-				matchSWEScores(a.models, a.sweScores)
+				matchSWEScores(matchSWEScoresOptions{models: a.models, scores: a.sweScores})
 			}
 			a.maybeShowInitialModels()
 			// Fetch Ollama models asynchronously if configured. catalogMsg can
@@ -760,7 +760,7 @@ func (a *App) handleResult(result any) {
 			base := modelsFromCatalog(a.modelCatalog)
 			a.models = append(base, msg.models...)
 			if a.sweLoaded && a.sweScores != nil {
-				matchSWEScores(a.models, a.sweScores)
+				matchSWEScores(matchSWEScoresOptions{models: a.models, scores: a.sweScores})
 			}
 		}
 		alreadyShown := a.shownInitialModel

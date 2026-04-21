@@ -94,7 +94,7 @@ func apiKeyRowForProvider(provider string) int {
 func (a *App) effectiveProviderForConfig(cfg Config) (provider string, modelID string) {
 	modelID = cfg.resolveActiveModel(a.models)
 	if modelID != "" {
-		if model := findModelByID(a.models, modelID); model != nil {
+		if model := findModelByID(findModelByIDOptions{models: a.models, id: modelID}); model != nil {
 			return model.Provider, modelID
 		}
 		// For unknown model IDs, keep the existing offline-Ollama assumption.
@@ -245,8 +245,8 @@ func (a *App) doOpenConfigModelPicker(models []ModelDef, getCurrentID func() str
 	a.menuSortCol = sortColFromName(a.cfgDraft.ModelSortCol)
 	a.menuSortAsc = sortAscFromMap(a.cfgDraft.ModelSortDirs)
 	asc := a.menuSortAsc[a.menuSortCol]
-	sortModelsByCol(a.menuModels, a.menuSortCol, asc)
-	header, lines := formatModelMenuLines(a.menuModels, activeID, a.menuSortCol, asc)
+	sortModelsByCol(sortModelsByColOptions{models: a.menuModels, col: a.menuSortCol, asc: asc})
+	header, lines := formatModelMenuLines(formatModelMenuLinesOptions{models: a.menuModels, activeID: activeID, sortCol: a.menuSortCol, sortAsc: asc})
 
 	activeIdx := 0
 	for i, m := range a.menuModels {

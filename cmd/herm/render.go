@@ -679,7 +679,7 @@ func (a *App) buildInputRows() []string {
 		}
 		contextTokens := a.lastInputTokens + len(a.input)/charsPerToken
 		contextWindow := 200000
-		if m := findModelByID(a.models, a.config.resolveActiveModel(a.models)); m != nil {
+		if m := findModelByID(findModelByIDOptions{models: a.models, id: a.config.resolveActiveModel(a.models)}); m != nil {
 			contextWindow = m.ContextWindow
 		}
 		bar := progressBar(progressBarOptions{n: contextTokens, max: contextWindow})

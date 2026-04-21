@@ -101,7 +101,7 @@ func (c Config) defaultLangdagProvider() string {
 
 // availableModels returns the models whose provider has a configured API key.
 func (c Config) availableModels(models []ModelDef) []ModelDef {
-	return filterModelsByProviders(models, c.configuredProviders())
+	return filterModelsByProviders(filterModelsByProvidersOptions{models: models, providers: c.configuredProviders()})
 }
 
 // defaultActiveModels maps provider to the preferred default active model ID.

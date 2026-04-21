@@ -334,7 +334,7 @@ func (a *App) handleUsageCommand() {
 
 	// Context window status.
 	contextWindow := 0
-	if m := findModelByID(a.models, a.config.resolveActiveModel(a.models)); m != nil {
+	if m := findModelByID(findModelByIDOptions{models: a.models, id: a.config.resolveActiveModel(a.models)}); m != nil {
 		contextWindow = m.ContextWindow
 	}
 	if contextWindow > 0 && a.lastInputTokens > 0 {

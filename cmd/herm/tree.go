@@ -25,7 +25,7 @@ func (a *App) nodeCost(n *types.Node) float64 {
 		CacheReadInputTokens:     n.TokensCacheRead,
 		CacheCreationInputTokens: n.TokensCacheCreation,
 	}
-	return computeCost(a.models, n.Model, usage)
+	return computeCost(computeCostOptions{models: a.models, modelID: n.Model, usage: usage})
 }
 
 // buildConversationTree retrieves the active conversation path (root to

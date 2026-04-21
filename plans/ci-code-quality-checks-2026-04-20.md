@@ -205,7 +205,7 @@ constrained.
 
 **Parallel Tasks: 5a, 5b**
 
-- [ ] 5a: `cmd/herm/models.go` (9) — `supportsServerTools`,
+- [x] 5a: `cmd/herm/models.go` (9) — `supportsServerTools`,
   `ollamaContextWindow`, `filterModelsByProviders`, `findModelByID`,
   `sortModelsByCol`, `formatPricePerM`, `formatModelMenuLines`, `computeCost`,
   `matchSWEScores`.

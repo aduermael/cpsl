@@ -68,12 +68,19 @@ func modelsFromCatalog(catalog *langdag.ModelCatalog) []ModelDef {
 	return models
 }
 
+// supportsServerToolsOptions is the parameter bundle for supportsServerTools.
+type supportsServerToolsOptions struct {
+	provider string
+	modelID  string
+	models   []ModelDef
+}
+
 // supportsServerTools reports whether a model supports server-side tools
 // (e.g. web search). Uses catalog metadata when available; falls back to
 // provider-level heuristics for models not in the catalog (e.g. Ollama).
-func supportsServerTools(provider, modelID string, models []ModelDef) bool {
+func supportsServerTools(opts supportsServerToolsOptions) bool {
 	// Check catalog metadata first.
-	if m := findModelByID(models, modelID); m != nil {
+	if m := findModelByID(findModelByIDOptions{models: opts.models, id: opts.modelID}); m != nil {
 		for _, st := range m.ServerTools {
 			if st == "web_search" {
 				return true
@@ -128,7 +135,7 @@ func fetchOllamaModels(baseURL string) []ModelDef {
 				ID:              m.Name,
 				PromptPrice:     0,
 				CompletionPrice: 0,
-				ContextWindow:   ollamaContextWindow(client, base, m.Name),
+				ContextWindow:   ollamaContextWindow(ollamaContextWindowOptions{client: client, baseURL: base, modelName: m.Name}),
 			}}
 		}()
 	}
@@ -140,9 +147,17 @@ func fetchOllamaModels(baseURL string) []ModelDef {
 	return models
 }
 
+// ollamaContextWindowOptions is the parameter bundle for ollamaContextWindow.
+type ollamaContextWindowOptions struct {
+	client    *http.Client
+	baseURL   string
+	modelName string
+}
+
 // ollamaContextWindow queries /api/show for the model's actual context length.
 // Returns 0 if the server doesn't provide it.
-func ollamaContextWindow(client *http.Client, baseURL, modelName string) int {
+func ollamaContextWindow(opts ollamaContextWindowOptions) int {
+	client, baseURL, modelName := opts.client, opts.baseURL, opts.modelName
 	body, _ := json.Marshal(map[string]string{"model": modelName})
 	resp, err := client.Post(baseURL+"/api/show", "application/json", bytes.NewReader(body))
 	if err != nil || resp.StatusCode != http.StatusOK {
@@ -168,30 +183,50 @@ func ollamaContextWindow(client *http.Client, baseURL, modelName string) int {
 	return 0
 }
 
+// filterModelsByProvidersOptions is the parameter bundle for filterModelsByProviders.
+type filterModelsByProvidersOptions struct {
+	models    []ModelDef
+	providers map[string]bool
+}
+
 // filterModelsByProviders returns models whose provider is in the given set.
-func filterModelsByProviders(models []ModelDef, providers map[string]bool) []ModelDef {
+func filterModelsByProviders(opts filterModelsByProvidersOptions) []ModelDef {
 	var result []ModelDef
-	for _, m := range models {
-		if providers[m.Provider] {
+	for _, m := range opts.models {
+		if opts.providers[m.Provider] {
 			result = append(result, m)
 		}
 	}
 	return result
 }
 
+// findModelByIDOptions is the parameter bundle for findModelByID.
+type findModelByIDOptions struct {
+	models []ModelDef
+	id     string
+}
+
 // findModelByID returns the model with the given ID, or nil if not found.
-func findModelByID(models []ModelDef, id string) *ModelDef {
-	for i := range models {
-		if models[i].ID == id {
-			return &models[i]
+func findModelByID(opts findModelByIDOptions) *ModelDef {
+	for i := range opts.models {
+		if opts.models[i].ID == opts.id {
+			return &opts.models[i]
 		}
 	}
 	return nil
 }
 
+// sortModelsByColOptions is the parameter bundle for sortModelsByCol.
+type sortModelsByColOptions struct {
+	models []ModelDef
+	col    int
+	asc    bool
+}
+
 // sortModelsByCol sorts models in place by the given column.
 // col: 0=Model(ID), 1=Provider, 2=Price(prompt), 3=ContextWindow.
-func sortModelsByCol(models []ModelDef, col int, asc bool) {
+func sortModelsByCol(opts sortModelsByColOptions) {
+	models, col, asc := opts.models, opts.col, opts.asc
 	sort.SliceStable(models, func(i, j int) bool {
 		var less bool
 		switch col {
@@ -263,9 +298,15 @@ func formatPriceCompact(price float64) string {
 	return fmt.Sprintf("$%.2f", price)
 }
 
+// formatPricePerMOptions is the parameter bundle for formatPricePerM.
+type formatPricePerMOptions struct {
+	promptPrice     float64
+	completionPrice float64
+}
+
 // formatPricePerM formats input/output prices per million tokens as "$X/$Y/M".
-func formatPricePerM(promptPrice, completionPrice float64) string {
-	return formatPriceCompact(promptPrice) + "/" + formatPriceCompact(completionPrice) + "/M"
+func formatPricePerM(opts formatPricePerMOptions) string {
+	return formatPriceCompact(opts.promptPrice) + "/" + formatPriceCompact(opts.completionPrice) + "/M"
 }
 
 // formatContextWindow formats a token count for display.
@@ -281,12 +322,21 @@ func formatContextWindow(tokens int) string {
 	return fmt.Sprintf("%dk", tokens/1000)
 }
 
+// formatModelMenuLinesOptions is the parameter bundle for formatModelMenuLines.
+type formatModelMenuLinesOptions struct {
+	models   []ModelDef
+	activeID string
+	sortCol  int
+	sortAsc  bool
+}
+
 // formatModelMenuLines formats models as aligned multi-column menu lines.
 // Columns: Model (ID), Provider, Price (prompt), Context Window.
 // Returns a header string and the data lines.
 // The active model is marked with ● at the end.
 // sortCol (0-3) determines which column header is highlighted.
-func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortAsc bool) (string, []string) {
+func formatModelMenuLines(opts formatModelMenuLinesOptions) (string, []string) {
+	models, activeID, sortCol, sortAsc := opts.models, opts.activeID, opts.sortCol, opts.sortAsc
 	// Column headers
 	headers := [4]string{"Model", "Provider", "Price", "Context"}
 
@@ -309,7 +359,7 @@ func formatModelMenuLines(models []ModelDef, activeID string, sortCol int, sortA
 		e := entry{
 			name:   displayName,
 			prov:   m.Provider,
-			price:  formatPricePerM(m.PromptPrice, m.CompletionPrice),
+			price:  formatPricePerM(formatPricePerMOptions{promptPrice: m.PromptPrice, completionPrice: m.CompletionPrice}),
 			ctx:    formatContextWindow(m.ContextWindow),
 			active: m.ID == activeID,
 		}
@@ -390,15 +440,23 @@ func catalogCachePath() string {
 	return filepath.Join(home, ".herm", "model_catalog.json")
 }
 
+// computeCostOptions is the parameter bundle for computeCost.
+type computeCostOptions struct {
+	models  []ModelDef
+	modelID string
+	usage   types.Usage
+}
+
 // computeCost calculates the USD cost for a single LLM call based on token
 // usage and model pricing. Prices are per million tokens. For Anthropic models,
 // cache read tokens are charged at 10% of the input price.
 // Returns 0 if the model is not found.
-func computeCost(models []ModelDef, modelID string, usage types.Usage) float64 {
-	m := findModelByID(models, modelID)
+func computeCost(opts computeCostOptions) float64 {
+	m := findModelByID(findModelByIDOptions{models: opts.models, id: opts.modelID})
 	if m == nil || (m.PromptPrice == 0 && m.CompletionPrice == 0) {
 		return 0
 	}
+	usage := opts.usage
 	inputCost := float64(usage.InputTokens) * m.PromptPrice / 1_000_000
 	outputCost := float64(usage.OutputTokens) * m.CompletionPrice / 1_000_000
 
@@ -504,9 +562,16 @@ func parseSWEScores(resp sweBenchResponse) map[string]float64 {
 	return scores
 }
 
+// matchSWEScoresOptions is the parameter bundle for matchSWEScores.
+type matchSWEScoresOptions struct {
+	models []ModelDef
+	scores map[string]float64
+}
+
 // matchSWEScores enriches models with SWE-bench scores by fuzzy-matching
 // model IDs against SWE-bench model tags.
-func matchSWEScores(models []ModelDef, scores map[string]float64) {
+func matchSWEScores(opts matchSWEScoresOptions) {
+	models, scores := opts.models, opts.scores
 	for i := range models {
 		id := models[i].ID
 		// Try exact match first, then check if either contains the other

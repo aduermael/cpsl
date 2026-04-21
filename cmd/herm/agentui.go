@@ -156,14 +156,14 @@ func (a *App) startAgent(userMessage string) {
 	}
 
 	var modelProvider string
-	if modelDef := findModelByID(a.models, modelID); modelDef != nil {
+	if modelDef := findModelByID(findModelByIDOptions{models: a.models, id: modelID}); modelDef != nil {
 		modelProvider = modelDef.Provider
 	}
 
 	// Server-side tools (e.g. web search) are handled by the LLM provider.
 	// Some models don't support them, so we check before including them.
 	var serverTools []types.ToolDefinition
-	if supportsServerTools(modelProvider, modelID, a.models) {
+	if supportsServerTools(supportsServerToolsOptions{provider: modelProvider, modelID: modelID, models: a.models}) {
 		serverTools = []types.ToolDefinition{WebSearchToolDef()}
 	}
 
@@ -212,7 +212,7 @@ func (a *App) startAgent(userMessage string) {
 	}
 	explorationModelID := a.config.resolveExplorationModel(a.models)
 	subAgentServerTools := serverTools
-	if !supportsServerTools(modelProvider, explorationModelID, a.models) {
+	if !supportsServerTools(supportsServerToolsOptions{provider: modelProvider, modelID: explorationModelID, models: a.models}) {
 		subAgentServerTools = nil
 	}
 	subAgentTool := NewSubAgentTool(SubAgentConfig{
@@ -262,7 +262,7 @@ func (a *App) startAgent(userMessage string) {
 	a.showModelChange(modelID)
 
 	ctxWindow := 0
-	if m := findModelByID(a.models, modelID); m != nil {
+	if m := findModelByID(findModelByIDOptions{models: a.models, id: modelID}); m != nil {
 		ctxWindow = m.ContextWindow
 	}
 	mainMaxIter := a.config.MaxToolIterations
@@ -543,7 +543,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.traceUsageSeen = false
 		}
 		if event.Usage != nil {
-			cost := computeCost(a.models, event.Model, *event.Usage)
+			cost := computeCost(computeCostOptions{models: a.models, modelID: event.Model, usage: *event.Usage})
 			a.sessionCostUSD += cost
 			a.lastInputTokens = event.Usage.InputTokens + event.Usage.CacheReadInputTokens + event.Usage.CacheCreationInputTokens
 			// Propagate cost to the main agent for system prompt budget display.
