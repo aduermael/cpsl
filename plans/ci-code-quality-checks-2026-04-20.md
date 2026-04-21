@@ -158,7 +158,7 @@ constrained.
 
 **Parallel Tasks: 2a, 2b, 2c, 2d**
 
-- [ ] 2a: Split `cmd/herm/render.go` (1060) into `render.go` +
+- [x] 2a: Split `cmd/herm/render.go` (1060) into `render.go` +
   `render_subagent.go`. Move `subAgentDisplay`, `subAgentDisplayLines`,
   `formatSubAgentLine`, and related constants to the new file. Keep core
   rendering and input handling in `render.go`. Both files keep file-level
