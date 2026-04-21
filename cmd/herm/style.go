@@ -12,12 +12,12 @@ import (
 
 // ─── Progress bar (from simple-chat) ───
 
-func lerpColor(r1, g1, b1, r2, g2, b2 int, t float64) (int, int, int) {
-	lerp := func(a, b int) int { return a + int(float64(b-a)*t) }
-	return lerp(r1, r2), lerp(g1, g2), lerp(b1, b2)
+type progressBarOptions struct {
+	n, max int
 }
 
-func progressBar(n, max int) string {
+func progressBar(opts progressBarOptions) string {
+	n, max := opts.n, opts.max
 	if n > max {
 		n = max
 	}
@@ -25,7 +25,9 @@ func progressBar(n, max int) string {
 	filled := int(ratio * 24)
 	partials := []rune("█▉▊▋▌▍▎▏")
 
-	r, g, b := lerpColor(78, 201, 100, 230, 70, 70, ratio)
+	// Lerp green→red gradient based on fill ratio.
+	lerp := func(a, b int) int { return a + int(float64(b-a)*ratio) }
+	r, g, b := lerp(78, 230), lerp(201, 70), lerp(100, 70)
 	fillFg := fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
 	dimBg := "\033[48;5;240m"
 
@@ -49,17 +51,23 @@ func progressBar(n, max int) string {
 
 // ─── ANSI rendering helpers (from simple-chat) ───
 
-func writeRows(buf *strings.Builder, rows []string, from int) {
-	if len(rows) == 0 {
+type writeRowsOptions struct {
+	buf  *strings.Builder
+	rows []string
+	from int
+}
+
+func writeRows(opts writeRowsOptions) {
+	if len(opts.rows) == 0 {
 		return
 	}
-	buf.WriteString(fmt.Sprintf("\033[%d;1H", from))
-	for i, row := range rows {
+	opts.buf.WriteString(fmt.Sprintf("\033[%d;1H", opts.from))
+	for i, row := range opts.rows {
 		if i > 0 {
-			buf.WriteString("\r\n")
+			opts.buf.WriteString("\r\n")
 		}
-		buf.WriteString("\033[0m\033[2K")
-		buf.WriteString(row)
+		opts.buf.WriteString("\033[0m\033[2K")
+		opts.buf.WriteString(row)
 	}
 }
 
@@ -120,11 +128,16 @@ func styledToolCall(summary string) string {
 	return "\033[2;3m" + summary + "\033[0m"
 }
 
-func styledToolResult(result string, isError bool) string {
-	if isError {
-		return styledError(result)
+type styledToolResultOptions struct {
+	result  string
+	isError bool
+}
+
+func styledToolResult(opts styledToolResultOptions) string {
+	if opts.isError {
+		return styledError(opts.result)
 	}
-	return "\033[2m" + result + "\033[0m"
+	return "\033[2m" + opts.result + "\033[0m"
 }
 
 func styledError(msg string) string {
@@ -165,7 +178,7 @@ func renderMessage(msg chatMessage) string {
 	case msgToolCall:
 		rendered = styledToolCall(content)
 	case msgToolResult:
-		rendered = styledToolResult(content, msg.isError)
+		rendered = styledToolResult(styledToolResultOptions{result: content, isError: msg.isError})
 	case msgInfo:
 		rendered = styledInfo(content)
 	case msgSystemPrompt:
@@ -179,6 +192,14 @@ func renderMessage(msg chatMessage) string {
 	return strings.Join(parts, "\n")
 }
 
+type renderToolBoxOptions struct {
+	title       string
+	content     string
+	maxWidth    int
+	isError     bool
+	durationStr string
+}
+
 // renderToolBox renders a tool call and its result as a bordered box:
 //
 //	┌ ~ glob ───────┐
@@ -188,10 +209,11 @@ func renderMessage(msg chatMessage) string {
 //
 // The box has top/bottom borders but no side borders. The entire output is
 // styled dim (or red for errors). Title uses dim+italic.
-func renderToolBox(title, content string, maxWidth int, isError bool, durationStr string) string {
+func renderToolBox(opts renderToolBoxOptions) string {
+	title, maxWidth, isError, durationStr := opts.title, opts.maxWidth, opts.isError, opts.durationStr
 	// Replace tabs with single spaces for compact, predictable display,
 	// and trim trailing newlines to avoid blank lines inside the box.
-	content = strings.TrimRight(strings.ReplaceAll(content, "\t", " "), "\n")
+	content := strings.TrimRight(strings.ReplaceAll(opts.content, "\t", " "), "\n")
 	// Compute inner width from title and content lines.
 	titleVW := visibleWidth(title)
 	innerWidth := titleVW + 2 // "┌ " + title + " " + pad + "┐" → need at least title + 2 spaces
@@ -299,6 +321,13 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 	return b.String()
 }
 
+type renderToolGroupOptions struct {
+	entries    []toolGroupEntry
+	maxWidth   int
+	inProgress bool
+	liveDur    string
+}
+
 // renderToolGroup renders a group of tool calls as a single bordered block:
 //
 //	┌ Read file (README.md) ────────────────────┐
@@ -310,7 +339,8 @@ func renderToolBox(title, content string, maxWidth int, isError bool, durationSt
 // The first entry gets the ┌…┐ top border. Subsequent entries use ├ prefix.
 // Tool output lines use │ prefix. Bottom border is omitted when inProgress is true.
 // When inProgress and liveDur is non-empty, the duration is shown on the last ├ line.
-func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, liveDur string) string {
+func renderToolGroup(opts renderToolGroupOptions) string {
+	entries, maxWidth, inProgress, liveDur := opts.entries, opts.maxWidth, opts.inProgress, opts.liveDur
 	const (
 		borderStyle     = "\033[2m"    // dim
 		titleStyle      = "\033[2;3m"  // dim italic
@@ -345,7 +375,7 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 		if vw := visibleWidth(entry.summary) + 2; vw > innerWidth {
 			innerWidth = vw
 		}
-		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
+		if entry.result != "" && shouldShowToolOutput(shouldShowToolOutputOptions{entry: entry, idx: j, lastResultIdx: lastResultIdx}) {
 			for _, line := range strings.Split(strings.TrimRight(strings.ReplaceAll(entry.result, "\t", " "), "\n"), "\n") {
 				if lw := visibleWidth(line); lw > innerWidth {
 					innerWidth = lw
@@ -411,7 +441,7 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 		// Rules: errors always shown, edit/write show diff output,
 		// bash/git show output only for the last result-bearing tool,
 		// read/glob/grep/other results are hidden (summary is enough).
-		if entry.result != "" && shouldShowToolOutput(entry, j, lastResultIdx) {
+		if entry.result != "" && shouldShowToolOutput(shouldShowToolOutputOptions{entry: entry, idx: j, lastResultIdx: lastResultIdx}) {
 			content := strings.TrimRight(strings.ReplaceAll(entry.result, "\t", " "), "\n")
 			isDiff := isDiffContent(content)
 			for _, line := range strings.Split(content, "\n") {
@@ -440,13 +470,20 @@ func renderToolGroup(entries []toolGroupEntry, maxWidth int, inProgress bool, li
 	return b.String()
 }
 
+type shouldShowToolOutputOptions struct {
+	entry         toolGroupEntry
+	idx           int
+	lastResultIdx int
+}
+
 // shouldShowToolOutput determines whether a tool entry's result should be
 // displayed within a grouped block. Rules:
 //   - Errors: always shown
 //   - Edit/write tools: always shown (diff output)
 //   - Bash/git: shown only for the last result-bearing tool in the group
 //   - All others (read, glob, grep, etc.): hidden (summary line is enough)
-func shouldShowToolOutput(entry toolGroupEntry, idx, lastResultIdx int) bool {
+func shouldShowToolOutput(opts shouldShowToolOutputOptions) bool {
+	entry := opts.entry
 	if entry.isError {
 		return true
 	}
@@ -454,7 +491,7 @@ func shouldShowToolOutput(entry toolGroupEntry, idx, lastResultIdx int) bool {
 	case "edit_file", "write_file":
 		return true
 	case "bash", "git":
-		return idx == lastResultIdx
+		return opts.idx == opts.lastResultIdx
 	default:
 		return false
 	}
@@ -481,27 +518,32 @@ var funnyTexts = []string{
 	"reading the tea leaves...",
 }
 
-// hslToRGB converts HSL (h in [0,360), s and l in [0,1]) to RGB [0,255].
-func hslToRGB(h, s, l float64) (int, int, int) {
-	c := (1 - math.Abs(2*l-1)) * s
-	hp := h / 60
-	x := c * (1 - math.Abs(math.Mod(hp, 2)-1))
+// hsl is a color in HSL space (h in [0,360), s and l in [0,1]).
+type hsl struct {
+	h, s, l float64
+}
+
+// hslToRGB converts HSL to RGB [0,255].
+func hslToRGB(c hsl) (int, int, int) {
+	chroma := (1 - math.Abs(2*c.l-1)) * c.s
+	hp := c.h / 60
+	x := chroma * (1 - math.Abs(math.Mod(hp, 2)-1))
 	var r1, g1, b1 float64
 	switch {
 	case hp < 1:
-		r1, g1, b1 = c, x, 0
+		r1, g1, b1 = chroma, x, 0
 	case hp < 2:
-		r1, g1, b1 = x, c, 0
+		r1, g1, b1 = x, chroma, 0
 	case hp < 3:
-		r1, g1, b1 = 0, c, x
+		r1, g1, b1 = 0, chroma, x
 	case hp < 4:
-		r1, g1, b1 = 0, x, c
+		r1, g1, b1 = 0, x, chroma
 	case hp < 5:
-		r1, g1, b1 = x, 0, c
+		r1, g1, b1 = x, 0, chroma
 	default:
-		r1, g1, b1 = c, 0, x
+		r1, g1, b1 = chroma, 0, x
 	}
-	m := l - c/2
+	m := c.l - chroma/2
 	return int(math.Round((r1 + m) * 255)),
 		int(math.Round((g1 + m) * 255)),
 		int(math.Round((b1 + m) * 255))
@@ -510,7 +552,7 @@ func hslToRGB(h, s, l float64) (int, int, int) {
 // pastelColor returns an ANSI true-color escape for a smoothly cycling pastel hue.
 func pastelColor(elapsed time.Duration) string {
 	hue := math.Mod(elapsed.Seconds()*90, 360) // full rotation every 4s
-	r, g, b := hslToRGB(hue, 0.65, 0.78)
+	r, g, b := hslToRGB(hsl{h: hue, s: 0.65, l: 0.78})
 	return fmt.Sprintf("\033[38;2;%d;%d;%dm", r, g, b)
 }
 
@@ -519,26 +561,17 @@ func pastelColor(elapsed time.Duration) string {
 func approvalGradientColor(t time.Duration) string {
 	phase := math.Sin(t.Seconds() * 2 * math.Pi / 1.5)
 	hue := 42.5 + 12.5*phase // oscillate 30..55 (gold to yellow)
-	r, g, b := hslToRGB(hue, 0.95, 0.52)
+	r, g, b := hslToRGB(hsl{h: hue, s: 0.95, l: 0.52})
 	return fmt.Sprintf("\033[1;38;2;%d;%d;%dm", r, g, b)
 }
 
-// approvalGradientSep returns a separator line where each dash character is
-// individually colored with a shifting yellow gradient wave effect.
-func approvalGradientSep(width int, t time.Duration) string {
-	var buf strings.Builder
-	for i := 0; i < width; i++ {
-		charPhase := math.Sin((t.Seconds()*2*math.Pi/1.5) + float64(i)*0.15)
-		hue := 42.5 + 12.5*charPhase
-		r, g, b := hslToRGB(hue, 0.95, 0.52)
-		fmt.Fprintf(&buf, "\033[1;38;2;%d;%d;%dm─", r, g, b)
-	}
-	buf.WriteString("\033[0m")
-	return buf.String()
+type wrapLineCountOptions struct {
+	line  string
+	width int
 }
 
 // wrapLineCount returns the number of visual lines that `line` would occupy
 // when word-wrapped to `width` columns. It delegates to wrapString.
-func wrapLineCount(line string, width int) int {
-	return len(wrapString(line, 0, width))
+func wrapLineCount(opts wrapLineCountOptions) int {
+	return len(wrapString(opts.line, 0, opts.width))
 }

@@ -342,7 +342,7 @@ func (a *App) buildBlockRows() []string {
 			if group.inProgress && !a.toolStartTime.IsZero() {
 				liveDur = formatDuration(time.Since(a.toolStartTime))
 			}
-			block := renderToolGroup(group.entries, a.width, group.inProgress, liveDur)
+			block := renderToolGroup(renderToolGroupOptions{entries: group.entries, maxWidth: a.width, inProgress: group.inProgress, liveDur: liveDur})
 			for _, logLine := range strings.Split(block, "\n") {
 				rows = append(rows, wrapString(logLine, 0, a.width)...)
 			}
@@ -356,7 +356,7 @@ func (a *App) buildBlockRows() []string {
 		// Standalone tool result (no preceding tool call) — render as box.
 		if msg.kind == msgToolResult {
 			content := strings.ReplaceAll(msg.content, "\r", "")
-			box := renderToolBox("~ result", content, a.width, msg.isError, formatDuration(msg.duration))
+			box := renderToolBox(renderToolBoxOptions{title: "~ result", content: content, maxWidth: a.width, isError: msg.isError, durationStr: formatDuration(msg.duration)})
 			if msg.leadBlank {
 				rows = append(rows, "")
 			}
@@ -649,7 +649,7 @@ func (a *App) buildInputRows() []string {
 		if m := findModelByID(a.models, a.config.resolveActiveModel(a.models)); m != nil {
 			contextWindow = m.ContextWindow
 		}
-		bar := progressBar(contextTokens, contextWindow)
+		bar := progressBar(progressBarOptions{n: contextTokens, max: contextWindow})
 		barWidth := 3
 		padding := a.width - branchTextWidth - diffTextWidth - commitTextWidth - costTextWidth - barWidth - 1
 		if padding < 0 {
@@ -761,13 +761,13 @@ func (a *App) render() {
 			}
 		}
 		visibleRows := allRows[newScrollShift:]
-		writeRows(&buf, visibleRows, 1)
+		writeRows(writeRowsOptions{buf: &buf, rows: visibleRows, from: 1})
 	} else {
 		// No overflow, or content shrank: write from top.
 		if a.scrollShift > 0 {
 			buf.WriteString("\033[H\033[2J\033[3J") // clear screen + scrollback
 		}
-		writeRows(&buf, allRows, 1)
+		writeRows(writeRowsOptions{buf: &buf, rows: allRows, from: 1})
 	}
 
 	buf.WriteString("\033[0m\033[J") // clear from cursor to end of screen
@@ -817,7 +817,7 @@ func (a *App) renderInput() {
 	}
 
 	var buf strings.Builder
-	writeRows(&buf, inputRows, screenSepRow)
+	writeRows(writeRowsOptions{buf: &buf, rows: inputRows, from: screenSepRow})
 	buf.WriteString("\033[0m\033[J") // clear remaining lines
 
 	a.scrollShift = newScrollShift

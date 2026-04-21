@@ -192,7 +192,7 @@ constrained.
 
 **Parallel Tasks: 4a, 4b**
 
-- [ ] 4a: `cmd/herm/style.go` (10) — `lerpColor`, `progressBar`, `writeRows`,
+- [x] 4a: `cmd/herm/style.go` (10) — `lerpColor`, `progressBar`, `writeRows`,
   `styledToolResult`, `renderToolBox`, `renderToolGroup`,
   `shouldShowToolOutput`, `hslToRGB`, `approvalGradientSep`, `wrapLineCount`.
   Introduce per-function `*Options` structs; update call sites.

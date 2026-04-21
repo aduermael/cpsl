@@ -505,17 +505,17 @@ func TestCursorVisualPosWordWrap(t *testing.T) {
 
 func TestProgressBar(t *testing.T) {
 	// Verify it produces non-empty output and doesn't panic
-	bar := progressBar(0, 250)
+	bar := progressBar(progressBarOptions{n: 0, max: 250})
 	if bar == "" {
 		t.Error("progressBar(0, 250) returned empty string")
 	}
 
-	bar = progressBar(125, 250)
+	bar = progressBar(progressBarOptions{n: 125, max: 250})
 	if bar == "" {
 		t.Error("progressBar(125, 250) returned empty string")
 	}
 
-	bar = progressBar(300, 250)
+	bar = progressBar(progressBarOptions{n: 300, max: 250})
 	if bar == "" {
 		t.Error("progressBar(300, 250) returned empty string")
 	}
@@ -706,7 +706,7 @@ func TestTrailingNewlineNoEmptyLines(t *testing.T) {
 	})
 
 	t.Run("renderToolBox no empty content line from trailing newline", func(t *testing.T) {
-		box := renderToolBox("~ read file", "content here\n", 80, false, "")
+		box := renderToolBox(renderToolBoxOptions{title: "~ read file", content: "content here\n", maxWidth: 80})
 		lines := strings.Split(strip(box), "\n")
 		last := lines[len(lines)-1]
 		if strings.TrimSpace(last) == "" {
@@ -719,7 +719,7 @@ func TestTrailingNewlineNoEmptyLines(t *testing.T) {
 			{summary: "~ read a.go", result: "file content\n", toolName: "read_file"},
 			{summary: "~ read b.go", result: "more content\n", toolName: "read_file"},
 		}
-		group := renderToolGroup(entries, 80, false, "")
+		group := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		for _, line := range strings.Split(strip(group), "\n") {
 			if strings.TrimSpace(line) == "" {
 				t.Error("renderToolGroup should not produce empty content lines from trailing newlines")
@@ -736,7 +736,7 @@ func TestRenderToolBox(t *testing.T) {
 	}
 
 	t.Run("short title with content", func(t *testing.T) {
-		got := strip(renderToolBox("~ glob", "file1\nfile2", 80, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ glob", content: "file1\nfile2", maxWidth: 80}))
 		lines := strings.Split(got, "\n")
 		if len(lines) != 4 {
 			t.Fatalf("expected 4 lines, got %d: %q", len(lines), got)
@@ -760,7 +760,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("empty content", func(t *testing.T) {
-		got := strip(renderToolBox("~ bash", "", 80, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ bash", maxWidth: 80}))
 		lines := strings.Split(got, "\n")
 		if len(lines) != 2 {
 			t.Fatalf("expected 2 lines (top+bottom), got %d: %q", len(lines), got)
@@ -774,7 +774,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("long content widens box", func(t *testing.T) {
-		got := strip(renderToolBox("~ x", "short\nthis-is-a-much-longer-line-than-the-title", 80, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ x", content: "short\nthis-is-a-much-longer-line-than-the-title", maxWidth: 80}))
 		lines := strings.Split(got, "\n")
 		// Box should be wide enough for the long content line.
 		if visibleWidth(lines[0]) < visibleWidth("this-is-a-much-longer-line-than-the-title")+2 {
@@ -783,7 +783,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("width capping", func(t *testing.T) {
-		got := strip(renderToolBox("~ glob", strings.Repeat("x", 200), 40, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ glob", content: strings.Repeat("x", 200), maxWidth: 40}))
 		lines := strings.Split(got, "\n")
 		// Top border should not exceed maxWidth.
 		if visibleWidth(lines[0]) > 40 {
@@ -793,7 +793,7 @@ func TestRenderToolBox(t *testing.T) {
 
 	t.Run("narrow terminal truncates long title", func(t *testing.T) {
 		// Title "~ bash -c 'very long command here'" is 35 chars, terminal is 20.
-		got := strip(renderToolBox("~ bash -c 'very long command here'", "ok", 20, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ bash -c 'very long command here'", content: "ok", maxWidth: 20}))
 		lines := strings.Split(got, "\n")
 		// All lines must fit within maxWidth.
 		for i, line := range lines {
@@ -813,21 +813,21 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("error variant uses red", func(t *testing.T) {
-		got := renderToolBox("~ bash", "error!", 80, true, "")
+		got := renderToolBox(renderToolBoxOptions{title: "~ bash", content: "error!", maxWidth: 80, isError: true})
 		if !strings.Contains(got, "\033[31m") {
 			t.Errorf("expected red ANSI code in error box")
 		}
 	})
 
 	t.Run("non-error uses dim", func(t *testing.T) {
-		got := renderToolBox("~ bash", "ok", 80, false, "")
+		got := renderToolBox(renderToolBoxOptions{title: "~ bash", content: "ok", maxWidth: 80})
 		if !strings.Contains(got, "\033[2m") {
 			t.Errorf("expected dim ANSI code in normal box")
 		}
 	})
 
 	t.Run("duration in bottom border", func(t *testing.T) {
-		got := strip(renderToolBox("~ glob", "file1", 80, false, "1.2s"))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ glob", content: "file1", maxWidth: 80, durationStr: "1.2s"}))
 		lines := strings.Split(got, "\n")
 		bottom := lines[len(lines)-1]
 		if !strings.HasSuffix(bottom, "1.2s ┘") {
@@ -843,7 +843,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("no duration omits label", func(t *testing.T) {
-		got := strip(renderToolBox("~ bash", "ok", 80, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ bash", content: "ok", maxWidth: 80}))
 		lines := strings.Split(got, "\n")
 		bottom := lines[len(lines)-1]
 		if strings.Contains(bottom, "s ┘") {
@@ -852,7 +852,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("duration wider than title widens box", func(t *testing.T) {
-		got := strip(renderToolBox("~ x", "y", 80, false, "2m03s"))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ x", content: "y", maxWidth: 80, durationStr: "2m03s"}))
 		lines := strings.Split(got, "\n")
 		if visibleWidth(lines[0]) != visibleWidth(lines[len(lines)-1]) {
 			t.Errorf("border widths differ: top=%d, bottom=%d",
@@ -861,7 +861,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("duration in narrow box", func(t *testing.T) {
-		got := strip(renderToolBox("~ x", "", 20, false, "1.5s"))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ x", maxWidth: 20, durationStr: "1.5s"}))
 		lines := strings.Split(got, "\n")
 		for i, line := range lines {
 			if w := visibleWidth(line); w > 20 {
@@ -875,7 +875,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("error box with duration uses red", func(t *testing.T) {
-		got := renderToolBox("~ bash", "fail", 80, true, "3.0s")
+		got := renderToolBox(renderToolBoxOptions{title: "~ bash", content: "fail", maxWidth: 80, isError: true, durationStr: "3.0s"})
 		if !strings.Contains(got, "\033[31m") {
 			t.Errorf("expected red ANSI in error box with duration")
 		}
@@ -888,7 +888,7 @@ func TestRenderToolBox(t *testing.T) {
 	})
 
 	t.Run("tabs replaced with spaces", func(t *testing.T) {
-		got := strip(renderToolBox("~ grep", "9:\tlangdag.com/langdag v0.5.5", 80, false, ""))
+		got := strip(renderToolBox(renderToolBoxOptions{title: "~ grep", content: "9:\tlangdag.com/langdag v0.5.5", maxWidth: 80}))
 		lines := strings.Split(got, "\n")
 		if strings.Contains(lines[1], "\t") {
 			t.Errorf("content should not contain tabs: %q", lines[1])
@@ -1273,7 +1273,7 @@ func TestRenderToolGroup(t *testing.T) {
 		entries := []toolGroupEntry{
 			{summary: "~ glob", toolName: "glob", result: "file1\nfile2"},
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		if !strings.HasPrefix(s, "┌ ~ glob ") {
 			t.Errorf("expected top border, got: %q", s)
@@ -1289,7 +1289,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ read bar.go", toolName: "read_file", result: "content"},
 			{summary: "~ glob", toolName: "glob", result: "file.go"},
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		if !strings.Contains(s, "┌ ~ read foo.go ") {
 			t.Error("expected first entry as top border")
@@ -1314,7 +1314,7 @@ func TestRenderToolGroup(t *testing.T) {
 				result:   fmt.Sprintf("content%d", i),
 			})
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		// First 3 should be visible.
 		if !strings.Contains(s, "file0.go") {
@@ -1348,7 +1348,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
 			{summary: "~ bash", toolName: "bash"},
 		}
-		out := renderToolGroup(entries, 80, true, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80, inProgress: true})
 		s := strip(out)
 		if strings.Contains(s, "└") {
 			t.Error("in-progress group should not have bottom border")
@@ -1363,7 +1363,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
 			{summary: "~ bash", toolName: "bash"},
 		}
-		out := renderToolGroup(entries, 80, true, "1.5s")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80, inProgress: true, liveDur: "1.5s"})
 		s := strip(out)
 		if !strings.Contains(s, "1.5s") {
 			t.Error("expected live duration on in-progress entry")
@@ -1375,7 +1375,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ read foo.go", toolName: "read_file", result: "content"},
 			{summary: "~ bash", toolName: "bash", result: "command failed", isError: true},
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		// Error result should be visible with │ prefix.
 		if !strings.Contains(s, "│ command failed") {
@@ -1392,7 +1392,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ read foo.go", toolName: "read_file", result: "file content here"},
 			{summary: "~ edit bar.go", toolName: "edit_file", result: "@@ -1 +1 @@\n-old\n+new"},
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		// Read result should be hidden (summary only).
 		if strings.Contains(s, "file content here") {
@@ -1409,7 +1409,7 @@ func TestRenderToolGroup(t *testing.T) {
 			{summary: "~ $ ls", toolName: "bash", result: "first output"},
 			{summary: "~ $ pwd", toolName: "bash", result: "/home/user"},
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		// First bash result should be hidden (not last).
 		if strings.Contains(s, "first output") {
@@ -1428,7 +1428,7 @@ func TestRenderToolGroup(t *testing.T) {
 				summary: fmt.Sprintf("~ read file%d.go", i), toolName: "read_file", result: "ok",
 			})
 		}
-		out := renderToolGroup(entries, 80, false, "")
+		out := renderToolGroup(renderToolGroupOptions{entries: entries, maxWidth: 80})
 		s := strip(out)
 		// All 6 should be visible, no collapse marker.
 		for i := 0; i < 6; i++ {
@@ -1606,7 +1606,7 @@ func TestShouldShowToolOutput(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldShowToolOutput(tt.entry, tt.idx, tt.lastResultIdx); got != tt.want {
+			if got := shouldShowToolOutput(shouldShowToolOutputOptions{entry: tt.entry, idx: tt.idx, lastResultIdx: tt.lastResultIdx}); got != tt.want {
 				t.Errorf("shouldShowToolOutput(%q, idx=%d, last=%d) = %v, want %v",
 					tt.entry.toolName, tt.idx, tt.lastResultIdx, got, tt.want)
 			}
@@ -1739,7 +1739,7 @@ func TestCollapseToolResultDiff(t *testing.T) {
 func TestToolBoxDiffColorization(t *testing.T) {
 	// A diff result rendered via renderToolBox should contain ANSI color codes.
 	diff := "--- a/main.go\n+++ b/main.go\n@@ -1,2 +1,2 @@\n-old\n+new"
-	box := renderToolBox("~ edit main.go", diff, 80, false, "")
+	box := renderToolBox(renderToolBoxOptions{title: "~ edit main.go", content: diff, maxWidth: 80})
 
 	// Check for diff-specific ANSI codes.
 	if !strings.Contains(box, "\033[2;32m") {
@@ -1800,7 +1800,7 @@ func TestWriteRowsEscapeSequences(t *testing.T) {
 	t.Run("each row gets clear-line prefix", func(t *testing.T) {
 		var buf strings.Builder
 		rows := []string{"row one", "row two", "row three"}
-		writeRows(&buf, rows, 1)
+		writeRows(writeRowsOptions{buf: &buf, rows: rows, from: 1})
 		output := buf.String()
 
 		// Should start by positioning at row 1
@@ -1822,7 +1822,7 @@ func TestWriteRowsEscapeSequences(t *testing.T) {
 
 	t.Run("custom start row", func(t *testing.T) {
 		var buf strings.Builder
-		writeRows(&buf, []string{"hello"}, 5)
+		writeRows(writeRowsOptions{buf: &buf, rows: []string{"hello"}, from: 5})
 		output := buf.String()
 
 		if !strings.HasPrefix(output, "\033[5;1H") {
@@ -1832,7 +1832,7 @@ func TestWriteRowsEscapeSequences(t *testing.T) {
 
 	t.Run("empty rows no output", func(t *testing.T) {
 		var buf strings.Builder
-		writeRows(&buf, nil, 1)
+		writeRows(writeRowsOptions{buf: &buf, rows: nil, from: 1})
 		if buf.Len() != 0 {
 			t.Errorf("expected no output for empty rows, got %q", buf.String())
 		}

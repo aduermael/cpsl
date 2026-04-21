@@ -25,7 +25,7 @@ func TestWrapLineCount(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := wrapLineCount(tt.line, tt.width)
+			got := wrapLineCount(wrapLineCountOptions{line: tt.line, width: tt.width})
 			if got != tt.want {
 				t.Errorf("wrapLineCount(%q, %d) = %d, want %d", tt.line, tt.width, got, tt.want)
 			}
