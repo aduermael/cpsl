@@ -146,7 +146,7 @@ constrained.
   reporter. No rules wired yet.
 - [x] 1b: Implement `file-length` rule in the new binary, parameterised by a
   max-lines flag (default 1000). Reuse the shared walker.
-- [ ] 1c: Implement `docstring` rule (floor 60 chars, ceiling 3 lines) using
+- [x] 1c: Implement `docstring` rule (floor 60 chars, ceiling 3 lines) using
   `ast.File.Doc`.
 - [ ] 1d: Implement `positional-params` rule (receiver excluded, variadic
   allowed as final param, `context.Context` as first param exempt, interface
