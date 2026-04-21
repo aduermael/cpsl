@@ -172,7 +172,7 @@ constrained.
   `cleanupTmpDir`) to `wiring.go`. Keep `main`, `newApp`, `Run`, and the core
   event loop in `main.go`. Also moved `handleUpdateCommand` to keep main.go
   under the 1000-line cap.
-- [ ] 2d: Split `cmd/herm/agent.go` (1474) into `agent.go` + `agent_loops.go`.
+- [x] 2d: Split `cmd/herm/agent.go` (1474) into `agent.go` + `agent_loops.go`.
   Move `runLoop`, `gracefulExhaustion`, `backgroundCompletion`,
   `clearOldToolResults`, `maybeCompact`, and related retry/context helpers
   to `agent_loops.go`. Keep the `Agent` type, `NewAgent`, `Events`, `Cancel`,
