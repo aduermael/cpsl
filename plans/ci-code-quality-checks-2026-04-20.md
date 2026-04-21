@@ -185,7 +185,7 @@ constrained.
   `positional-params` job starts in warning mode (`continue-on-error: true`)
   so it stays visible in the PR UI without blocking until Phase 5. Delete
   `.github/workflows/source-file-length.yml`.
-- [ ] 3b: Run the new workflow locally, fix any stragglers surfaced by the
+- [x] 3b: Run the new workflow locally, fix any stragglers surfaced by the
   docstring rule or by Phase 2 splits (e.g., new files missing doc comments).
 
 ## Phase 4: Refactor functions to ≤ 1 positional param

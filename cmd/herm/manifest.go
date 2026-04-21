@@ -1,11 +1,6 @@
 // manifest.go generates .herm/environment.md — a compact manifest of what's
 // installed in the dev container, injected into the system prompt so the agent
 // knows available runtimes and tools without running discovery commands.
-//
-// Two modes:
-//   - Base image (no .herm/Dockerfile): use prompts.BaseEnvironment.
-//   - Custom image (after devenv build): parse the Dockerfile to describe
-//     what was added on top of the base image.
 package main
 
 import (

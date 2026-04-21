@@ -1,7 +1,6 @@
 // tooldesc.go loads tool descriptions from embedded markdown files in
-// prompts/tools/. Each file uses frontmatter (name, description) and a body
-// of extended guidance. The full description concatenates both, ready to be
-// used as a tool's Definition().Description field.
+// prompts/tools/. Each file has frontmatter (name, description) plus a body
+// of guidance; combined, they form a tool's Definition().Description.
 package main
 
 import (

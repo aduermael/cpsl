@@ -1,7 +1,6 @@
-// debuglog.go implements JSON trace debug logging for sessions.
-// When debug mode is enabled, every conversation gets a .json trace file in
-// .herm/debug/ that captures LLM calls, tool calls, sub-agent traces, and
-// session totals.
+// debuglog.go implements JSON trace debug logging for sessions. When debug
+// mode is enabled, every conversation gets a .json trace file in .herm/debug/
+// capturing LLM calls, tool calls, sub-agent traces, and session totals.
 package main
 
 import (

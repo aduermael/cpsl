@@ -1,4 +1,5 @@
-// term.go provides terminal dimension helpers.
+// term.go provides terminal dimension helpers for the interactive TUI,
+// wrapping golang.org/x/term.
 package main
 
 import (

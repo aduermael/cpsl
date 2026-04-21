@@ -1,7 +1,6 @@
 // trace.go implements structured JSON trace logging for debug sessions.
-// Each session produces a .json file containing every event: LLM calls with
-// token/model metadata, tool calls paired with results, sub-agent traces
-// nested hierarchically, and an info summary object.
+// Each session writes a .json file of LLM calls, tool call/result pairs,
+// nested sub-agent traces, and an info summary object.
 package main
 
 import (
