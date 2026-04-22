@@ -276,7 +276,7 @@ constrained.
   `.github/workflows/ci-checks.yml` from `continue-on-error: true` to a hard
   fail after confirming no remaining violations across `cmd/herm/` and
   `tools/`.
-- [ ] 11b: Update `GUIDELINES.md` with a short section describing the three
+- [x] 11b: Update `GUIDELINES.md` with a short section describing the three
   enforced rules (file length ≤ 1000, ≤ 1 positional param with `ctx`
   exempt, file docstring ≥ 60 chars / ≤ 3 lines) and pointing at
   `tools/ci-check/`.

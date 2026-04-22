@@ -1,5 +1,20 @@
 # Coding Guidelines
 
+## CI-enforced rules
+
+Three structural rules are enforced by `tools/ci-check/` and run on every PR:
+
+1. **File length** — non-test `.go` files are capped at 1000 lines. Split if larger.
+2. **Positional params** — functions/methods take at most 1 positional parameter.
+   When more data is needed, use an options struct (`type FooOptions struct {...}`,
+   `func Foo(opts FooOptions)`). A leading `ctx context.Context` is exempt from
+   the count, and a trailing variadic parameter is allowed alongside one regular
+   param. Receivers and interface method declarations are not checked.
+3. **File docstring** — every non-test `.go` file starts with a leading doc
+   comment whose body is ≥ 60 chars and ≤ 3 lines.
+
+Run `go run ./tools/ci-check all .` from the repo root to check locally.
+
 ## File size
 
 - Source files: 1000 lines max. If a file grows past this, split it.
@@ -16,8 +31,8 @@ explaining the file's purpose:
 package main
 ```
 
-Keep it to 1–3 lines. Describe what the file is responsible for, not implementation
-details.
+Keep it to 1–3 lines (≥ 60 chars). Describe what the file is responsible for, not
+implementation details.
 
 ## Naming
 
