@@ -155,7 +155,15 @@ func resolveWorkspaceCmd(cfg Config) workspaceMsg {
 	return workspaceMsg{worktreePath: cwd, repoRoot: repoRoot}
 }
 
-func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
+// bootContainerCmdOptions is the parameter bundle for bootContainerCmd.
+type bootContainerCmdOptions struct {
+	workspace string
+	sessionID string
+	ch        chan<- any
+}
+
+func bootContainerCmd(opts bootContainerCmdOptions) {
+	workspace, sessionID, ch := opts.workspace, opts.sessionID, opts.ch
 	ch <- containerStatusMsg{text: "checking docker…"}
 
 	client := NewContainerClient(ContainerConfig{Image: defaultContainerImage})
@@ -171,7 +179,7 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 	}
 
 	// Build from .herm/Dockerfile (write base template if none exists).
-	imageName := buildContainerImage(workspace, ch)
+	imageName := buildContainerImage(buildContainerImageOptions{workspace: workspace, ch: ch})
 	if imageName != "" {
 		client.mu.Lock()
 		client.config.Image = imageName
@@ -180,7 +188,7 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 
 	// Ensure the image is available locally (pull if needed).
 	finalImage := client.config.Image
-	if err := ensureImageLocal(finalImage, ch); err != nil {
+	if err := ensureImageLocal(ensureImageLocalOptions{image: finalImage, ch: ch}); err != nil {
 		ch <- containerStatusMsg{text: "image pull failed"}
 		ch <- containerErrMsg{err: fmt.Errorf("pulling %s: %w", finalImage, err)}
 		return
@@ -200,7 +208,7 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 		{Source: cacheDir, Destination: "/cache", ReadOnly: false},
 	}
 
-	if err := client.Start(workspace, mounts); err != nil {
+	if err := client.Start(containerStartOptions{workspace: workspace, mounts: mounts}); err != nil {
 		ch <- containerStatusMsg{text: "start failed"}
 		ch <- containerErrMsg{err: fmt.Errorf("starting container: %w", err)}
 		return
@@ -209,10 +217,17 @@ func bootContainerCmd(workspace string, sessionID string, ch chan<- any) {
 	ch <- containerReadyMsg{client: client, worktreePath: workspace, imageName: imageName}
 }
 
+// ensureImageLocalOptions is the parameter bundle for ensureImageLocal.
+type ensureImageLocalOptions struct {
+	image string
+	ch    chan<- any
+}
+
 // ensureImageLocal checks whether a Docker image exists locally. If not, it
 // pulls it from the registry. Status updates are sent via ch. Returns nil on
 // success, or the pull error if the image cannot be obtained.
-func ensureImageLocal(image string, ch chan<- any) error {
+func ensureImageLocal(opts ensureImageLocalOptions) error {
+	image, ch := opts.image, opts.ch
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if dockerCommand(ctx, "docker", "image", "inspect", image).Run() == nil {
@@ -234,13 +249,20 @@ func ensureImageLocal(image string, ch chan<- any) error {
 	return nil
 }
 
+// buildContainerImageOptions is the parameter bundle for buildContainerImage.
+type buildContainerImageOptions struct {
+	workspace string
+	ch        chan<- any
+}
+
 // buildContainerImage builds a Docker image from .herm/Dockerfile in the workspace.
 // If no Dockerfile exists, or it matches the embedded base template, the build is
 // skipped and the caller uses the default image (aduermael/herm:<tag>) directly.
 // Image tag is deterministic: herm-<projectID[:8]>:<sha256[:12]> based on Dockerfile content.
 // If the image already exists (docker image inspect), the build is skipped.
 // Returns the built image name, or empty string on failure (caller falls back to raw image).
-func buildContainerImage(workspace string, ch chan<- any) string {
+func buildContainerImage(opts buildContainerImageOptions) string {
+	workspace, ch := opts.workspace, opts.ch
 	hermDir := filepath.Join(workspace, ".herm")
 	dockerfilePath := filepath.Join(hermDir, "Dockerfile")
 
@@ -449,11 +471,19 @@ func fetchCommitInfo(worktreePath string) commitInfoMsg {
 	return msg
 }
 
+// buildProjectTreeOptions is the parameter bundle for buildProjectTree.
+type buildProjectTreeOptions struct {
+	rootPath     string
+	maxTopLevel  int
+	maxPerSubdir int
+}
+
 // buildProjectTree creates a two-level tree view of the project directory with
 // smart truncation. Important files (README, go.mod, package.json, Makefile,
 // Dockerfile) are preserved when truncating top-level entries. Hidden entries
 // (starting with ".") are excluded.
-func buildProjectTree(rootPath string, maxTopLevel, maxPerSubdir int) string {
+func buildProjectTree(opts buildProjectTreeOptions) string {
+	rootPath, maxTopLevel, maxPerSubdir := opts.rootPath, opts.maxTopLevel, opts.maxPerSubdir
 	if maxTopLevel <= 0 {
 		maxTopLevel = 20
 	}
@@ -570,7 +600,7 @@ func fetchProjectSnapshot(worktreePath string) projectSnapshotMsg {
 
 	// Two-level tree view of project root.
 	go func() {
-		val := buildProjectTree(worktreePath, 20, 8)
+		val := buildProjectTree(buildProjectTreeOptions{rootPath: worktreePath, maxTopLevel: 20, maxPerSubdir: 8})
 		ch <- result{"ls", val}
 	}()
 

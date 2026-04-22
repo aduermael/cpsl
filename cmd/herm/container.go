@@ -101,8 +101,15 @@ func (c *ContainerClient) CheckDocker() error {
 	return nil
 }
 
+// containerStartOptions is the parameter bundle for (*ContainerClient).Start.
+type containerStartOptions struct {
+	workspace string
+	mounts    []MountSpec
+}
+
 // Start runs a Docker container with the given workspace and mounts.
-func (c *ContainerClient) Start(workspace string, mounts []MountSpec) error {
+func (c *ContainerClient) Start(opts containerStartOptions) error {
+	workspace, mounts := opts.workspace, opts.mounts
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -143,8 +150,15 @@ func (c *ContainerClient) Start(workspace string, mounts []MountSpec) error {
 	return nil
 }
 
+// containerExecOptions is the parameter bundle for (*ContainerClient).Exec.
+type containerExecOptions struct {
+	command string
+	timeout int
+}
+
 // Exec runs a command inside the container and returns the result.
-func (c *ContainerClient) Exec(command string, timeout int) (CommandResult, error) {
+func (c *ContainerClient) Exec(opts containerExecOptions) (CommandResult, error) {
+	command, timeout := opts.command, opts.timeout
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -180,11 +194,18 @@ func (c *ContainerClient) Exec(command string, timeout int) (CommandResult, erro
 	}, nil
 }
 
+// containerExecWithStdinOptions is the parameter bundle for (*ContainerClient).ExecWithStdin.
+type containerExecWithStdinOptions struct {
+	stdin   []byte
+	timeout int
+}
+
 // ExecWithStdin runs a command inside the container with stdin piped directly
 // from the provided byte slice. Unlike Exec, this does NOT invoke a shell —
 // args are passed directly to docker exec. Use this for piping structured input
 // (e.g. JSON) to binaries without shell escaping issues.
-func (c *ContainerClient) ExecWithStdin(stdin []byte, timeout int, args ...string) (CommandResult, error) {
+func (c *ContainerClient) ExecWithStdin(opts containerExecWithStdinOptions, args ...string) (CommandResult, error) {
+	stdin, timeout := opts.stdin, opts.timeout
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -306,10 +327,19 @@ func (c *ContainerClient) Status() (ContainerStatus, error) {
 	}, nil
 }
 
+// containerRebuildOptions is the parameter bundle for (*ContainerClient).Rebuild.
+type containerRebuildOptions struct {
+	imageName      string
+	dockerfilePath string
+	workspace      string
+	mounts         []MountSpec
+}
+
 // Rebuild builds a Docker image from the given Dockerfile, stops the current
 // container, and starts a new one with the built image. The caller provides the
 // desired image name; workspace is used as the build context directory.
-func (c *ContainerClient) Rebuild(imageName, dockerfilePath, workspace string, mounts []MountSpec) error {
+func (c *ContainerClient) Rebuild(opts containerRebuildOptions) error {
+	imageName, dockerfilePath, workspace, mounts := opts.imageName, opts.dockerfilePath, opts.workspace, opts.mounts
 
 	buildCtx, buildCancel := context.WithTimeout(context.Background(), 300*time.Second)
 	defer buildCancel()
@@ -354,7 +384,7 @@ func (c *ContainerClient) Rebuild(imageName, dockerfilePath, workspace string, m
 	c.config.Image = imageName
 	c.mu.Unlock()
 
-	return c.Start(workspace, mounts)
+	return c.Start(containerStartOptions{workspace: workspace, mounts: mounts})
 }
 
 // randomID generates a short random hex string for container naming.

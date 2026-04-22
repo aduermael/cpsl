@@ -248,7 +248,7 @@ func TestBuildProjectTree_TwoLevel(t *testing.T) {
 	os.WriteFile(filepath.Join(tmp, "cmd", "main.go"), []byte("package main"), 0o644)
 	os.WriteFile(filepath.Join(tmp, "pkg", "lib.go"), []byte("package pkg"), 0o644)
 
-	result := buildProjectTree(tmp, 20, 8)
+	result := buildProjectTree(buildProjectTreeOptions{rootPath: tmp, maxTopLevel: 20, maxPerSubdir: 8})
 
 	if result == "" {
 		t.Fatal("expected non-empty tree output")
@@ -287,7 +287,7 @@ func TestBuildProjectTree_TopLevelTruncation(t *testing.T) {
 	// Add an important file that should survive truncation.
 	os.WriteFile(filepath.Join(tmp, "go.mod"), []byte("module test"), 0o644)
 
-	result := buildProjectTree(tmp, 5, 8)
+	result := buildProjectTree(buildProjectTreeOptions{rootPath: tmp, maxTopLevel: 5, maxPerSubdir: 8})
 
 	if !strings.Contains(result, "go.mod") {
 		t.Errorf("important file go.mod should be preserved during truncation, got:\n%s", result)
@@ -318,7 +318,7 @@ func TestBuildProjectTree_SubdirTruncation(t *testing.T) {
 		os.WriteFile(filepath.Join(dir, fmt.Sprintf("item%02d.go", i)), []byte("x"), 0o644)
 	}
 
-	result := buildProjectTree(tmp, 20, 3)
+	result := buildProjectTree(buildProjectTreeOptions{rootPath: tmp, maxTopLevel: 20, maxPerSubdir: 3})
 
 	if !strings.Contains(result, "bigdir/") {
 		t.Errorf("should contain bigdir/, got:\n%s", result)
@@ -336,7 +336,7 @@ func TestBuildProjectTree_HiddenFilesExcluded(t *testing.T) {
 	os.MkdirAll(filepath.Join(tmp, ".git"), 0o755)
 	os.WriteFile(filepath.Join(tmp, ".git", "config"), []byte("x"), 0o644)
 
-	result := buildProjectTree(tmp, 20, 8)
+	result := buildProjectTree(buildProjectTreeOptions{rootPath: tmp, maxTopLevel: 20, maxPerSubdir: 8})
 
 	if strings.Contains(result, ".hidden") {
 		t.Errorf("hidden files should be excluded, got:\n%s", result)

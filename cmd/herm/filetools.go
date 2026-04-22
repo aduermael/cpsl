@@ -126,7 +126,7 @@ func (t *GlobTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	cmd := fmt.Sprintf("cd %s && rg --files -g %s --sort path 2>&1",
 		shellQuote(searchDir), shellQuote(in.Pattern))
 
-	result, err := t.container.Exec(cmd, 30)
+	result, err := t.container.Exec(containerExecOptions{command: cmd, timeout: 30})
 	if err != nil {
 		return "", err
 	}
@@ -273,7 +273,7 @@ func (t *GrepTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	cmd := fmt.Sprintf("cd %s && %s %s 2>&1",
 		shellQuote(t.container.WorkDir()), strings.Join(args, " "), shellQuote(searchDir))
 
-	result, err := t.container.Exec(cmd, 30)
+	result, err := t.container.Exec(containerExecOptions{command: cmd, timeout: 30})
 	if err != nil {
 		return "", err
 	}
@@ -382,7 +382,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	cmd := fmt.Sprintf("awk 'NR>=%d && NR<=%d { printf \"%%6d\\t%%s\\n\", NR, (length>%d ? substr($0,1,%d)\"…\" : $0) } NR>%d { exit }' %s 2>&1",
 		offset, endLine, readFileMaxLineWidth, readFileMaxLineWidth, endLine, shellQuote(filePath))
 
-	result, err := t.container.Exec(cmd, 30)
+	result, err := t.container.Exec(containerExecOptions{command: cmd, timeout: 30})
 	if err != nil {
 		return "", err
 	}
@@ -396,7 +396,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	if output == "" {
 		// Check if file exists but range is past end, or file is empty.
 		checkCmd := fmt.Sprintf("wc -l < %s 2>&1", shellQuote(filePath))
-		checkResult, checkErr := t.container.Exec(checkCmd, 5)
+		checkResult, checkErr := t.container.Exec(containerExecOptions{command: checkCmd, timeout: 5})
 		if checkErr != nil || checkResult.ExitCode != 0 {
 			return fmt.Sprintf("error: cannot read %s", in.FilePath), nil
 		}
@@ -411,7 +411,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	outputLines := strings.Count(output, "\n") + 1
 	if outputLines >= limit {
 		wcCmd := fmt.Sprintf("wc -l < %s 2>&1", shellQuote(filePath))
-		wcResult, wcErr := t.container.Exec(wcCmd, 5)
+		wcResult, wcErr := t.container.Exec(containerExecOptions{command: wcCmd, timeout: 5})
 		if wcErr == nil && wcResult.ExitCode == 0 {
 			total := strings.TrimSpace(wcResult.Stdout)
 			output += fmt.Sprintf("\n[showing lines %d-%d of %s]", offset, offset+outputLines-1, total)
@@ -511,7 +511,7 @@ func (t *EditFileTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		return "", fmt.Errorf("marshalling edit-file input: %w", err)
 	}
 
-	result, err := t.container.ExecWithStdin(inputJSON, 30, "edit-file")
+	result, err := t.container.ExecWithStdin(containerExecWithStdinOptions{stdin: inputJSON, timeout: 30}, "edit-file")
 	if err != nil {
 		return "", err
 	}
@@ -607,7 +607,7 @@ func (t *WriteFileTool) Execute(ctx context.Context, input json.RawMessage) (str
 		return "", fmt.Errorf("marshalling write-file input: %w", err)
 	}
 
-	result, err := t.container.ExecWithStdin(inputJSON, 30, "write-file")
+	result, err := t.container.ExecWithStdin(containerExecWithStdinOptions{stdin: inputJSON, timeout: 30}, "write-file")
 	if err != nil {
 		return "", err
 	}
@@ -728,7 +728,7 @@ func (t *OutlineTool) outlineOne(displayPath string) (string, error) {
 		filePath = t.container.WorkDir() + "/" + filePath
 	}
 
-	result, err := t.container.Exec(fmt.Sprintf("outline %s", shellQuote(filePath)), 15)
+	result, err := t.container.Exec(containerExecOptions{command: fmt.Sprintf("outline %s", shellQuote(filePath)), timeout: 15})
 	if err != nil {
 		return "", err
 	}
@@ -787,7 +787,7 @@ func (t *OutlineTool) outlineFallback(opts outlineFallbackOptions) (string, erro
 
 	if pattern != "" {
 		cmd := fmt.Sprintf("grep -n -E %s %s 2>&1 | head -n 101", shellQuote(pattern), shellQuote(filePath))
-		result, err := t.container.Exec(cmd, 15)
+		result, err := t.container.Exec(containerExecOptions{command: cmd, timeout: 15})
 		if err != nil {
 			return "", err
 		}
@@ -800,7 +800,7 @@ func (t *OutlineTool) outlineFallback(opts outlineFallbackOptions) (string, erro
 
 	// Unknown language — head + tail.
 	cmd := fmt.Sprintf("(head -n 20 %s && echo '---' && tail -n 20 %s) 2>&1", shellQuote(filePath), shellQuote(filePath))
-	result, err := t.container.Exec(cmd, 10)
+	result, err := t.container.Exec(containerExecOptions{command: cmd, timeout: 10})
 	if err != nil {
 		return "", err
 	}

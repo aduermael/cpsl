@@ -150,7 +150,7 @@ func TestContainerClient_CheckDocker_DaemonNotRunning(t *testing.T) {
 
 func TestContainerClient_ExecNotRunning(t *testing.T) {
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_, err := c.Exec("echo hello", 120)
+	_, err := c.Exec(containerExecOptions{command: "echo hello", timeout: 120})
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -200,11 +200,11 @@ func TestContainerClient_StartAndExec(t *testing.T) {
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
 
-	err := c.Start("/workspace", []MountSpec{{
+	err := c.Start(containerStartOptions{workspace: "/workspace", mounts: []MountSpec{{
 		Source:      "/workspace",
 		Destination: "/workspace",
 		ReadOnly:    false,
-	}})
+	}}})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -216,7 +216,7 @@ func TestContainerClient_StartAndExec(t *testing.T) {
 	}
 
 	// Exec.
-	result, err := c.Exec("echo hello", 120)
+	result, err := c.Exec(containerExecOptions{command: "echo hello", timeout: 120})
 	if err != nil {
 		t.Fatalf("Exec: %v", err)
 	}
@@ -248,11 +248,11 @@ func TestContainerClient_StartAlreadyRunning(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("first Start: %v", err)
 	}
 
-	err := c.Start("/workspace", nil)
+	err := c.Start(containerStartOptions{workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("expected error on second Start")
 	}
@@ -299,7 +299,7 @@ func TestContainerClient_Status(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -350,7 +350,7 @@ func TestContainerClient_Rebuild(t *testing.T) {
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
 
 	// Start the client so it is already running with oldID.
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("initial Start: %v", err)
 	}
 	if c.containerID != oldID {
@@ -358,7 +358,7 @@ func TestContainerClient_Rebuild(t *testing.T) {
 	}
 
 	mounts := []MountSpec{{Source: "/workspace", Destination: "/workspace"}}
-	err := c.Rebuild("myimage:latest", "/workspace/Dockerfile", "/workspace", mounts)
+	err := c.Rebuild(containerRebuildOptions{imageName: "myimage:latest", dockerfilePath: "/workspace/Dockerfile", workspace: "/workspace", mounts: mounts})
 	if err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
@@ -418,11 +418,11 @@ func TestContainerClient_RebuildBuildFailure(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("initial Start: %v", err)
 	}
 
-	err := c.Rebuild("myimage:latest", "/workspace/Dockerfile", "/workspace", nil)
+	err := c.Rebuild(containerRebuildOptions{imageName: "myimage:latest", dockerfilePath: "/workspace/Dockerfile", workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("expected error from Rebuild when build fails")
 	}
@@ -479,7 +479,7 @@ func TestContainerClient_RebuildNotRunning(t *testing.T) {
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
 
 	mounts := []MountSpec{{Source: "/workspace", Destination: "/workspace"}}
-	err := c.Rebuild("myimage:latest", "/workspace/Dockerfile", "/workspace", mounts)
+	err := c.Rebuild(containerRebuildOptions{imageName: "myimage:latest", dockerfilePath: "/workspace/Dockerfile", workspace: "/workspace", mounts: mounts})
 	if err != nil {
 		t.Fatalf("Rebuild: %v", err)
 	}
@@ -519,12 +519,12 @@ func TestContainerClient_ExecWithStdin(t *testing.T) {
 	}, stdinFile)
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
 	input := []byte(`{"file_path":"/workspace/main.go","old_string":"hello\nworld","new_string":"goodbye"}`)
-	result, err := c.ExecWithStdin(input, 30, "edit-file")
+	result, err := c.ExecWithStdin(containerExecWithStdinOptions{stdin: input, timeout: 30}, "edit-file")
 	if err != nil {
 		t.Fatalf("ExecWithStdin: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestContainerClient_ExecWithStdin(t *testing.T) {
 
 func TestContainerClient_ExecWithStdinNotRunning(t *testing.T) {
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_, err := c.ExecWithStdin([]byte("test"), 30, "echo")
+	_, err := c.ExecWithStdin(containerExecWithStdinOptions{stdin: []byte("test"), timeout: 30}, "echo")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -581,12 +581,12 @@ func TestContainerClient_ExecDockerFailure(t *testing.T) {
 	}
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer c.Stop()
 
-	_, err := c.Exec("echo hello", 5)
+	_, err := c.Exec(containerExecOptions{command: "echo hello", timeout: 5})
 	if err == nil {
 		t.Fatal("expected error when docker exec binary is unreachable")
 	}
@@ -620,12 +620,12 @@ func TestContainerClient_ExecWithStdinDockerFailure(t *testing.T) {
 	}
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	defer c.Stop()
 
-	_, err := c.ExecWithStdin([]byte("test input"), 5, "cat")
+	_, err := c.ExecWithStdin(containerExecWithStdinOptions{stdin: []byte("test input"), timeout: 5}, "cat")
 	if err == nil {
 		t.Fatal("expected error when docker exec binary is unreachable")
 	}
@@ -670,11 +670,11 @@ func TestContainerClient_RebuildStartFailure(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("initial Start: %v", err)
 	}
 
-	err := c.Rebuild("myimage:latest", "/workspace/Dockerfile", "/workspace", nil)
+	err := c.Rebuild(containerRebuildOptions{imageName: "myimage:latest", dockerfilePath: "/workspace/Dockerfile", workspace: "/workspace"})
 	if err == nil {
 		t.Fatal("expected error from Rebuild when docker run fails")
 	}
@@ -715,7 +715,7 @@ func TestContainerClient_ConcurrentExecAndRebuild(t *testing.T) {
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 
@@ -727,7 +727,7 @@ func TestContainerClient_ConcurrentExecAndRebuild(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := c.Exec("echo test", 5)
+			_, err := c.Exec(containerExecOptions{command: "echo test", timeout: 5})
 			if err != nil {
 				// ErrNotRunning is expected during the rebuild window
 				// (between Rebuild setting running=false and Start completing).
@@ -743,7 +743,7 @@ func TestContainerClient_ConcurrentExecAndRebuild(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		err := c.Rebuild("new:latest", "/tmp/Dockerfile", "/workspace", nil)
+		err := c.Rebuild(containerRebuildOptions{imageName: "new:latest", dockerfilePath: "/tmp/Dockerfile", workspace: "/workspace"})
 		if err != nil {
 			errCh <- fmt.Errorf("rebuild: %w", err)
 		}

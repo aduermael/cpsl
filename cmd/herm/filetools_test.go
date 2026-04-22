@@ -45,7 +45,7 @@ func newFakeContainer(t *testing.T, execHandler func(cmd string) (string, string
 	})
 
 	c := NewContainerClient(ContainerConfig{Image: "test:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 	return c
@@ -84,7 +84,7 @@ func newFakeContainerWithStdinCapture(t *testing.T, execHandler func(cmd string)
 	}, stdinFile)
 
 	c := NewContainerClient(ContainerConfig{Image: "test:latest"})
-	if err := c.Start("/workspace", nil); err != nil {
+	if err := c.Start(containerStartOptions{workspace: "/workspace"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 

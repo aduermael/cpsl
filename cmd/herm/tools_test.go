@@ -331,7 +331,7 @@ func TestBashToolExecute_BasicCommand(t *testing.T) {
 	})
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
@@ -365,7 +365,7 @@ func TestBashToolExecute_TruncatesOutput(t *testing.T) {
 	})
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
@@ -397,7 +397,7 @@ func TestBashToolExecute_NonZeroExitCode(t *testing.T) {
 	})
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
@@ -457,7 +457,7 @@ func TestBashToolExecute_CustomTimeout(t *testing.T) {
 	})
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
@@ -496,7 +496,7 @@ func TestBashToolExecute_HTMLUnescape(t *testing.T) {
 	})
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})
@@ -864,7 +864,7 @@ func TestBashToolExecute_DockerExecFailure(t *testing.T) {
 	}
 
 	container := NewContainerClient(ContainerConfig{Image: "alpine:latest"})
-	_ = container.Start("/workspace", nil)
+	_ = container.Start(containerStartOptions{workspace: "/workspace"})
 	defer container.Stop()
 
 	tool := NewBashTool(NewBashToolOptions{Container: container, Timeout: 120})

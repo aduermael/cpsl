@@ -95,7 +95,7 @@ func (t *BashTool) Execute(ctx context.Context, input json.RawMessage) (string, 
 	// (e.g. && → &amp;&amp;). Unescape before execution.
 	command := html.UnescapeString(in.Command)
 
-	result, err := t.container.Exec(command, timeout)
+	result, err := t.container.Exec(containerExecOptions{command: command, timeout: timeout})
 	if err != nil {
 		return "", err
 	}
@@ -516,7 +516,7 @@ func (t *DevEnvTool) buildAndReplace() (string, error) {
 	if t.onStatus != nil {
 		t.onStatus("rebuilding…")
 	}
-	if err := t.container.Rebuild(imageName, tmpFile.Name(), t.workspace, t.mounts); err != nil {
+	if err := t.container.Rebuild(containerRebuildOptions{imageName: imageName, dockerfilePath: tmpFile.Name(), workspace: t.workspace, mounts: t.mounts}); err != nil {
 		if t.onStatus != nil {
 			t.onStatus("rebuild failed")
 		}

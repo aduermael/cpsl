@@ -245,7 +245,7 @@ constrained.
 - [x] 8a: `cmd/herm/trace.go` (10) — `SetGitInfo`, `AddTextDelta`, `SetUsage`,
   `StartToolCall`, `EndToolCall`, `AddApproval`, `AddCompaction`, `AddRetry`,
   `BuildSubAgentEvent`, `writeTraceFile`.
-- [ ] 8b: `cmd/herm/background.go` + `container.go` (8) — `bootContainerCmd`,
+- [x] 8b: `cmd/herm/background.go` + `container.go` (8) — `bootContainerCmd`,
   `ensureImageLocal`, `buildContainerImage`, `buildProjectTree`, `Start`,
   `Exec`, `ExecWithStdin`, `Rebuild`.
 - [ ] 8c: `cmd/herm/worktree.go` + `compact.go` (4) — `createWorktree`,

@@ -401,7 +401,7 @@ func (a *App) switchToWorktree(opts switchToWorktreeOptions) {
 				{Source: wtPath, Destination: wtPath},
 				{Source: attachDir, Destination: "/attachments", ReadOnly: true},
 			}
-			if err := a.container.Start(wtPath, mounts); err != nil {
+			if err := a.container.Start(containerStartOptions{workspace: wtPath, mounts: mounts}); err != nil {
 				a.resultCh <- containerStatusMsg{text: "start failed"}
 				a.resultCh <- containerErrMsg{err: err}
 				return

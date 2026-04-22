@@ -824,7 +824,9 @@ func (a *App) handleResult(result any) {
 		wtPath := msg.worktreePath
 		go func() { a.resultCh <- fetchStatusCmd(wtPath) }()
 		go func() { a.resultCh <- fetchProjectSnapshot(wtPath) }()
-		go func() { bootContainerCmd(wtPath, a.sessionID, a.resultCh) }()
+		go func() {
+			bootContainerCmd(bootContainerCmdOptions{workspace: wtPath, sessionID: a.sessionID, ch: a.resultCh})
+		}()
 		go cleanupTmpDir(wtPath)
 		go cleanupAgentOutputDir(wtPath)
 		// Start periodic commit info refresh (only if git is available)
