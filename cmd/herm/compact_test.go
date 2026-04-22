@@ -56,7 +56,7 @@ func TestCallLLMDirect(t *testing.T) {
 	prov := &mockProvider{responses: []string{"This is the summary."}, model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	result, err := callLLMDirect(context.Background(), client, "test-model", "Summarize this.")
+	result, err := callLLMDirect(context.Background(), callLLMDirectOptions{client: client, model: "test-model", prompt: "Summarize this."})
 	if err != nil {
 		t.Fatalf("callLLMDirect error: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestCompactConversation(t *testing.T) {
 	}
 	store.ancestorChains[leafID] = ancestorIDs
 
-	result, err := compactConversation(context.Background(), client, leafID, "test-model", "")
+	result, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: leafID, model: "test-model", focusHint: ""})
 	if err != nil {
 		t.Fatalf("compactConversation error: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestCompactConversationTooShort(t *testing.T) {
 	}
 	store.ancestorChains["c"] = ids
 
-	_, err := compactConversation(context.Background(), client, "c", "test-model", "")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: "c", model: "test-model", focusHint: ""})
 	if err == nil {
 		t.Fatal("expected error for too-short conversation")
 	}
@@ -254,7 +254,7 @@ func TestCompactConversationPreservesStructure(t *testing.T) {
 	}
 	store.ancestorChains["n9"] = ids
 
-	result, err := compactConversation(context.Background(), client, "n9", "test-model", "")
+	result, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: "n9", model: "test-model", focusHint: ""})
 	if err != nil {
 		t.Fatalf("compact error: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestCompactConversationWithFocusHint(t *testing.T) {
 	}
 	store.ancestorChains[leafID] = ids
 
-	_, err := compactConversation(context.Background(), client, leafID, "test-model", "the database migration")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: leafID, model: "test-model", focusHint: "the database migration"})
 	if err != nil {
 		t.Fatalf("compact error: %v", err)
 	}
@@ -410,7 +410,7 @@ func TestCompactThenContinueConversation(t *testing.T) {
 	}
 	store.ancestorChains[leafID] = ids
 
-	result, err := compactConversation(context.Background(), client, leafID, "test-model", "")
+	result, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: leafID, model: "test-model", focusHint: ""})
 	if err != nil {
 		t.Fatalf("compact error: %v", err)
 	}
@@ -451,7 +451,7 @@ func TestCompactConversation_GetAncestorsError(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	_, err := compactConversation(context.Background(), client, "any-node", "test-model", "")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: "any-node", model: "test-model", focusHint: ""})
 	if err == nil {
 		t.Fatal("expected error when GetAncestors fails")
 	}
@@ -494,7 +494,7 @@ func TestCompactConversation_LLMFailure(t *testing.T) {
 	}
 	store.ancestorChains[leafID] = ids
 
-	_, err := compactConversation(context.Background(), client, leafID, "test-model", "")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: leafID, model: "test-model", focusHint: ""})
 	if err == nil {
 		t.Fatal("expected error when LLM call fails")
 	}
@@ -510,7 +510,7 @@ func TestCompactConversation_EmptyConversation(t *testing.T) {
 	prov := &mockProvider{model: "test-model"}
 	client := langdag.NewWithDeps(store, prov)
 
-	_, err := compactConversation(context.Background(), client, "nonexistent", "test-model", "")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: "nonexistent", model: "test-model", focusHint: ""})
 	if err == nil {
 		t.Fatal("expected error for empty/nonexistent conversation")
 	}
@@ -597,7 +597,7 @@ func TestCompactPromptPassedToLLM(t *testing.T) {
 	}
 	store.ancestorChains[leafID] = ids
 
-	_, err := compactConversation(context.Background(), client, leafID, "test-model", "")
+	_, err := compactConversation(context.Background(), compactConversationOptions{client: client, nodeID: leafID, model: "test-model", focusHint: ""})
 	if err != nil {
 		t.Fatalf("compact error: %v", err)
 	}

@@ -41,13 +41,22 @@ type CompactResult struct {
 	KeptNodes     int    // how many recent nodes were preserved verbatim
 }
 
+// compactConversationOptions is the parameter bundle for compactConversation.
+type compactConversationOptions struct {
+	client    *langdag.Client
+	nodeID    string
+	model     string
+	focusHint string
+}
+
 // compactConversation summarizes old conversation history and creates a new
 // conversation branch from the summary + recent nodes. The summary is generated
 // using the specified model (typically a cheap/fast exploration model).
 //
 // focusHint is an optional string appended to the summary prompt to guide
 // what the summary should emphasize (e.g., "focus on the auth changes").
-func compactConversation(ctx context.Context, client *langdag.Client, nodeID, model, focusHint string) (*CompactResult, error) {
+func compactConversation(ctx context.Context, opts compactConversationOptions) (*CompactResult, error) {
+	client, nodeID, model, focusHint := opts.client, opts.nodeID, opts.model, opts.focusHint
 	ancestors, err := client.GetAncestors(ctx, nodeID)
 	if err != nil {
 		return nil, fmt.Errorf("get ancestors: %w", err)
@@ -76,7 +85,7 @@ func compactConversation(ctx context.Context, client *langdag.Client, nodeID, mo
 	}
 	prompt += "\n\n--- CONVERSATION ---\n" + transcript
 
-	summary, err := callLLMDirect(ctx, client, model, prompt)
+	summary, err := callLLMDirect(ctx, callLLMDirectOptions{client: client, model: model, prompt: prompt})
 	if err != nil {
 		return nil, fmt.Errorf("summarize: %w", err)
 	}
@@ -143,12 +152,19 @@ func compactConversation(ctx context.Context, client *langdag.Client, nodeID, mo
 	}, nil
 }
 
+// callLLMDirectOptions is the parameter bundle for callLLMDirect.
+type callLLMDirectOptions struct {
+	client *langdag.Client
+	model  string
+	prompt string
+}
+
 // callLLMDirect makes a single LLM call without creating conversation nodes.
-func callLLMDirect(ctx context.Context, client *langdag.Client, model, prompt string) (string, error) {
-	resp, err := client.Provider().Complete(ctx, &types.CompletionRequest{
-		Model: model,
+func callLLMDirect(ctx context.Context, opts callLLMDirectOptions) (string, error) {
+	resp, err := opts.client.Provider().Complete(ctx, &types.CompletionRequest{
+		Model: opts.model,
 		Messages: []types.Message{
-			{Role: "user", Content: json.RawMessage(fmt.Sprintf("%q", prompt))},
+			{Role: "user", Content: json.RawMessage(fmt.Sprintf("%q", opts.prompt))},
 		},
 		MaxTokens: 2048,
 	})

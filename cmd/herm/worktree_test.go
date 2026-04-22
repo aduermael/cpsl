@@ -76,7 +76,7 @@ func TestCreateWorktree(t *testing.T) {
 	repo := initTestRepo(t)
 	baseDir := t.TempDir()
 
-	wtPath, err := createWorktree(repo, baseDir, "test")
+	wtPath, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "test"})
 	if err != nil {
 		t.Fatalf("createWorktree: %v", err)
 	}
@@ -124,11 +124,11 @@ func TestListWorktrees_CleanAndDirty(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// Create two worktrees.
-	wt1, err := createWorktree(repo, baseDir, "clean")
+	wt1, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "clean"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wt2, err := createWorktree(repo, baseDir, "dirty")
+	wt2, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "dirty"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestLockUnlock(t *testing.T) {
 
 	// Lock with current PID.
 	pid := os.Getpid()
-	if err := lockWorktree(dir, pid); err != nil {
+	if err := lockWorktree(lockWorktreeOptions{wtPath: dir, pid: pid}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -406,15 +406,15 @@ func TestListWorktrees_MixedCleanDirtyActive(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// Create three worktrees: clean, dirty, and active (locked).
-	wtClean, err := createWorktree(repo, baseDir, "clean")
+	wtClean, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "clean"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wtDirty, err := createWorktree(repo, baseDir, "dirty")
+	wtDirty, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "dirty"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wtActive, err := createWorktree(repo, baseDir, "active")
+	wtActive, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "active"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +425,7 @@ func TestListWorktrees_MixedCleanDirtyActive(t *testing.T) {
 	}
 
 	// Lock the active worktree with current PID (alive).
-	if err := lockWorktree(wtActive, os.Getpid()); err != nil {
+	if err := lockWorktree(lockWorktreeOptions{wtPath: wtActive, pid: os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -506,14 +506,14 @@ func TestCreateWorktree_DuplicateName(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// Create the first worktree.
-	_, err := createWorktree(repo, baseDir, "dup")
+	_, err := createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "dup"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Creating a second worktree with the same name should fail
 	// because git would try to create a branch that already exists.
-	_, err = createWorktree(repo, baseDir, "dup")
+	_, err = createWorktree(createWorktreeOptions{repoRoot: repo, baseDir: baseDir, name: "dup"})
 	if err == nil {
 		t.Fatal("expected error when creating duplicate worktree")
 	}
@@ -523,7 +523,7 @@ func TestCreateWorktree_InvalidRepoRoot(t *testing.T) {
 	baseDir := t.TempDir()
 
 	// repoRoot is not a git repository.
-	_, err := createWorktree("/nonexistent/repo/path", baseDir, "test")
+	_, err := createWorktree(createWorktreeOptions{repoRoot: "/nonexistent/repo/path", baseDir: baseDir, name: "test"})
 	if err == nil {
 		t.Fatal("expected error for invalid repo root")
 	}
@@ -576,7 +576,7 @@ func TestSelectWorktree_SkipsLockedWorktree(t *testing.T) {
 	}
 
 	// Lock it with the current PID.
-	if err := lockWorktree(selected, os.Getpid()); err != nil {
+	if err := lockWorktree(lockWorktreeOptions{wtPath: selected, pid: os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}
 

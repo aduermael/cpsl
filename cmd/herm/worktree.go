@@ -83,9 +83,17 @@ func worktreeBaseDir(projectUUID string) string {
 	return filepath.Join(home, ".herm", "worktrees", projectUUID)
 }
 
+// createWorktreeOptions is the parameter bundle for createWorktree.
+type createWorktreeOptions struct {
+	repoRoot string
+	baseDir  string
+	name     string
+}
+
 // createWorktree creates a new git worktree in baseDir from repoRoot.
 // Returns the path to the new worktree.
-func createWorktree(repoRoot, baseDir, name string) (string, error) {
+func createWorktree(opts createWorktreeOptions) (string, error) {
+	repoRoot, baseDir, name := opts.repoRoot, opts.baseDir, opts.name
 	branchName := "herm-" + name
 	wtPath := filepath.Join(baseDir, name)
 
@@ -164,10 +172,16 @@ func isWorktreeClean(wtPath string) bool {
 
 const lockFileName = ".herm-lock"
 
+// lockWorktreeOptions is the parameter bundle for lockWorktree.
+type lockWorktreeOptions struct {
+	wtPath string
+	pid    int
+}
+
 // lockWorktree writes a lock file containing the given PID.
-func lockWorktree(wtPath string, pid int) error {
-	lockPath := filepath.Join(wtPath, lockFileName)
-	return os.WriteFile(lockPath, []byte(strconv.Itoa(pid)), 0o644)
+func lockWorktree(opts lockWorktreeOptions) error {
+	lockPath := filepath.Join(opts.wtPath, lockFileName)
+	return os.WriteFile(lockPath, []byte(strconv.Itoa(opts.pid)), 0o644)
 }
 
 // unlockWorktree removes the lock file from a worktree.
@@ -262,7 +276,7 @@ func selectWorktree(repoRoot string) (selected string, dirty []WorktreeInfo, err
 
 	// No worktrees exist — create one.
 	if len(worktrees) == 0 {
-		path, err := createWorktree(repoRoot, baseDir, fmt.Sprintf("auto-%d", time.Now().UnixNano()))
+		path, err := createWorktree(createWorktreeOptions{repoRoot: repoRoot, baseDir: baseDir, name: fmt.Sprintf("auto-%d", time.Now().UnixNano())})
 		if err != nil {
 			return "", nil, fmt.Errorf("creating initial worktree: %w", err)
 		}

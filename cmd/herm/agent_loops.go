@@ -377,7 +377,7 @@ func (a *Agent) maybeCompact(ctx context.Context, opts maybeCompactOptions) stri
 		summaryModel = a.model
 	}
 
-	result, err := compactConversation(ctx, a.client, opts.nodeID, summaryModel, "")
+	result, err := compactConversation(ctx, compactConversationOptions{client: a.client, nodeID: opts.nodeID, model: summaryModel, focusHint: ""})
 	if err != nil {
 		return opts.nodeID // compaction failed — continue with the original node
 	}

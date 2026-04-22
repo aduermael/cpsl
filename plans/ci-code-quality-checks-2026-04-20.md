@@ -248,7 +248,7 @@ constrained.
 - [x] 8b: `cmd/herm/background.go` + `container.go` (8) — `bootContainerCmd`,
   `ensureImageLocal`, `buildContainerImage`, `buildProjectTree`, `Start`,
   `Exec`, `ExecWithStdin`, `Rebuild`.
-- [ ] 8c: `cmd/herm/worktree.go` + `compact.go` (4) — `createWorktree`,
+- [x] 8c: `cmd/herm/worktree.go` + `compact.go` (4) — `createWorktree`,
   `lockWorktree`, `compactConversation`, `callLLMDirect`.
 
 ## Phase 9: Refactor cmd/herm config + content (22 violations)

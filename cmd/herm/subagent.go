@@ -1049,7 +1049,7 @@ func (t *SubAgentTool) summarizeWithModel(ctx context.Context, output string) (s
 		modelInput += "\n[... truncated]"
 	}
 
-	summary, err := callLLMDirect(ctx, t.client, t.explorationModel, summarizeWithModelPrompt+modelInput)
+	summary, err := callLLMDirect(ctx, callLLMDirectOptions{client: t.client, model: t.explorationModel, prompt: summarizeWithModelPrompt + modelInput})
 	if err != nil {
 		debugLog("summarizeWithModel failed: %v", err)
 		return summarizeOutput(output), false

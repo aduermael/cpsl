@@ -245,7 +245,7 @@ func (a *App) handleCompactCommand(input string) {
 	a.messages = append(a.messages, chatMessage{kind: msgInfo, content: "Compacting conversation..."})
 	a.render()
 
-	result, err := compactConversation(context.Background(), a.langdagClient, a.agentNodeID, model, focusHint)
+	result, err := compactConversation(context.Background(), compactConversationOptions{client: a.langdagClient, nodeID: a.agentNodeID, model: model, focusHint: focusHint})
 	if err != nil {
 		a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Compact failed: %v", err)})
 		a.render()
@@ -356,7 +356,7 @@ type promptForWorktreeNameOptions struct {
 func (a *App) promptForWorktreeName(opts promptForWorktreeNameOptions) {
 	a.promptLabel = "Enter worktree name:"
 	a.promptCallback = func(name string) {
-		wtPath, err := createWorktree(opts.repoRoot, opts.baseDir, name)
+		wtPath, err := createWorktree(createWorktreeOptions{repoRoot: opts.repoRoot, baseDir: opts.baseDir, name: name})
 		if err != nil {
 			a.messages = append(a.messages, chatMessage{kind: msgError, content: fmt.Sprintf("Failed to create worktree: %v", err)})
 			a.render()
@@ -383,7 +383,7 @@ func (a *App) switchToWorktree(opts switchToWorktreeOptions) {
 	a.worktreePath = wtPath
 	a.status.WorktreeName = name
 	a.status.Branch = branch
-	_ = lockWorktree(wtPath, os.Getpid())
+	_ = lockWorktree(lockWorktreeOptions{wtPath: wtPath, pid: os.Getpid()})
 
 	a.messages = append(a.messages, chatMessage{kind: msgSuccess, content: fmt.Sprintf("Switched to worktree '%s' (%s)", name, branch)})
 
