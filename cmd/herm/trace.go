@@ -221,12 +221,18 @@ func NewTraceCollector(sessionID string) *TraceCollector {
 	}
 }
 
+// SetGitInfoOptions is the parameter bundle for (*TraceCollector).SetGitInfo.
+type SetGitInfoOptions struct {
+	branch string
+	root   string
+}
+
 // SetGitInfo sets git branch and root in the trace info.
-func (tc *TraceCollector) SetGitInfo(branch, root string) {
+func (tc *TraceCollector) SetGitInfo(opts SetGitInfoOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	tc.info.GitBranch = branch
-	tc.info.GitRoot = root
+	tc.info.GitBranch = opts.branch
+	tc.info.GitRoot = opts.root
 }
 
 // SetMainAgentID sets the main agent ID for distinguishing main vs sub-agent calls.
@@ -274,19 +280,36 @@ func (tc *TraceCollector) StartLLMResponse(agentID string) {
 	tc.ensureTurn(agentID)
 }
 
+// AddTextDeltaOptions is the parameter bundle for (*TraceCollector).AddTextDelta.
+type AddTextDeltaOptions struct {
+	agentID string
+	text    string
+}
+
 // AddTextDelta appends streaming text to the current LLM response.
-func (tc *TraceCollector) AddTextDelta(agentID, text string) {
+func (tc *TraceCollector) AddTextDelta(opts AddTextDeltaOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	turn := tc.ensureTurn(agentID)
-	turn.Content += text
+	turn := tc.ensureTurn(opts.agentID)
+	turn.Content += opts.text
+}
+
+// SetUsageOptions is the parameter bundle for (*TraceCollector).SetUsage.
+type SetUsageOptions struct {
+	agentID    string
+	model      string
+	nodeID     string
+	usage      *TraceUsage
+	costUSD    float64
+	stopReason string
 }
 
 // SetUsage finalizes the current LLM response with usage metadata.
 // This also updates the info totals.
-func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUsage, costUSD float64, stopReason string) {
+func (tc *TraceCollector) SetUsage(opts SetUsageOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
+	agentID, model, nodeID, usage, costUSD, stopReason := opts.agentID, opts.model, opts.nodeID, opts.usage, opts.costUSD, opts.stopReason
 	turn := tc.ensureTurn(agentID)
 	turn.Model = model
 	turn.NodeID = nodeID
@@ -318,10 +341,19 @@ func (tc *TraceCollector) SetUsage(agentID, model, nodeID string, usage *TraceUs
 	// The turn is finalized when the next turn starts or on Finalize().
 }
 
+// StartToolCallOptions is the parameter bundle for (*TraceCollector).StartToolCall.
+type StartToolCallOptions struct {
+	agentID  string
+	toolID   string
+	toolName string
+	input    json.RawMessage
+}
+
 // StartToolCall records a tool call starting within the current LLM response.
-func (tc *TraceCollector) StartToolCall(agentID, toolID, toolName string, input json.RawMessage) {
+func (tc *TraceCollector) StartToolCall(opts StartToolCallOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
+	agentID, toolID, toolName, input := opts.agentID, opts.toolID, opts.toolName, opts.input
 	now := time.Now()
 	tc.ensureTurn(agentID)
 
@@ -337,10 +369,19 @@ func (tc *TraceCollector) StartToolCall(agentID, toolID, toolName string, input 
 	tc.info.Totals.ToolCalls++
 }
 
+// EndToolCallOptions is the parameter bundle for (*TraceCollector).EndToolCall.
+type EndToolCallOptions struct {
+	toolID   string
+	result   string
+	isError  bool
+	duration time.Duration
+}
+
 // EndToolCall records a tool call result.
-func (tc *TraceCollector) EndToolCall(toolID, result string, isError bool, duration time.Duration) {
+func (tc *TraceCollector) EndToolCall(opts EndToolCallOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
+	toolID, result, isError, duration := opts.toolID, opts.result, opts.isError, opts.duration
 	call, ok := tc.pendingTools[toolID]
 	if !ok {
 		return
@@ -375,19 +416,27 @@ func (tc *TraceCollector) EndToolCall(toolID, result string, isError bool, durat
 	delete(tc.toolAgent, toolID)
 }
 
+// AddApprovalOptions is the parameter bundle for (*TraceCollector).AddApproval.
+type AddApprovalOptions struct {
+	toolID   string
+	desc     string
+	approved bool
+	waitDur  time.Duration
+}
+
 // AddApproval records an approval request/response on a pending tool call.
-func (tc *TraceCollector) AddApproval(toolID, desc string, approved bool, waitDur time.Duration) {
+func (tc *TraceCollector) AddApproval(opts AddApprovalOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
-	call, ok := tc.pendingTools[toolID]
+	call, ok := tc.pendingTools[opts.toolID]
 	if !ok {
 		return
 	}
 	call.Approval = &TraceApproval{
 		Requested:      true,
-		Description:    desc,
-		Approved:       approved,
-		WaitDurationMS: waitDur.Milliseconds(),
+		Description:    opts.desc,
+		Approved:       opts.approved,
+		WaitDurationMS: opts.waitDur.Milliseconds(),
 	}
 }
 
@@ -403,31 +452,45 @@ func (tc *TraceCollector) AddSubAgent(sub *TraceSubAgent) {
 	tc.appendEvent(sub)
 }
 
+// AddCompactionOptions is the parameter bundle for (*TraceCollector).AddCompaction.
+type AddCompactionOptions struct {
+	nodeID  string
+	summary string
+}
+
 // AddCompaction appends a compaction event.
-func (tc *TraceCollector) AddCompaction(nodeID, summary string) {
+func (tc *TraceCollector) AddCompaction(opts AddCompactionOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	tc.info.Totals.Compactions++
 	tc.appendEvent(TraceCompaction{
 		Type:      "compaction",
 		Timestamp: time.Now(),
-		NodeID:    nodeID,
-		Summary:   summary,
+		NodeID:    opts.nodeID,
+		Summary:   opts.summary,
 	})
 }
 
+// AddRetryOptions is the parameter bundle for (*TraceCollector).AddRetry.
+type AddRetryOptions struct {
+	attempt     int
+	maxAttempts int
+	delay       time.Duration
+	errMsg      string
+}
+
 // AddRetry appends a retry event.
-func (tc *TraceCollector) AddRetry(attempt, maxAttempts int, delay time.Duration, errMsg string) {
+func (tc *TraceCollector) AddRetry(opts AddRetryOptions) {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 	tc.info.Totals.Retries++
 	tc.appendEvent(TraceRetry{
 		Type:      "retry",
 		Timestamp: time.Now(),
-		Attempt:   attempt,
-		MaxRetry:  maxAttempts,
-		DelayMS:   delay.Milliseconds(),
-		Error:     errMsg,
+		Attempt:   opts.attempt,
+		MaxRetry:  opts.maxAttempts,
+		DelayMS:   opts.delay.Milliseconds(),
+		Error:     opts.errMsg,
 	})
 }
 
@@ -483,7 +546,7 @@ func (tc *TraceCollector) FlushToFile(path string) error {
 	tc.mu.Lock()
 	trace := tc.buildTraceLocked()
 	tc.mu.Unlock()
-	return writeTraceFile(path, trace)
+	return writeTraceFile(writeTraceFileOptions{path: path, trace: trace})
 }
 
 // ── Internal helpers ──
@@ -569,19 +632,28 @@ func traceUsageFromTypes(u *types.Usage) *TraceUsage {
 	}
 }
 
+// BuildSubAgentEventOptions is the parameter bundle for (*TraceCollector).BuildSubAgentEvent.
+type BuildSubAgentEventOptions struct {
+	agentID  string
+	task     string
+	model    string
+	turns    int
+	maxTurns int
+}
+
 // BuildSubAgentEvent constructs a TraceSubAgent from the collector's accumulated state.
 // Call Finalize() before calling this to ensure timing and in-progress turns are captured.
-func (tc *TraceCollector) BuildSubAgentEvent(agentID, task, model string, turns, maxTurns int) *TraceSubAgent {
+func (tc *TraceCollector) BuildSubAgentEvent(opts BuildSubAgentEventOptions) *TraceSubAgent {
 	tc.mu.Lock()
 	defer tc.mu.Unlock()
 
 	ev := &TraceSubAgent{
 		Type:     "sub_agent",
-		AgentID:  agentID,
-		Task:     task,
-		Model:    model,
-		Turns:    turns,
-		MaxTurns: maxTurns,
+		AgentID:  opts.agentID,
+		Task:     opts.task,
+		Model:    opts.model,
+		Turns:    opts.turns,
+		MaxTurns: opts.maxTurns,
 	}
 
 	// Copy events.
@@ -609,8 +681,15 @@ func (tc *TraceCollector) BuildSubAgentEvent(agentID, task, model string, turns,
 	return ev
 }
 
+// writeTraceFileOptions is the parameter bundle for writeTraceFile.
+type writeTraceFileOptions struct {
+	path  string
+	trace *Trace
+}
+
 // writeTraceFile atomically writes a Trace to a JSON file.
-func writeTraceFile(path string, trace *Trace) error {
+func writeTraceFile(opts writeTraceFileOptions) error {
+	path, trace := opts.path, opts.trace
 	data, err := json.MarshalIndent(trace, "", "  ")
 	if err != nil {
 		return fmt.Errorf("marshaling trace: %w", err)

@@ -641,13 +641,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		synthText := t.gracefulSubAgentSynthesis(ctx, gracefulSubAgentSynthesisOptions{agent: agent, lastNodeID: r.lastNodeID})
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
-			subTC.AddTextDelta(agentID, synthText)
+			subTC.AddTextDelta(AddTextDeltaOptions{agentID: agentID, text: synthText})
 			t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: synthText})
 			synthesisUsed = true
 		}
 	}
 	subTC.Finalize()
-	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, maxTurns)
+	subTrace := subTC.BuildSubAgentEvent(BuildSubAgentEventOptions{agentID: agentID, task: in.Task, model: model, turns: r.turns, maxTurns: maxTurns})
 	t.forwardBlocking(AgentEvent{
 		Type:     EventSubAgentStatus,
 		AgentID:  agentID,
@@ -805,14 +805,14 @@ func (t *SubAgentTool) runBackground(ctx context.Context, opts runBackgroundOpti
 		synthText := t.gracefulSubAgentSynthesis(ctx, gracefulSubAgentSynthesisOptions{agent: opts.agent, lastNodeID: r.lastNodeID})
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
-			opts.subTC.AddTextDelta(opts.agentID, synthText)
+			opts.subTC.AddTextDelta(AddTextDeltaOptions{agentID: opts.agentID, text: synthText})
 			deltaBuf.WriteString(synthText)
 			synthesisUsed = true
 		}
 	}
 	flushDelta()
 	opts.subTC.Finalize()
-	subTrace := opts.subTC.BuildSubAgentEvent(opts.agentID, opts.in.Task, opts.model, r.turns, opts.maxTurns)
+	subTrace := opts.subTC.BuildSubAgentEvent(BuildSubAgentEventOptions{agentID: opts.agentID, task: opts.in.Task, model: opts.model, turns: r.turns, maxTurns: opts.maxTurns})
 	t.forwardBlockingWithTimeout(forwardBlockingWithTimeoutOptions{
 		event: AgentEvent{
 			Type:     EventSubAgentStatus,

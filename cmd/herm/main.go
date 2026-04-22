@@ -559,7 +559,7 @@ func (a *App) handleApprovalByte(ch byte) {
 			a.approvalPauseStart = time.Time{}
 		}
 		if a.traceCollector != nil && a.approvalToolID != "" {
-			a.traceCollector.AddApproval(a.approvalToolID, a.approvalDesc, true, waitDur)
+			a.traceCollector.AddApproval(AddApprovalOptions{toolID: a.approvalToolID, desc: a.approvalDesc, approved: true, waitDur: waitDur})
 		}
 		// Restart tool timer ticker (frozen during approval).
 		if !a.toolStartTime.IsZero() && a.toolTimer == nil {
@@ -587,7 +587,7 @@ func (a *App) handleApprovalByte(ch byte) {
 			a.approvalPauseStart = time.Time{}
 		}
 		if a.traceCollector != nil && a.approvalToolID != "" {
-			a.traceCollector.AddApproval(a.approvalToolID, a.approvalDesc, false, waitDur)
+			a.traceCollector.AddApproval(AddApprovalOptions{toolID: a.approvalToolID, desc: a.approvalDesc, approved: false, waitDur: waitDur})
 		}
 		if a.agent != nil {
 			a.agent.Approve(ApprovalResponse{Approved: false})

@@ -147,19 +147,19 @@ func TestTraceCollector_RealisticFlow(t *testing.T) {
 
 	// LLM starts responding.
 	tc.StartLLMResponse("agent-main")
-	tc.AddTextDelta("agent-main", "Let me ")
-	tc.AddTextDelta("agent-main", "check that.")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "agent-main", text: "Let me "})
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "agent-main", text: "check that."})
 
 	// Tool call.
-	tc.StartToolCall("agent-main", "tool-1", "bash", json.RawMessage(`{"command":"ls"}`))
-	tc.EndToolCall("tool-1", "file1.txt\nfile2.txt", false, 500*time.Millisecond)
+	tc.StartToolCall(StartToolCallOptions{agentID: "agent-main", toolID: "tool-1", toolName: "bash", input: json.RawMessage(`{"command":"ls"}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "tool-1", result: "file1.txt\nfile2.txt", isError: false, duration: 500*time.Millisecond})
 
 	// Usage arrives.
 	usage := &TraceUsage{
 		InputTokens:  5000,
 		OutputTokens: 200,
 	}
-	tc.SetUsage("agent-main", "claude-opus-4-5-20251101", "node-1", usage, 0.05, "tool_use")
+	tc.SetUsage(SetUsageOptions{agentID: "agent-main", model: "claude-opus-4-5-20251101", nodeID: "node-1", usage: usage, costUSD: 0.05, stopReason: "tool_use"})
 
 	// Finalize turn and session.
 	tc.FinalizeTurn("agent-main")
@@ -292,9 +292,9 @@ func TestTraceCollector_StopReason_EndTurn(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "Hello!")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Hello!"})
 	// stop_reason passed explicitly from API.
-	tc.SetUsage("main", "model", "n1", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0.01, "end_turn")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n1", usage: &TraceUsage{InputTokens: 100, OutputTokens: 50}, costUSD: 0.01, stopReason: "end_turn"})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -316,11 +316,11 @@ func TestTraceCollector_ModelSetFromFirstCall(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.SetUsage("main", "first-model", "", nil, 0, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "first-model", nodeID: "", usage: nil, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.StartLLMResponse("main")
-	tc.SetUsage("main", "second-model", "", nil, 0, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "second-model", nodeID: "", usage: nil, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -339,17 +339,17 @@ func TestTraceCollector_MultipleToolCalls_SameTurn(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "Running two commands")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Running two commands"})
 
 	// Start both tool calls.
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{"command":"ls"}`))
-	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{"path":"foo.go"}`))
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{"command":"ls"}`)})
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t2", toolName: "read", input: json.RawMessage(`{"path":"foo.go"}`)})
 
 	// Results arrive in different order.
-	tc.EndToolCall("t2", "package main", false, 50*time.Millisecond)
-	tc.EndToolCall("t1", "file.txt", false, 200*time.Millisecond)
+	tc.EndToolCall(EndToolCallOptions{toolID: "t2", result: "package main", isError: false, duration: 50*time.Millisecond})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "file.txt", isError: false, duration: 200*time.Millisecond})
 
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 1000, OutputTokens: 100}, 0.02, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 1000, OutputTokens: 100}, costUSD: 0.02, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -413,11 +413,11 @@ func TestTraceCollector_ToolCallApproval(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
-	tc.AddApproval("t1", "Run bash command", true, 3500*time.Millisecond)
-	tc.EndToolCall("t1", "ok", false, 100*time.Millisecond)
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{}`)})
+	tc.AddApproval(AddApprovalOptions{toolID: "t1", desc: "Run bash command", approved: true, waitDur: 3500*time.Millisecond})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "ok", isError: false, duration: 100*time.Millisecond})
 
-	tc.SetUsage("main", "model", "", nil, 0, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: nil, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -452,9 +452,9 @@ func TestTraceCollector_ToolCallError(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
-	tc.EndToolCall("t1", "permission denied", true, 10*time.Millisecond)
-	tc.SetUsage("main", "model", "", nil, 0, "")
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "permission denied", isError: true, duration: 10*time.Millisecond})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: nil, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -479,15 +479,15 @@ func TestTraceCollector_SubAgentNesting(t *testing.T) {
 	subTC.SetMainAgentID("sub-agent-1")
 	subTC.AddUserMessage("Research codebase")
 	subTC.StartLLMResponse("sub-agent-1")
-	subTC.AddTextDelta("sub-agent-1", "Found the files.")
-	subTC.SetUsage("sub-agent-1", "claude-sonnet", "n1", &TraceUsage{
+	subTC.AddTextDelta(AddTextDeltaOptions{agentID: "sub-agent-1", text: "Found the files."})
+	subTC.SetUsage(SetUsageOptions{agentID: "sub-agent-1", model: "claude-sonnet", nodeID: "n1", usage: &TraceUsage{
 		InputTokens:  3000,
 		OutputTokens: 500,
-	}, 0.02, "")
+	}, costUSD: 0.02, stopReason: ""})
 	subTC.FinalizeTurn("sub-agent-1")
 	subTC.Finalize()
 
-	subEvent := subTC.BuildSubAgentEvent("sub-agent-1", "Research codebase", "claude-sonnet", 1, 10)
+	subEvent := subTC.BuildSubAgentEvent(BuildSubAgentEventOptions{agentID: "sub-agent-1", task: "Research codebase", model: "claude-sonnet", turns: 1, maxTurns: 10})
 
 	// Parent trace adds the sub-agent.
 	parentTC := NewTraceCollector("parent-sess")
@@ -555,12 +555,12 @@ func TestTraceCollector_SubAgentLLMCallsCounted(t *testing.T) {
 
 	// Main agent LLM call.
 	tc.StartLLMResponse("main-agent")
-	tc.SetUsage("main-agent", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main-agent", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100, OutputTokens: 50}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main-agent")
 
 	// Sub-agent LLM call (different agent ID).
 	tc.StartLLMResponse("sub-agent")
-	tc.SetUsage("sub-agent", "model", "", &TraceUsage{InputTokens: 200, OutputTokens: 100}, 0, "")
+	tc.SetUsage(SetUsageOptions{agentID: "sub-agent", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 200, OutputTokens: 100}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("sub-agent")
 
 	tc.Finalize()
@@ -602,8 +602,8 @@ func TestTraceCollector_WriteToFile_ValidJSON(t *testing.T) {
 	tc.SetSystemPrompt("prompt")
 	tc.AddUserMessage("hi")
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "hello")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 10, OutputTokens: 5}, 0.001, "")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "hello"})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 10, OutputTokens: 5}, costUSD: 0.001, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	if err := tc.FlushToFile(path); err != nil {
@@ -691,7 +691,7 @@ func TestTraceCollector_PartialFlush_ValidJSON(t *testing.T) {
 
 	// Start LLM response but don't finalize — simulates mid-turn flush.
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "partial text")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "partial text"})
 
 	// Flush mid-session.
 	if err := tc.FlushToFile(path); err != nil {
@@ -754,8 +754,8 @@ func TestTraceCollector_Finalize_CompletesInProgressTurns(t *testing.T) {
 
 	// Start a turn without explicitly finalizing it.
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "some text")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 10}, 0, "")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "some text"})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 10}, costUSD: 0, stopReason: ""})
 
 	// Finalize should complete the in-progress turn.
 	tc.Finalize()
@@ -816,8 +816,8 @@ func TestTraceCollector_EventTypes(t *testing.T) {
 	tc := NewTraceCollector("sess-events")
 	tc.SetMainAgentID("main")
 
-	tc.AddCompaction("node-5", "Conversation was summarized.")
-	tc.AddRetry(1, 3, 2*time.Second, "429 Too Many Requests")
+	tc.AddCompaction(AddCompactionOptions{nodeID: "node-5", summary: "Conversation was summarized."})
+	tc.AddRetry(AddRetryOptions{attempt: 1, maxAttempts: 3, delay: 2*time.Second, errMsg: "429 Too Many Requests"})
 	tc.AddStreamClear()
 	tc.AddError("context canceled")
 
@@ -890,7 +890,7 @@ func TestTraceCollector_EventTypes(t *testing.T) {
 
 func TestTraceCollector_SetGitInfo(t *testing.T) {
 	tc := NewTraceCollector("sess-git")
-	tc.SetGitInfo("feature-branch", "/home/user/repo")
+	tc.SetGitInfo(SetGitInfoOptions{branch: "feature-branch", root: "/home/user/repo"})
 
 	tc.mu.Lock()
 	trace := tc.buildTraceLocked()
@@ -909,11 +909,11 @@ func TestTraceCollector_CostAggregation(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100}, 0.05, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100}, costUSD: 0.05, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.StartLLMResponse("main")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 200}, 0.10, "")
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 200}, costUSD: 0.10, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -933,13 +933,13 @@ func TestTraceCollector_CacheTokenAggregation(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.SetUsage("main", "model", "", &TraceUsage{
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{
 		InputTokens:       100,
 		OutputTokens:      50,
 		CacheReadTokens:   3000,
 		CacheCreateTokens: 500,
 		ReasoningTokens:   200,
-	}, 0, "")
+	}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -961,7 +961,7 @@ func TestTraceCollector_CacheTokenAggregation(t *testing.T) {
 func TestTraceCollector_EndToolCall_UnknownID(t *testing.T) {
 	tc := NewTraceCollector("sess-unknown-tool")
 	// Should not panic on unknown tool ID.
-	tc.EndToolCall("nonexistent", "result", false, 100*time.Millisecond)
+	tc.EndToolCall(EndToolCallOptions{toolID: "nonexistent", result: "result", isError: false, duration: 100*time.Millisecond})
 
 	tc.mu.Lock()
 	trace := tc.buildTraceLocked()
@@ -976,7 +976,7 @@ func TestTraceCollector_EndToolCall_UnknownID(t *testing.T) {
 func TestTraceCollector_AddApproval_UnknownID(t *testing.T) {
 	tc := NewTraceCollector("sess-unknown-approval")
 	// Should not panic on unknown tool ID.
-	tc.AddApproval("nonexistent", "desc", true, 100*time.Millisecond)
+	tc.AddApproval(AddApprovalOptions{toolID: "nonexistent", desc: "desc", approved: true, waitDur: 100*time.Millisecond})
 }
 
 func TestTraceUsageFromTypes(t *testing.T) {
@@ -1017,15 +1017,15 @@ func TestTraceCollector_BuildSubAgentEvent(t *testing.T) {
 
 	tc.AddUserMessage("do something")
 	tc.StartLLMResponse("sub-1")
-	tc.AddTextDelta("sub-1", "done")
-	tc.SetUsage("sub-1", "model", "", &TraceUsage{
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "sub-1", text: "done"})
+	tc.SetUsage(SetUsageOptions{agentID: "sub-1", model: "model", nodeID: "", usage: &TraceUsage{
 		InputTokens:  1000,
 		OutputTokens: 200,
-	}, 0.03, "")
+	}, costUSD: 0.03, stopReason: ""})
 	tc.FinalizeTurn("sub-1")
 	tc.Finalize()
 
-	ev := tc.BuildSubAgentEvent("sub-1", "research task", "claude-sonnet", 3, 10)
+	ev := tc.BuildSubAgentEvent(BuildSubAgentEventOptions{agentID: "sub-1", task: "research task", model: "claude-sonnet", turns: 3, maxTurns: 10})
 
 	if ev.Type != "sub_agent" {
 		t.Errorf("type = %q", ev.Type)
@@ -1075,27 +1075,27 @@ func TestTraceCollector_ThreeLLMCalls_ProducesThreeEvents(t *testing.T) {
 
 	// LLM call 1: text + tool call.
 	// Event order mirrors real agent: TextDelta, ToolCallStart, Usage, ToolResult.
-	tc.AddTextDelta("main", "Let me run a command.")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{"command":"ls"}`))
-	tc.SetUsage("main", "model", "n1", &TraceUsage{InputTokens: 1000, OutputTokens: 100}, 0.01, "tool_use")
-	tc.EndToolCall("t1", "file.txt", false, 200*time.Millisecond)
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Let me run a command."})
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{"command":"ls"}`)})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n1", usage: &TraceUsage{InputTokens: 1000, OutputTokens: 100}, costUSD: 0.01, stopReason: "tool_use"})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "file.txt", isError: false, duration: 200*time.Millisecond})
 
 	// Turn boundary: simulate what handleAgentEvent does when it sees
 	// TextDelta after usage was recorded.
 	tc.FinalizeTurn("main")
 
 	// LLM call 2: text + tool call.
-	tc.AddTextDelta("main", "Now reading the file.")
-	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{"path":"file.txt"}`))
-	tc.SetUsage("main", "model", "n2", &TraceUsage{InputTokens: 2000, OutputTokens: 150}, 0.02, "tool_use")
-	tc.EndToolCall("t2", "contents", false, 100*time.Millisecond)
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Now reading the file."})
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t2", toolName: "read", input: json.RawMessage(`{"path":"file.txt"}`)})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n2", usage: &TraceUsage{InputTokens: 2000, OutputTokens: 150}, costUSD: 0.02, stopReason: "tool_use"})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t2", result: "contents", isError: false, duration: 100*time.Millisecond})
 
 	// Turn boundary.
 	tc.FinalizeTurn("main")
 
 	// LLM call 3: text only, no tool calls.
-	tc.AddTextDelta("main", "Here are the results.")
-	tc.SetUsage("main", "model", "n3", &TraceUsage{InputTokens: 3000, OutputTokens: 200}, 0.03, "end_turn")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Here are the results."})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n3", usage: &TraceUsage{InputTokens: 3000, OutputTokens: 200}, costUSD: 0.03, stopReason: "end_turn"})
 
 	// Final turn finalized at EventDone.
 	tc.FinalizeTurn("main")
@@ -1229,8 +1229,8 @@ func TestTraceCollector_NewTurnFinalizesOld(t *testing.T) {
 
 	// First turn.
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "first response")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100}, 0, "")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "first response"})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100}, costUSD: 0, stopReason: ""})
 
 	// Starting a new turn for the same agent should implicitly finalize via ensureTurn
 	// or leave the old one in currentTurn. Let's verify by finalizing explicitly
@@ -1238,8 +1238,8 @@ func TestTraceCollector_NewTurnFinalizesOld(t *testing.T) {
 	tc.FinalizeTurn("main")
 
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "second response")
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 200}, 0, "")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "second response"})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 200}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -1272,15 +1272,15 @@ func TestTrace_JSONRoundTrip(t *testing.T) {
 	})
 	tc.AddUserMessage("hello")
 	tc.StartLLMResponse("main")
-	tc.AddTextDelta("main", "hi there")
-	tc.SetUsage("main", "claude-opus", "n1", &TraceUsage{
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "hi there"})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "claude-opus", nodeID: "n1", usage: &TraceUsage{
 		InputTokens:       500,
 		OutputTokens:      100,
 		CacheReadTokens:   200,
 		CacheCreateTokens: 50,
-	}, 0.05, "")
+	}, costUSD: 0.05, stopReason: ""})
 	tc.FinalizeTurn("main")
-	tc.AddCompaction("n2", "summarized")
+	tc.AddCompaction(AddCompactionOptions{nodeID: "n2", summary: "summarized"})
 	tc.Finalize()
 
 	dir := t.TempDir()
@@ -1342,11 +1342,11 @@ func TestTraceCollector_ParallelGroup_SameTurnSharesGroup(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{"command":"ls"}`))
-	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{"path":"f.go"}`))
-	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
-	tc.EndToolCall("t2", "ok", false, 10*time.Millisecond)
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0, "")
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{"command":"ls"}`)})
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t2", toolName: "read", input: json.RawMessage(`{"path":"f.go"}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "ok", isError: false, duration: 10*time.Millisecond})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t2", result: "ok", isError: false, duration: 10*time.Millisecond})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100, OutputTokens: 50}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -1373,16 +1373,16 @@ func TestTraceCollector_ParallelGroup_DifferentTurnsDiffer(t *testing.T) {
 
 	// Turn 1: one tool call.
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
-	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0, "")
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "ok", isError: false, duration: 10*time.Millisecond})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100, OutputTokens: 50}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	// Turn 2: another tool call.
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t2", "read", json.RawMessage(`{}`))
-	tc.EndToolCall("t2", "ok", false, 10*time.Millisecond)
-	tc.SetUsage("main", "model", "", &TraceUsage{InputTokens: 100, OutputTokens: 50}, 0, "")
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t2", toolName: "read", input: json.RawMessage(`{}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t2", result: "ok", isError: false, duration: 10*time.Millisecond})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: &TraceUsage{InputTokens: 100, OutputTokens: 50}, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -1409,9 +1409,9 @@ func TestTraceCollector_ParallelGroup_JSONSerialization(t *testing.T) {
 	tc.SetMainAgentID("main")
 
 	tc.StartLLMResponse("main")
-	tc.StartToolCall("main", "t1", "bash", json.RawMessage(`{}`))
-	tc.EndToolCall("t1", "ok", false, 10*time.Millisecond)
-	tc.SetUsage("main", "model", "", nil, 0, "")
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "bash", input: json.RawMessage(`{}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "ok", isError: false, duration: 10*time.Millisecond})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "", usage: nil, costUSD: 0, stopReason: ""})
 	tc.FinalizeTurn("main")
 
 	tc.mu.Lock()
@@ -1513,11 +1513,11 @@ func TestTraceCollector_TurnAttribution_NoPhantomEvent(t *testing.T) {
 	// ── LLM call 1 ──
 	// Event order as emitted by runLoop: TextDelta*, Usage, ToolCallStart*.
 	// The turn boundary does NOT happen at ToolCallStart — it belongs to this call.
-	tc.AddTextDelta("main", "I'll write the file.")
-	tc.SetUsage("main", "model", "n1", &TraceUsage{InputTokens: 1000, OutputTokens: 100}, 0.01, "tool_use")
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "I'll write the file."})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n1", usage: &TraceUsage{InputTokens: 1000, OutputTokens: 100}, costUSD: 0.01, stopReason: "tool_use"})
 	// Tool call starts AFTER usage (this is the order that caused the bug).
-	tc.StartToolCall("main", "t1", "write_file", json.RawMessage(`{"path":"hello.py","content":"print('hi')"}`))
-	tc.EndToolCall("t1", "File written.", false, 50*time.Millisecond)
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t1", toolName: "write_file", input: json.RawMessage(`{"path":"hello.py","content":"print('hi')"}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t1", result: "File written.", isError: false, duration: 50*time.Millisecond})
 
 	// ── Turn boundary ──
 	// In handleAgentEvent, this happens when the next call's TextDelta or Usage
@@ -1525,10 +1525,10 @@ func TestTraceCollector_TurnAttribution_NoPhantomEvent(t *testing.T) {
 	tc.FinalizeTurn("main")
 
 	// ── LLM call 2 ──
-	tc.AddTextDelta("main", "Now running it.")
-	tc.SetUsage("main", "model", "n2", &TraceUsage{InputTokens: 2000, OutputTokens: 150}, 0.02, "tool_use")
-	tc.StartToolCall("main", "t2", "bash", json.RawMessage(`{"command":"python hello.py"}`))
-	tc.EndToolCall("t2", "hi", false, 100*time.Millisecond)
+	tc.AddTextDelta(AddTextDeltaOptions{agentID: "main", text: "Now running it."})
+	tc.SetUsage(SetUsageOptions{agentID: "main", model: "model", nodeID: "n2", usage: &TraceUsage{InputTokens: 2000, OutputTokens: 150}, costUSD: 0.02, stopReason: "tool_use"})
+	tc.StartToolCall(StartToolCallOptions{agentID: "main", toolID: "t2", toolName: "bash", input: json.RawMessage(`{"command":"python hello.py"}`)})
+	tc.EndToolCall(EndToolCallOptions{toolID: "t2", result: "hi", isError: false, duration: 100*time.Millisecond})
 
 	tc.FinalizeTurn("main")
 	tc.Finalize()

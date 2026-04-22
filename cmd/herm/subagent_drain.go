@@ -61,7 +61,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 				usageSeen = false
 			}
 			r.textParts = append(r.textParts, event.Text)
-			opts.traceCollector.AddTextDelta(opts.agentID, event.Text)
+			opts.traceCollector.AddTextDelta(AddTextDeltaOptions{agentID: opts.agentID, text: event.Text})
 			if fullProcessing && opts.deltaForwarder != nil {
 				opts.deltaForwarder(opts.agentID, event.Text)
 			}
@@ -96,7 +96,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 					r.synthesisAttempted = true
 				}
 			}
-			opts.traceCollector.StartToolCall(opts.agentID, event.ToolID, event.ToolName, event.ToolInput)
+			opts.traceCollector.StartToolCall(StartToolCallOptions{agentID: opts.agentID, toolID: event.ToolID, toolName: event.ToolName, input: event.ToolInput})
 
 		case EventToolCallDone:
 			if fullProcessing {
@@ -104,7 +104,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 			}
 
 		case EventToolResult:
-			opts.traceCollector.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
+			opts.traceCollector.EndToolCall(EndToolCallOptions{toolID: event.ToolID, result: event.ToolResult, isError: event.IsError, duration: event.Duration})
 
 		case EventUsage:
 			responseCounted = false
@@ -118,7 +118,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 					opts.agent.SetTokenProgress(SetTokenProgressOptions{InputTokens: r.totalInputTokens, OutputTokens: r.totalOutputTokens})
 				}
 			}
-			opts.traceCollector.SetUsage(opts.agentID, event.Model, "", traceUsageFromTypes(event.Usage), 0, event.StopReason)
+			opts.traceCollector.SetUsage(SetUsageOptions{agentID: opts.agentID, model: event.Model, nodeID: "", usage: traceUsageFromTypes(event.Usage), costUSD: 0, stopReason: event.StopReason})
 			if fullProcessing {
 				usageSeen = true
 			}

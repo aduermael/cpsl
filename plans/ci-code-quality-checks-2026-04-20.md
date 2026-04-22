@@ -242,7 +242,7 @@ constrained.
 
 **Parallel Tasks: 8a, 8b, 8c**
 
-- [ ] 8a: `cmd/herm/trace.go` (10) — `SetGitInfo`, `AddTextDelta`, `SetUsage`,
+- [x] 8a: `cmd/herm/trace.go` (10) — `SetGitInfo`, `AddTextDelta`, `SetUsage`,
   `StartToolCall`, `EndToolCall`, `AddApproval`, `AddCompaction`, `AddRetry`,
   `BuildSubAgentEvent`, `writeTraceFile`.
 - [ ] 8b: `cmd/herm/background.go` + `container.go` (8) — `bootContainerCmd`,

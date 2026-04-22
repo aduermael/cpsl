@@ -478,7 +478,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				a.traceCollector.FinalizeTurn(event.AgentID)
 				a.traceUsageSeen = false
 			}
-			a.traceCollector.AddTextDelta(event.AgentID, event.Text)
+			a.traceCollector.AddTextDelta(AddTextDeltaOptions{agentID: event.AgentID, text: event.Text})
 		}
 		// Suppress main-agent narration while background sub-agents are
 		// still running. The UI already shows live sub-agent status, so
@@ -510,7 +510,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.streamingText = ""
 		}
 		if a.traceCollector != nil {
-			a.traceCollector.StartToolCall(event.AgentID, event.ToolID, event.ToolName, event.ToolInput)
+			a.traceCollector.StartToolCall(StartToolCallOptions{agentID: event.AgentID, toolID: event.ToolID, toolName: event.ToolName, input: event.ToolInput})
 		}
 		// Suppress internal tool calls (agent status checks, sleep waits, background agent spawns) from the UI.
 		if isAgentStatusCheck(event.ToolName, event.ToolInput) || isSleepWaitCommand(event.ToolName, event.ToolInput) || isBackgroundAgentCall(event.ToolName, event.ToolInput) {
@@ -560,7 +560,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.mainAgentToolCount++
 		}
 		if a.traceCollector != nil {
-			a.traceCollector.EndToolCall(event.ToolID, event.ToolResult, event.IsError, event.Duration)
+			a.traceCollector.EndToolCall(EndToolCallOptions{toolID: event.ToolID, result: event.ToolResult, isError: event.IsError, duration: event.Duration})
 			a.traceCollector.FlushToFile(a.traceFilePath)
 		}
 		// Skip UI message for suppressed tool calls (e.g., agent status checks).
@@ -601,8 +601,14 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 				sa.outputTokens += event.Usage.OutputTokens
 			}
 			if a.traceCollector != nil {
-				a.traceCollector.SetUsage(event.AgentID, event.Model, event.NodeID,
-					traceUsageFromTypes(event.Usage), cost, event.StopReason)
+				a.traceCollector.SetUsage(SetUsageOptions{
+					agentID:    event.AgentID,
+					model:      event.Model,
+					nodeID:     event.NodeID,
+					usage:      traceUsageFromTypes(event.Usage),
+					costUSD:    cost,
+					stopReason: event.StopReason,
+				})
 				a.traceCollector.FlushToFile(a.traceFilePath)
 			}
 			if a.agent != nil && event.AgentID == a.agent.ID() {
@@ -634,7 +640,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.agentNodeID = event.NodeID
 		}
 		if a.traceCollector != nil {
-			a.traceCollector.AddCompaction(event.NodeID, event.Text)
+			a.traceCollector.AddCompaction(AddCompactionOptions{nodeID: event.NodeID, summary: event.Text})
 		}
 		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: event.Text})
 		a.render()
@@ -735,7 +741,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			event.Duration.Truncate(time.Second), event.Attempt, event.MaxRetry, errMsg)
 		debugLog("retry: %s", retryMsg)
 		if a.traceCollector != nil {
-			a.traceCollector.AddRetry(event.Attempt, event.MaxRetry, event.Duration, errMsg)
+			a.traceCollector.AddRetry(AddRetryOptions{attempt: event.Attempt, maxAttempts: event.MaxRetry, delay: event.Duration, errMsg: errMsg})
 		}
 		a.messages = append(a.messages, chatMessage{kind: msgInfo, content: retryMsg})
 		a.render()
