@@ -322,10 +322,10 @@ func TestRebuildChatMessages_OldFormatToolNodes(t *testing.T) {
 }
 
 func TestTruncate(t *testing.T) {
-	if got := truncate("short", 10); got != "short" {
+	if got := truncate(truncateOptions{s: "short", max: 10}); got != "short" {
 		t.Errorf("truncate short = %q", got)
 	}
-	got := truncate("this is a very long string", 10)
+	got := truncate(truncateOptions{s: "this is a very long string", max: 10})
 	// Should be 9 chars of original + "…"
 	if got != "this is a…" {
 		t.Errorf("truncate long = %q, want %q", got, "this is a…")

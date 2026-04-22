@@ -267,7 +267,7 @@ constrained.
 
 ## Phase 10: Refactor cmd/herm markdown/tree (6 violations)
 
-- [ ] 10a: `cmd/herm/markdown.go` + `tree.go` (6) — `processMarkdownLine`,
+- [x] 10a: `cmd/herm/markdown.go` + `tree.go` (6) — `processMarkdownLine`,
   `indexByte`, `indexPair`, `indexDouble`, `indexSingleStar`, `truncate`.
 
 ## Phase 11: Enforce positional-params rule

@@ -58,7 +58,7 @@ func TestProcessMarkdownLine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, state, skip := processMarkdownLine(tt.line, tt.inCodeBlock)
+			result, state, skip := processMarkdownLine(processMarkdownLineOptions{line: tt.line, inCodeBlock: tt.inCodeBlock})
 			if result != tt.wantResult {
 				t.Errorf("result: got %q, want %q", result, tt.wantResult)
 			}
@@ -88,7 +88,7 @@ func TestCodeBlockAcrossMessages(t *testing.T) {
 	for _, line := range lines {
 		var result string
 		var skip bool
-		result, inCodeBlock, skip = processMarkdownLine(line, inCodeBlock)
+		result, inCodeBlock, skip = processMarkdownLine(processMarkdownLineOptions{line: line, inCodeBlock: inCodeBlock})
 		if !skip {
 			results = append(results, result)
 		}
@@ -246,7 +246,7 @@ func TestProcessMarkdownLineEdgeCases(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, state, skip := processMarkdownLine(tt.line, tt.inCodeBlock)
+			result, state, skip := processMarkdownLine(processMarkdownLineOptions{line: tt.line, inCodeBlock: tt.inCodeBlock})
 			if result != tt.wantResult {
 				t.Errorf("result: got %q, want %q", result, tt.wantResult)
 			}
@@ -286,7 +286,7 @@ func TestMultiCodeBlockSequence(t *testing.T) {
 	inCodeBlock := false
 	var got []lineResult
 	for _, l := range lines {
-		r, s, sk := processMarkdownLine(l.text, inCodeBlock)
+		r, s, sk := processMarkdownLine(processMarkdownLineOptions{line: l.text, inCodeBlock: inCodeBlock})
 		got = append(got, lineResult{r, s, sk})
 		inCodeBlock = s
 	}

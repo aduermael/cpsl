@@ -102,7 +102,7 @@ func compactConversation(ctx context.Context, opts compactConversationOptions) (
 		Sequence:     0,
 		NodeType:     types.NodeTypeUser,
 		Content:      summaryContent,
-		Title:        "Compacted: " + truncate(summary, 40),
+		Title:        "Compacted: " + truncate(truncateOptions{s: summary, max: 40}),
 		SystemPrompt: systemPrompt,
 		CreatedAt:    time.Now(),
 	}
@@ -196,12 +196,12 @@ func buildTranscript(nodes []*types.Node) string {
 				b.WriteString(fmt.Sprintf("[Tool result: %s]\n", status))
 			}
 		case n.NodeType == types.NodeTypeUser:
-			b.WriteString("User: " + truncate(n.Content, 500) + "\n\n")
+			b.WriteString("User: " + truncate(truncateOptions{s: n.Content, max: 500}) + "\n\n")
 		case n.NodeType == types.NodeTypeAssistant:
 			text := extractAssistantText(n.Content)
 			_, tools := parseAssistantContent(n.Content)
 			if text != "" {
-				b.WriteString("Assistant: " + truncate(text, 500) + "\n")
+				b.WriteString("Assistant: " + truncate(truncateOptions{s: text, max: 500}) + "\n")
 			}
 			for _, t := range tools {
 				b.WriteString(fmt.Sprintf("  [called %s]\n", t.name))

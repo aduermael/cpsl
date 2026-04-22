@@ -13,10 +13,17 @@ import (
 // Uses only standard terminal attributes (bold, dim, italic, underline,
 // reverse, strikethrough) and OSC 8 hyperlinks — no hardcoded colors.
 
+// processMarkdownLineOptions is the parameter bundle for processMarkdownLine.
+type processMarkdownLineOptions struct {
+	line        string
+	inCodeBlock bool
+}
+
 // processMarkdownLine handles one line of assistant text, tracking code-block
 // state across calls. Returns the styled line, updated inCodeBlock flag, and
 // whether the line should be skipped (fence markers).
-func processMarkdownLine(line string, inCodeBlock bool) (result string, newState bool, skip bool) {
+func processMarkdownLine(opts processMarkdownLineOptions) (result string, newState bool, skip bool) {
+	line, inCodeBlock := opts.line, opts.inCodeBlock
 	trimmed := strings.TrimSpace(line)
 
 	// Code fence toggle (``` with optional language tag)
@@ -85,7 +92,7 @@ func renderInlineMarkdown(s string) string {
 
 		// Inline code: `code`
 		if b[i] == '`' {
-			end := indexByte(b, '`', i+1)
+			end := indexByte(indexByteOptions{b: b, target: '`', start: i + 1})
 			if end > i+1 {
 				code := string(b[i+1 : end])
 				buf.WriteString("\033[7m")
@@ -98,7 +105,7 @@ func renderInlineMarkdown(s string) string {
 
 		// Bold: **text**
 		if i+1 < n && b[i] == '*' && b[i+1] == '*' {
-			end := indexDouble(b, '*', i+2)
+			end := indexDouble(indexDoubleOptions{b: b, target: '*', start: i + 2})
 			if end > i+2 {
 				content := renderInlineMarkdown(string(b[i+2 : end]))
 				buf.WriteString("\033[1m")
@@ -111,7 +118,7 @@ func renderInlineMarkdown(s string) string {
 
 		// Italic: *text* (single asterisk, not part of **)
 		if b[i] == '*' && (i == 0 || b[i-1] != '*') && i+1 < n && b[i+1] != '*' && b[i+1] != ' ' {
-			end := indexSingleStar(b, i+1)
+			end := indexSingleStar(indexSingleStarOptions{b: b, start: i + 1})
 			if end > i+1 {
 				content := renderInlineMarkdown(string(b[i+1 : end]))
 				buf.WriteString("\033[3m")
@@ -124,7 +131,7 @@ func renderInlineMarkdown(s string) string {
 
 		// Strikethrough: ~~text~~
 		if i+1 < n && b[i] == '~' && b[i+1] == '~' {
-			end := indexDouble(b, '~', i+2)
+			end := indexDouble(indexDoubleOptions{b: b, target: '~', start: i + 2})
 			if end > i+2 {
 				content := renderInlineMarkdown(string(b[i+2 : end]))
 				buf.WriteString("\033[9m")
@@ -137,9 +144,9 @@ func renderInlineMarkdown(s string) string {
 
 		// Link: [text](url) — search for ]( to support brackets in text like [[1]](url)
 		if b[i] == '[' {
-			closeBracket := indexPair(b, ']', '(', i+1)
+			closeBracket := indexPair(indexPairOptions{buf: b, a: ']', b: '(', start: i + 1})
 			if closeBracket > i+1 {
-				closeParen := indexByte(b, ')', closeBracket+2)
+				closeParen := indexByte(indexByteOptions{b: b, target: ')', start: closeBracket + 2})
 				if closeParen > closeBracket+2 {
 					text := string(b[i+1 : closeBracket])
 					url := string(b[closeBracket+2 : closeParen])
@@ -172,7 +179,15 @@ func isCSIFinal(c byte) bool {
 	return c >= 0x40 && c <= 0x7E // @ through ~
 }
 
-func indexByte(b []byte, target byte, start int) int {
+// indexByteOptions is the parameter bundle for indexByte.
+type indexByteOptions struct {
+	b      []byte
+	target byte
+	start  int
+}
+
+func indexByte(opts indexByteOptions) int {
+	b, target, start := opts.b, opts.target, opts.start
 	for i := start; i < len(b); i++ {
 		if b[i] == target {
 			return i
@@ -181,8 +196,16 @@ func indexByte(b []byte, target byte, start int) int {
 	return -1
 }
 
+// indexPairOptions is the parameter bundle for indexPair.
+type indexPairOptions struct {
+	buf   []byte
+	a, b  byte
+	start int
+}
+
 // indexPair finds position of a followed by b (e.g. ']' '(' for link delimiter).
-func indexPair(buf []byte, a, b byte, start int) int {
+func indexPair(opts indexPairOptions) int {
+	buf, a, b, start := opts.buf, opts.a, opts.b, opts.start
 	for i := start; i+1 < len(buf); i++ {
 		if buf[i] == a && buf[i+1] == b {
 			return i
@@ -191,8 +214,16 @@ func indexPair(buf []byte, a, b byte, start int) int {
 	return -1
 }
 
+// indexDoubleOptions is the parameter bundle for indexDouble.
+type indexDoubleOptions struct {
+	b      []byte
+	target byte
+	start  int
+}
+
 // indexDouble finds the position of two consecutive target bytes.
-func indexDouble(b []byte, target byte, start int) int {
+func indexDouble(opts indexDoubleOptions) int {
+	b, target, start := opts.b, opts.target, opts.start
 	for i := start; i+1 < len(b); i++ {
 		if b[i] == target && b[i+1] == target {
 			return i
@@ -201,8 +232,15 @@ func indexDouble(b []byte, target byte, start int) int {
 	return -1
 }
 
+// indexSingleStarOptions is the parameter bundle for indexSingleStar.
+type indexSingleStarOptions struct {
+	b     []byte
+	start int
+}
+
 // indexSingleStar finds a single * that isn't part of **.
-func indexSingleStar(b []byte, start int) int {
+func indexSingleStar(opts indexSingleStarOptions) int {
+	b, start := opts.b, opts.start
 	for i := start; i < len(b); i++ {
 		if b[i] == '*' {
 			// Not part of **

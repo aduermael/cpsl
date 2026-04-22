@@ -112,13 +112,13 @@ func (a *App) showConversationList() {
 	for _, r := range roots {
 		title := r.Title
 		if title == "" {
-			title = truncate(firstLine(r.Content), 50)
+			title = truncate(truncateOptions{s: firstLine(r.Content), max: 50})
 		}
 		if title == "" {
 			title = "(empty)"
 		}
 		age := formatRelativeTime(r.CreatedAt)
-		line := fmt.Sprintf("%s  %s  %s", r.ID[:8], truncate(title, 50), age)
+		line := fmt.Sprintf("%s  %s  %s", r.ID[:8], truncate(truncateOptions{s: title, max: 50}), age)
 		lines = append(lines, line)
 	}
 
@@ -405,7 +405,7 @@ func (a *App) renderTree(nodes []*types.Node) string {
 			}
 			preview, tools := parseAssistantContent(n.Content)
 			if preview != "" {
-				label += " " + truncate(preview, 60)
+				label += " " + truncate(truncateOptions{s: preview, max: 60})
 			}
 			pendingTools = tools
 			b.WriteString(label + "\n")
@@ -441,7 +441,7 @@ type toolResultInfo struct {
 func (a *App) formatTreeNode(n *types.Node) (lines []string, toolLike bool) {
 	switch n.NodeType {
 	case types.NodeTypeUser:
-		return []string{"\033[1mYou:\033[0m " + truncate(firstLine(n.Content), 80)}, false
+		return []string{"\033[1mYou:\033[0m " + truncate(truncateOptions{s: firstLine(n.Content), max: 80})}, false
 	default:
 		return nil, false
 	}
@@ -538,7 +538,14 @@ func firstLine(s string) string {
 	return s
 }
 
-func truncate(s string, max int) string {
+// truncateOptions is the parameter bundle for truncate.
+type truncateOptions struct {
+	s   string
+	max int
+}
+
+func truncate(opts truncateOptions) string {
+	s, max := opts.s, opts.max
 	if len(s) <= max {
 		return s
 	}

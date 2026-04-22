@@ -420,7 +420,7 @@ func (a *App) buildBlockRows() []string {
 				wasInCodeBlock := inCodeBlock
 				if msg.kind == msgAssistant {
 					var skip bool
-					logLine, inCodeBlock, skip = processMarkdownLine(logLine, inCodeBlock)
+					logLine, inCodeBlock, skip = processMarkdownLine(processMarkdownLineOptions{line: logLine, inCodeBlock: inCodeBlock})
 					if skip {
 						continue
 					}
@@ -451,7 +451,7 @@ func (a *App) buildBlockRows() []string {
 		for _, logLine := range strings.Split(a.streamingText, "\n") {
 			wasInCodeBlock := inCodeBlock
 			var skip bool
-			logLine, inCodeBlock, skip = processMarkdownLine(logLine, inCodeBlock)
+			logLine, inCodeBlock, skip = processMarkdownLine(processMarkdownLineOptions{line: logLine, inCodeBlock: inCodeBlock})
 			if !skip {
 				wrapped := wrapString(wrapStringOptions{s: logLine, w: a.width})
 				if wasInCodeBlock {
