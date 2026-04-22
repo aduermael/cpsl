@@ -662,35 +662,35 @@ func TestSubAgentToolResultContainsAgentID(t *testing.T) {
 
 func TestFormatSubAgentResult(t *testing.T) {
 	// With output path, no model summary
-	got := formatSubAgentResult("abc123", "/tmp/.herm/agents/abc123.md", "hello world", false, 1, 15, nil)
+	got := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc123", outputPath: "/tmp/.herm/agents/abc123.md", summary: "hello world", modelSummary: false, turns: 1, maxTurns: 15})
 	want := "[agent:abc123 turns:1/15] [output: /tmp/.herm/agents/abc123.md]\n\nhello world"
 	if got != want {
 		t.Errorf("with path:\n got %q\nwant %q", got, want)
 	}
 
 	// Without output path (write failed)
-	got2 := formatSubAgentResult("abc123", "", "hello world", false, 0, 15, nil)
+	got2 := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc123", outputPath: "", summary: "hello world", modelSummary: false, turns: 0, maxTurns: 15})
 	want2 := "[agent:abc123 turns:0/15]\n\nhello world"
 	if got2 != want2 {
 		t.Errorf("without path:\n got %q\nwant %q", got2, want2)
 	}
 
 	// With output path — no token counts in compact header
-	got3 := formatSubAgentResult("abc123", "/tmp/out.md", "result", false, 3, 15, nil)
+	got3 := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc123", outputPath: "/tmp/out.md", summary: "result", modelSummary: false, turns: 3, maxTurns: 15})
 	want3 := "[agent:abc123 turns:3/15] [output: /tmp/out.md]\n\nresult"
 	if got3 != want3 {
 		t.Errorf("compact header:\n got %q\nwant %q", got3, want3)
 	}
 
 	// With model summary indicator
-	got5 := formatSubAgentResult("abc123", "/tmp/out.md", "- finding 1\n- finding 2", true, 5, 15, nil)
+	got5 := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc123", outputPath: "/tmp/out.md", summary: "- finding 1\n- finding 2", modelSummary: true, turns: 5, maxTurns: 15})
 	want5 := "[agent:abc123 turns:5/15 summary:model] [output: /tmp/out.md]\n\n- finding 1\n- finding 2"
 	if got5 != want5 {
 		t.Errorf("model summary:\n got %q\nwant %q", got5, want5)
 	}
 
 	// With errors
-	got6 := formatSubAgentResult("abc123", "/tmp/out.md", "partial result", false, 2, 15, []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"})
+	got6 := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc123", outputPath: "/tmp/out.md", summary: "partial result", modelSummary: false, turns: 2, maxTurns: 15, errors: []string{"turn 1: connection reset", "during tool \"bash\" (turn 2): timeout"}})
 	if !strings.Contains(got6, "[errors:") {
 		t.Errorf("result with errors should contain [errors:], got: %q", got6)
 	}
@@ -1311,7 +1311,7 @@ func TestStructuredSummaryPromptFormat(t *testing.T) {
 
 func TestCompactResultHeaderFormat(t *testing.T) {
 	// Verify the compact header format: [agent:<id> turns:<n/m>]
-	got := formatSubAgentResult("test-id", "/out.md", "content", false, 3, 10, nil)
+	got := formatSubAgentResult(formatSubAgentResultOptions{agentID: "test-id", outputPath: "/out.md", summary: "content", modelSummary: false, turns: 3, maxTurns: 10})
 
 	// Must start with [agent:
 	if !strings.HasPrefix(got, "[agent:test-id") {
@@ -1332,7 +1332,7 @@ func TestCompactResultHeaderFormat(t *testing.T) {
 }
 
 func TestCompactResultHeaderWithSummaryModel(t *testing.T) {
-	got := formatSubAgentResult("x", "/out.md", "summary", true, 5, 15, nil)
+	got := formatSubAgentResult(formatSubAgentResultOptions{agentID: "x", outputPath: "/out.md", summary: "summary", modelSummary: true, turns: 5, maxTurns: 15})
 	if !strings.Contains(got, "summary:model") {
 		t.Errorf("model summary should appear as summary:model, got: %q", got)
 	}
@@ -1345,7 +1345,7 @@ func TestCompactResultHeaderWithSummaryModel(t *testing.T) {
 func TestCompactResultHeaderWithSummaryTruncated(t *testing.T) {
 	// Summary longer than threshold + output path present → truncated indicator
 	longSummary := strings.Repeat("x", subAgentSummaryBytes+100)
-	got := formatSubAgentResult("x", "/out.md", longSummary, false, 1, 10, nil)
+	got := formatSubAgentResult(formatSubAgentResultOptions{agentID: "x", outputPath: "/out.md", summary: longSummary, modelSummary: false, turns: 1, maxTurns: 10})
 	if !strings.Contains(got, "summary:truncated") {
 		t.Errorf("should indicate truncated summary, got: %q", got[:min(80, len(got))])
 	}
@@ -1392,7 +1392,7 @@ func TestSubAgentResultMaxTurnsShown(t *testing.T) {
 func TestFormatSubAgentResultWithErrors(t *testing.T) {
 	// Errors should appear in the header.
 	errors := []string{"turn 1: connection reset", `during tool "bash" (turn 2): timeout`}
-	got := formatSubAgentResult("abc", "/tmp/out.md", "partial", false, 2, 15, errors)
+	got := formatSubAgentResult(formatSubAgentResultOptions{agentID: "abc", outputPath: "/tmp/out.md", summary: "partial", modelSummary: false, turns: 2, maxTurns: 15, errors: errors})
 
 	if !strings.Contains(got, "[errors: turn 1: connection reset; during tool") {
 		t.Errorf("result should contain joined errors, got: %q", got)
@@ -1411,7 +1411,7 @@ func TestFormatSubAgentResultNoOutputWithErrors(t *testing.T) {
 
 	// We can't easily inject errors into the event stream via mock, so test
 	// buildResult directly.
-	result := tool.buildResult(context.Background(), "test-id", nil, []string{"API error: 500"}, 1, 10, false)
+	result := tool.buildResult(context.Background(), buildResultOptions{agentID: "test-id", textParts: nil, agentErrors: []string{"API error: 500"}, turns: 1, maxTurns: 10, synthesisUsed: false})
 	if strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should not show generic no-output message when errors are present, got: %q", result)
 	}
@@ -1429,7 +1429,7 @@ func TestFormatSubAgentResultNoOutputNoErrors(t *testing.T) {
 	tmpDir := t.TempDir()
 	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
-	result := tool.buildResult(context.Background(), "test-id", nil, nil, 0, 10, false)
+	result := tool.buildResult(context.Background(), buildResultOptions{agentID: "test-id", turns: 0, maxTurns: 10})
 	if !strings.Contains(result, "sub-agent produced no output") {
 		t.Errorf("should show generic no-output, got: %q", result)
 	}
@@ -1617,7 +1617,7 @@ func TestSubAgentDoneTimeoutErrorInResult(t *testing.T) {
 	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	timeoutErr := fmt.Sprintf("sub-agent goroutine did not exit within %v after completion", 200*time.Millisecond)
-	result := tool.buildResult(context.Background(), "test-timeout", []string{"partial output"}, []string{timeoutErr}, 1, 10, false)
+	result := tool.buildResult(context.Background(), buildResultOptions{agentID: "test-timeout", textParts: []string{"partial output"}, agentErrors: []string{timeoutErr}, turns: 1, maxTurns: 10})
 	if !strings.Contains(result, "did not exit within") {
 		t.Errorf("result should contain timeout error, got: %q", result)
 	}
@@ -2635,9 +2635,15 @@ func TestDeltaBatchingReducesEvents(t *testing.T) {
 
 	doneRun := make(chan struct{})
 	go func() {
-		tool.runBackground(ctx, agent, agent.ID(),
-			subAgentInput{Task: "test", Mode: "explore"},
-			"test-model", 10, subTC, state)
+		tool.runBackground(ctx, runBackgroundOptions{
+			agent:    agent,
+			agentID:  agent.ID(),
+			in:       subAgentInput{Task: "test", Mode: "explore"},
+			model:    "test-model",
+			maxTurns: 10,
+			subTC:    subTC,
+			state:    state,
+		})
 		close(doneRun)
 	}()
 
@@ -2691,9 +2697,10 @@ func TestForwardBlockingWithTimeout(t *testing.T) {
 		timeout := 100 * time.Millisecond
 
 		start := time.Now()
-		tool.forwardBlockingWithTimeout(AgentEvent{
-			Type: EventSubAgentStatus, Text: "done",
-		}, timeout)
+		tool.forwardBlockingWithTimeout(forwardBlockingWithTimeoutOptions{
+			event:   AgentEvent{Type: EventSubAgentStatus, Text: "done"},
+			timeout: timeout,
+		})
 		elapsed := time.Since(start)
 
 		if elapsed < timeout/2 {
@@ -2716,7 +2723,7 @@ func TestForwardBlockingWithTimeout(t *testing.T) {
 
 		delivered := make(chan struct{})
 		go func() {
-			tool.forwardBlockingWithTimeout(doneEvent, 2*time.Second)
+			tool.forwardBlockingWithTimeout(forwardBlockingWithTimeoutOptions{event: doneEvent, timeout: 2 * time.Second})
 			close(delivered)
 		}()
 
@@ -2918,7 +2925,7 @@ func TestBuildResultSkipsSummarizationWhenSynthesisUsed(t *testing.T) {
 
 	// Short output with synthesis — should pass through verbatim, no model call.
 	shortOutput := "STATUS: success\nFILES: main.go\nFINDINGS:\n- Found the bug\nNEXT: none"
-	result := tool.buildResult(context.Background(), "synth-agent", []string{shortOutput}, nil, 5, 10, true)
+	result := tool.buildResult(context.Background(), buildResultOptions{agentID: "synth-agent", textParts: []string{shortOutput}, turns: 5, maxTurns: 10, synthesisUsed: true})
 	if !strings.Contains(result, shortOutput) {
 		t.Errorf("synthesis output should pass through verbatim, got: %q", result)
 	}
@@ -2929,7 +2936,7 @@ func TestBuildResultSkipsSummarizationWhenSynthesisUsed(t *testing.T) {
 
 	// Long output (>2KB) with synthesis — should use summarizeOutput truncation, not model.
 	longOutput := strings.Repeat("x", subAgentSummaryBytes+500)
-	result2 := tool.buildResult(context.Background(), "synth-long", []string{longOutput}, nil, 5, 10, true)
+	result2 := tool.buildResult(context.Background(), buildResultOptions{agentID: "synth-long", textParts: []string{longOutput}, turns: 5, maxTurns: 10, synthesisUsed: true})
 	if strings.Contains(result2, "summary:model") {
 		t.Errorf("should not use model summarization for long synthesis output, got: %q", result2)
 	}
@@ -2945,7 +2952,7 @@ func TestBuildResultUsesSummarizationWhenNoSynthesis(t *testing.T) {
 	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	shortOutput := "Found function foo in bar.go"
-	result := tool.buildResult(context.Background(), "no-synth", []string{shortOutput}, nil, 3, 10, false)
+	result := tool.buildResult(context.Background(), buildResultOptions{agentID: "no-synth", textParts: []string{shortOutput}, turns: 3, maxTurns: 10})
 	if !strings.Contains(result, shortOutput) {
 		t.Errorf("short non-synthesis output should pass through, got: %q", result)
 	}

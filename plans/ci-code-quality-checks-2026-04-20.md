@@ -231,7 +231,7 @@ constrained.
   `newLangdagClientForProvider`, `SetTurnProgress`, `SetTokenProgress`,
   `NewAgent`, `Run`, `emitUsage`, `backgroundCompletion`,
   `clearOldToolResults`, `maybeCompact`, `runLoop`.
-- [ ] 7b: `cmd/herm/subagent.go` (7) — `forwardBlockingWithTimeout`,
+- [x] 7b: `cmd/herm/subagent.go` (7) — `forwardBlockingWithTimeout`,
   `saveNodeID`, `runBackground`, `gracefulSubAgentSynthesis`, `buildResult`,
   `formatSubAgentResult`, `writeOutputFile`.
 - [ ] 7c: `cmd/herm/systemprompt.go` + `tooldesc.go` + `agentui.go` (5) —

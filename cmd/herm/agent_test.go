@@ -1969,9 +1969,12 @@ func TestResilienceSubAgentFailureReportsErrors(t *testing.T) {
 	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "test-model", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 3, WorkDir: tmpDir, ContainerImage: "alpine:latest"})
 
 	// Use buildResult directly with errors to verify the error reporting path.
-	result := tool.buildResult(context.Background(), "err-agent", nil,
-		[]string{"during tool \"bash\" (turn 3): HTTP 500 internal server error"},
-		3, 10, false)
+	result := tool.buildResult(context.Background(), buildResultOptions{
+		agentID:     "err-agent",
+		agentErrors: []string{"during tool \"bash\" (turn 3): HTTP 500 internal server error"},
+		turns:       3,
+		maxTurns:    10,
+	})
 
 	if !strings.Contains(result, "[errors:") {
 		t.Errorf("result should contain [errors:], got: %q", result)

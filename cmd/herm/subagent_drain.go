@@ -127,7 +127,7 @@ func (t *SubAgentTool) drainSubAgentEvents(opts drainOptions) drainResult {
 		case EventDone:
 			if event.NodeID != "" {
 				r.lastNodeID = event.NodeID
-				t.saveNodeID(opts.agentID, event.NodeID, opts.mode)
+				t.saveNodeID(saveNodeIDOptions{agentID: opts.agentID, nodeID: event.NodeID, mode: opts.mode})
 			}
 			return true
 

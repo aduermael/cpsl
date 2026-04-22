@@ -290,30 +290,43 @@ func (t *SubAgentTool) forwardBlocking(e AgentEvent) {
 	}
 }
 
+// forwardBlockingWithTimeoutOptions is the parameter bundle for (*SubAgentTool).forwardBlockingWithTimeout.
+type forwardBlockingWithTimeoutOptions struct {
+	event   AgentEvent
+	timeout time.Duration
+}
+
 // forwardBlockingWithTimeout is like forwardBlocking but accepts a custom timeout.
 // Used for "done" status events that need a longer delivery window.
-func (t *SubAgentTool) forwardBlockingWithTimeout(e AgentEvent, timeout time.Duration) {
+func (t *SubAgentTool) forwardBlockingWithTimeout(opts forwardBlockingWithTimeoutOptions) {
 	if t.parentEvents == nil {
 		return
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			debugLog("sub-agent critical event dropped: parent channel closed (type=%d)", e.Type)
+			debugLog("sub-agent critical event dropped: parent channel closed (type=%d)", opts.event.Type)
 		}
 	}()
 	select {
-	case t.parentEvents <- e:
-	case <-time.After(timeout):
+	case t.parentEvents <- opts.event:
+	case <-time.After(opts.timeout):
 		debugLog("sub-agent critical event TIMED OUT after %v: parent channel full (type=%d, agentID=%s)",
-			timeout, e.Type, e.AgentID)
+			opts.timeout, opts.event.Type, opts.event.AgentID)
 	}
 }
 
+// saveNodeIDOptions is the parameter bundle for (*SubAgentTool).saveNodeID.
+type saveNodeIDOptions struct {
+	agentID string
+	nodeID  string
+	mode    string
+}
+
 // saveNodeID stores the last nodeID and mode for a sub-agent so it can be resumed.
-func (t *SubAgentTool) saveNodeID(agentID, nodeID, mode string) {
+func (t *SubAgentTool) saveNodeID(opts saveNodeIDOptions) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.agentNodes[agentID] = agentNodeState{nodeID: nodeID, mode: mode}
+	t.agentNodes[opts.agentID] = agentNodeState{nodeID: opts.nodeID, mode: opts.mode}
 }
 
 // loadNodeID retrieves the stored state for a sub-agent.
@@ -619,7 +632,7 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 	// still requesting tools.
 	synthesisUsed := false
 	if r.synthesisAttempted {
-		synthText := t.gracefulSubAgentSynthesis(ctx, agent, r.lastNodeID)
+		synthText := t.gracefulSubAgentSynthesis(ctx, gracefulSubAgentSynthesisOptions{agent: agent, lastNodeID: r.lastNodeID})
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
 			subTC.AddTextDelta(agentID, synthText)
@@ -648,7 +661,14 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 		debugLog("sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	return t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns, synthesisUsed), nil
+	return t.buildResult(ctx, buildResultOptions{
+		agentID:       agentID,
+		textParts:     r.textParts,
+		agentErrors:   r.agentErrors,
+		turns:         r.turns,
+		maxTurns:      maxTurns,
+		synthesisUsed: synthesisUsed,
+	}), nil
 }
 
 // executeBackground sets up and launches a background sub-agent, returning immediately.
@@ -702,21 +722,40 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	t.bgWg.Add(1)
 	go func() {
 		defer t.bgWg.Done()
-		t.runBackground(bgCtx, agent, agentID, in, model, maxTurns, subTC, state)
+		t.runBackground(bgCtx, runBackgroundOptions{
+			agent:    agent,
+			agentID:  agentID,
+			in:       in,
+			model:    model,
+			maxTurns: maxTurns,
+			subTC:    subTC,
+			state:    state,
+		})
 	}()
 
 	return fmt.Sprintf("[agent_id: %s] Sub-agent started in background. Task: %s. You will be notified when it completes. Do not narrate progress — the user sees live sub-agent status in the UI. Move on to your next action or stop. If an agent fails, you can retry by spawning a new agent with retry_of set to the failed agent's ID.", agentID, in.Task), nil
 }
 
+// runBackgroundOptions is the parameter bundle for (*SubAgentTool).runBackground.
+type runBackgroundOptions struct {
+	agent    *Agent
+	agentID  string
+	in       subAgentInput
+	model    string
+	maxTurns int
+	subTC    *TraceCollector
+	state    *bgAgentState
+}
+
 // runBackground runs a background sub-agent to completion, draining events
 // and storing the result in bgAgentState.
-func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID string, in subAgentInput, model string, maxTurns int, subTC *TraceCollector, state *bgAgentState) {
-	defer state.cancel()
+func (t *SubAgentTool) runBackground(ctx context.Context, opts runBackgroundOptions) {
+	defer opts.state.cancel()
 
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		agent.Run(ctx, RunOptions{UserMessage: in.Task})
+		opts.agent.Run(ctx, RunOptions{UserMessage: opts.in.Task})
 	}()
 
 	// Delta batching: accumulate text deltas and forward them at most once
@@ -727,18 +766,18 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 		if deltaBuf.Len() == 0 {
 			return
 		}
-		t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: agentID, Text: deltaBuf.String()})
+		t.forward(AgentEvent{Type: EventSubAgentDelta, AgentID: opts.agentID, Text: deltaBuf.String()})
 		deltaBuf.Reset()
 		lastDeltaForward = time.Now()
 	}
 
 	// Drain events using the shared loop. Background batches deltas to reduce channel pressure.
 	r := t.drainSubAgentEvents(drainOptions{
-		agentID:        agentID,
-		mode:           in.Mode,
-		maxTurns:       maxTurns,
-		agent:          agent,
-		traceCollector: subTC,
+		agentID:        opts.agentID,
+		mode:           opts.in.Mode,
+		maxTurns:       opts.maxTurns,
+		agent:          opts.agent,
+		traceCollector: opts.subTC,
 		deltaForwarder: func(_ string, text string) {
 			deltaBuf.WriteString(text)
 			if time.Since(lastDeltaForward) >= deltaForwardInterval {
@@ -751,51 +790,67 @@ func (t *SubAgentTool) runBackground(ctx context.Context, agent *Agent, agentID 
 	// still requesting tools.
 	synthesisUsed := false
 	if r.synthesisAttempted {
-		synthText := t.gracefulSubAgentSynthesis(ctx, agent, r.lastNodeID)
+		synthText := t.gracefulSubAgentSynthesis(ctx, gracefulSubAgentSynthesisOptions{agent: opts.agent, lastNodeID: r.lastNodeID})
 		if synthText != "" {
 			r.textParts = append(r.textParts, synthText)
-			subTC.AddTextDelta(agentID, synthText)
+			opts.subTC.AddTextDelta(opts.agentID, synthText)
 			deltaBuf.WriteString(synthText)
 			synthesisUsed = true
 		}
 	}
 	flushDelta()
-	subTC.Finalize()
-	subTrace := subTC.BuildSubAgentEvent(agentID, in.Task, model, r.turns, maxTurns)
-	t.forwardBlockingWithTimeout(AgentEvent{
-		Type:     EventSubAgentStatus,
-		AgentID:  agentID,
-		Text:     "done",
-		IsError:  len(r.agentErrors) > 0,
-		SubTrace: subTrace,
-		Usage: &types.Usage{
-			InputTokens:  r.totalInputTokens,
-			OutputTokens: r.totalOutputTokens,
+	opts.subTC.Finalize()
+	subTrace := opts.subTC.BuildSubAgentEvent(opts.agentID, opts.in.Task, opts.model, r.turns, opts.maxTurns)
+	t.forwardBlockingWithTimeout(forwardBlockingWithTimeoutOptions{
+		event: AgentEvent{
+			Type:     EventSubAgentStatus,
+			AgentID:  opts.agentID,
+			Text:     "done",
+			IsError:  len(r.agentErrors) > 0,
+			SubTrace: subTrace,
+			Usage: &types.Usage{
+				InputTokens:  r.totalInputTokens,
+				OutputTokens: r.totalOutputTokens,
+			},
+			Task: fmt.Sprintf("turns:%d/%d", r.turns, opts.maxTurns),
 		},
-		Task: fmt.Sprintf("turns:%d/%d", r.turns, maxTurns),
-	}, forwardBlockingDoneTimeout)
+		timeout: forwardBlockingDoneTimeout,
+	})
 	select {
 	case <-done:
 	case <-time.After(t.doneTimeout):
-		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", agentID, t.doneTimeout)
+		debugLog("bg sub-agent %s goroutine hung after stream end, proceeding after %v timeout", opts.agentID, t.doneTimeout)
 		r.agentErrors = append(r.agentErrors, fmt.Sprintf("sub-agent goroutine did not exit within %v after stream end", t.doneTimeout))
 	}
-	result := t.buildResult(ctx, agentID, r.textParts, r.agentErrors, r.turns, maxTurns, synthesisUsed)
-	state.mu.Lock()
-	state.done = true
-	state.result = result
-	state.mu.Unlock()
+	result := t.buildResult(ctx, buildResultOptions{
+		agentID:       opts.agentID,
+		textParts:     r.textParts,
+		agentErrors:   r.agentErrors,
+		turns:         r.turns,
+		maxTurns:      opts.maxTurns,
+		synthesisUsed: synthesisUsed,
+	})
+	opts.state.mu.Lock()
+	opts.state.done = true
+	opts.state.result = result
+	opts.state.mu.Unlock()
 	if t.onBgComplete != nil {
 		t.onBgComplete(result)
 	}
+}
+
+// gracefulSubAgentSynthesisOptions is the parameter bundle for (*SubAgentTool).gracefulSubAgentSynthesis.
+type gracefulSubAgentSynthesisOptions struct {
+	agent      *Agent
+	lastNodeID string
 }
 
 // gracefulSubAgentSynthesis makes a tools-disabled LLM call so the sub-agent
 // produces a text summary when it exceeded its turn budget while still requesting
 // tools. Returns the synthesis text, or "" on failure. Uses a fresh context since
 // the agent's context was canceled.
-func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Agent, lastNodeID string) string {
-	if lastNodeID == "" || t.client == nil {
+func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, opts gracefulSubAgentSynthesisOptions) string {
+	if opts.lastNodeID == "" || t.client == nil {
 		return ""
 	}
 
@@ -803,23 +858,23 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 	synthCtx, synthCancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer synthCancel()
 
-	model := agent.model
+	model := opts.agent.model
 	// Note: WithSystemPrompt is ignored by PromptFrom (langdag uses the root
 	// node's stored prompt), but included for documentation and forward compat.
-	opts := []langdag.PromptOption{
-		langdag.WithSystemPrompt(agent.systemPrompt),
+	promptOpts := []langdag.PromptOption{
+		langdag.WithSystemPrompt(opts.agent.systemPrompt),
 		langdag.WithMaxTokens(defaultMaxOutputTokens),
 		langdag.WithMaxOutputGroupTokens(defaultMaxOutputGroupTokens),
 		// No WithTools — forces a text-only response.
 	}
 	if model != "" {
-		opts = append(opts, langdag.WithModel(model))
+		promptOpts = append(promptOpts, langdag.WithModel(model))
 	}
 
 	// The model is told this is its final turn — budget numbers add nothing.
 	synthMsg := synthesisPrompt("Turn limit reached")
 
-	result, err := t.client.PromptFrom(synthCtx, lastNodeID, synthMsg, opts...)
+	result, err := t.client.PromptFrom(synthCtx, opts.lastNodeID, synthMsg, promptOpts...)
 	if err != nil {
 		debugLog("gracefulSubAgentSynthesis failed: %v", err)
 		return ""
@@ -842,50 +897,79 @@ func (t *SubAgentTool) gracefulSubAgentSynthesis(ctx context.Context, agent *Age
 	return strings.Join(parts, "")
 }
 
+// buildResultOptions is the parameter bundle for (*SubAgentTool).buildResult.
+type buildResultOptions struct {
+	agentID       string
+	textParts     []string
+	agentErrors   []string
+	turns         int
+	maxTurns      int
+	synthesisUsed bool
+}
+
 // buildResult constructs the final tool result from collected sub-agent state.
 // When synthesisUsed is true (the agent produced a structured synthesis via
 // gracefulSubAgentSynthesis), the output is already summary-shaped and we skip
 // the post-hoc model summarization call.
-func (t *SubAgentTool) buildResult(ctx context.Context, agentID string, textParts []string, agentErrors []string, turns, maxTurns int, synthesisUsed bool) string {
-	result := strings.TrimSpace(strings.Join(textParts, ""))
-	if result == "" && len(agentErrors) > 0 {
+func (t *SubAgentTool) buildResult(ctx context.Context, opts buildResultOptions) string {
+	result := strings.TrimSpace(strings.Join(opts.textParts, ""))
+	if result == "" && len(opts.agentErrors) > 0 {
 		// No text output but we have errors — use errors as the result body.
-		result = "Sub-agent encountered errors:\n" + strings.Join(agentErrors, "\n")
+		result = "Sub-agent encountered errors:\n" + strings.Join(opts.agentErrors, "\n")
 	} else if result == "" {
 		result = "(sub-agent produced no output)"
 	}
-	outputPath := t.writeOutputFile(agentID, result)
+	outputPath := t.writeOutputFile(writeOutputFileOptions{agentID: opts.agentID, output: result})
 	var summary string
 	var usedModel bool
-	if synthesisUsed {
+	if opts.synthesisUsed {
 		// Synthesis already produced structured output — pass through or truncate.
 		summary = summarizeOutput(result)
 	} else {
 		summary, usedModel = t.summarizeWithModel(ctx, result)
 	}
-	return formatSubAgentResult(agentID, outputPath, summary, usedModel, turns, maxTurns, agentErrors)
+	return formatSubAgentResult(formatSubAgentResultOptions{
+		agentID:      opts.agentID,
+		outputPath:   outputPath,
+		summary:      summary,
+		modelSummary: usedModel,
+		turns:        opts.turns,
+		maxTurns:     opts.maxTurns,
+		errors:       opts.agentErrors,
+	})
+}
+
+// formatSubAgentResultOptions is the parameter bundle for formatSubAgentResult.
+type formatSubAgentResultOptions struct {
+	agentID      string
+	outputPath   string
+	summary      string
+	modelSummary bool
+	turns        int
+	maxTurns     int
+	errors       []string
 }
 
 // formatSubAgentResult builds a compact tool result header with agent ID, turn
 // count, summary quality indicator, and the summary body. Token counts are
 // omitted (tracked via EventUsage, not actionable by the main agent).
-func formatSubAgentResult(agentID, outputPath, summary string, modelSummary bool, turns, maxTurns int, errors []string) string {
+func formatSubAgentResult(opts formatSubAgentResultOptions) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "[agent:%s turns:%d/%d", agentID, turns, maxTurns)
-	if modelSummary {
+	fmt.Fprintf(&b, "[agent:%s turns:%d/%d", opts.agentID, opts.turns, opts.maxTurns)
+	if opts.modelSummary {
 		b.WriteString(" summary:model")
-	} else if outputPath != "" && len(summary) > subAgentSummaryBytes {
+	} else if opts.outputPath != "" && len(opts.summary) > subAgentSummaryBytes {
 		// Only mark truncated when there was actually more content (output file exists).
 		b.WriteString(" summary:truncated")
 	}
 	b.WriteString("]")
-	if outputPath != "" {
-		fmt.Fprintf(&b, " [output: %s]", outputPath)
+	if opts.outputPath != "" {
+		fmt.Fprintf(&b, " [output: %s]", opts.outputPath)
 	}
-	if len(errors) > 0 {
-		fmt.Fprintf(&b, " [errors: %s]", strings.Join(errors, "; "))
+	if len(opts.errors) > 0 {
+		fmt.Fprintf(&b, " [errors: %s]", strings.Join(opts.errors, "; "))
 	}
-	fmt.Fprintf(&b, "\n\n%s", summary)
+	fmt.Fprintf(&b, "\n\n%s", opts.summary)
 	return b.String()
 }
 
@@ -972,15 +1056,21 @@ func agentOutputDir(workDir string) string {
 	return filepath.Join(workDir, ".herm", "agents")
 }
 
+// writeOutputFileOptions is the parameter bundle for (*SubAgentTool).writeOutputFile.
+type writeOutputFileOptions struct {
+	agentID string
+	output  string
+}
+
 // writeOutputFile writes the full sub-agent output to .herm/agents/<agentID>.md.
 // Returns the file path on success, or empty string on failure (non-fatal).
-func (t *SubAgentTool) writeOutputFile(agentID, output string) string {
+func (t *SubAgentTool) writeOutputFile(opts writeOutputFileOptions) string {
 	dir := agentOutputDir(t.workDir)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return ""
 	}
-	path := filepath.Join(dir, agentID+".md")
-	if err := os.WriteFile(path, []byte(output), 0o644); err != nil {
+	path := filepath.Join(dir, opts.agentID+".md")
+	if err := os.WriteFile(path, []byte(opts.output), 0o644); err != nil {
 		return ""
 	}
 	return path
