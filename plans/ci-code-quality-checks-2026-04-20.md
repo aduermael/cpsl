@@ -283,7 +283,7 @@ constrained.
 
 ## Phase 12: Cleanup
 
-- [ ] 12a: Audit `.github/workflows/` — confirm `test.yml`, `ci-checks.yml`,
+- [x] 12a: Audit `.github/workflows/` — confirm `test.yml`, `ci-checks.yml`,
   `prompt-length.yml`, and release workflows are the full set. Remove any
   dead references to the old `source-file-length.yml`.
 - [ ] 12b: Smoke-test the full pipeline against `main` by opening a dry-run PR
