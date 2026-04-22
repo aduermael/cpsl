@@ -351,12 +351,12 @@ func (a *App) Run() error {
 	// SIGWINCH handler with debounce
 	sigWinch := make(chan os.Signal, 1)
 	signal.Notify(sigWinch, syscall.SIGWINCH)
-	resizeDb := newDebouncer(150*time.Millisecond, func() {
+	resizeDb := newDebouncer(newDebouncerOptions{delay: 150 * time.Millisecond, fire: func() {
 		select {
 		case a.resultCh <- resizeMsg{}:
 		default:
 		}
-	})
+	}})
 	go func() {
 		for range sigWinch {
 			a.width = getWidth()
@@ -818,7 +818,7 @@ func (a *App) handleResult(result any) {
 		a.config = mergeConfigs(mergeConfigsOptions{global: a.globalConfig, project: a.projectConfig})
 		a.configReady = true
 		a.initAppDebugLog()
-		a.history = newHistory(msg.worktreePath, a.config.effectiveMaxHistory())
+		a.history = newHistory(newHistoryOptions{projectDir: msg.worktreePath, maxSize: a.config.effectiveMaxHistory()})
 		a.history.Load()
 		a.maybeShowInitialModels()
 		wtPath := msg.worktreePath

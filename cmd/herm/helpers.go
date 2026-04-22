@@ -42,7 +42,14 @@ func formatDuration(d time.Duration) string {
 	return fmt.Sprintf("%dm%02ds", m, s)
 }
 
-func truncateWithEllipsis(s string, maxLen int) string {
+// truncateWithEllipsisOptions is the parameter bundle for truncateWithEllipsis.
+type truncateWithEllipsisOptions struct {
+	s      string
+	maxLen int
+}
+
+func truncateWithEllipsis(opts truncateWithEllipsisOptions) string {
+	s, maxLen := opts.s, opts.maxLen
 	runes := []rune(s)
 	if len(runes) <= maxLen {
 		return s
@@ -57,10 +64,17 @@ func truncateWithEllipsis(s string, maxLen int) string {
 	return string(runes[:maxLen-1]) + "…"
 }
 
+// truncateVisualOptions is the parameter bundle for truncateVisual.
+type truncateVisualOptions struct {
+	s       string
+	maxCols int
+}
+
 // truncateVisual truncates s to at most maxCols visible terminal columns,
 // appending "…" if truncation occurs. It is ANSI-escape-aware: escape sequences
 // do not count toward visible width.
-func truncateVisual(s string, maxCols int) string {
+func truncateVisual(opts truncateVisualOptions) string {
+	s, maxCols := opts.s, opts.maxCols
 	if maxCols <= 0 {
 		return ""
 	}
@@ -134,7 +148,14 @@ func debugLog(format string, args ...any) {
 	fmt.Fprintf(f, "[%s] %s\n", ts, fmt.Sprintf(format, args...))
 }
 
-func truncateForLog(s string, max int) string {
+// truncateForLogOptions is the parameter bundle for truncateForLog.
+type truncateForLogOptions struct {
+	s   string
+	max int
+}
+
+func truncateForLog(opts truncateForLogOptions) string {
+	s, max := opts.s, opts.max
 	if len(s) <= max {
 		return s
 	}
@@ -161,8 +182,14 @@ type debouncer struct {
 	timer *time.Timer
 }
 
-func newDebouncer(delay time.Duration, fire func()) *debouncer {
-	return &debouncer{delay: delay, fire: fire}
+// newDebouncerOptions is the parameter bundle for newDebouncer.
+type newDebouncerOptions struct {
+	delay time.Duration
+	fire  func()
+}
+
+func newDebouncer(opts newDebouncerOptions) *debouncer {
+	return &debouncer{delay: opts.delay, fire: opts.fire}
 }
 
 func (d *debouncer) Trigger() {

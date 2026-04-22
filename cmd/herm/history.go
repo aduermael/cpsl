@@ -29,7 +29,14 @@ type History struct {
 	filePath string
 }
 
-func newHistory(projectDir string, maxSize int) *History {
+// newHistoryOptions is the parameter bundle for newHistory.
+type newHistoryOptions struct {
+	projectDir string
+	maxSize    int
+}
+
+func newHistory(opts newHistoryOptions) *History {
+	projectDir, maxSize := opts.projectDir, opts.maxSize
 	if maxSize <= 0 {
 		maxSize = defaultMaxHistory
 	}

@@ -450,7 +450,7 @@ func (a *App) buildConfigRows() []string {
 	if a.menuActive && len(a.menuLines) > 0 {
 		w := a.width
 		if a.menuHeader != "" {
-			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(a.menuHeader, w)))
+			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: a.menuHeader, maxLen: w})))
 		}
 		maxVisible := getTerminalHeight() * 60 / 100
 		if maxVisible < 1 {
@@ -464,9 +464,9 @@ func (a *App) buildConfigRows() []string {
 		for i := a.menuScrollOffset; i < end; i++ {
 			line := a.menuLines[i]
 			if i == a.menuCursor {
-				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(line, w-2)))
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: line, maxLen: w - 2})))
 			} else {
-				rows = append(rows, truncateWithEllipsis(line, w))
+				rows = append(rows, truncateWithEllipsis(truncateWithEllipsisOptions{s: line, maxLen: w}))
 			}
 		}
 		first := a.menuScrollOffset + 1

@@ -8,9 +8,9 @@ import (
 
 func TestDebouncerSingleTrigger(t *testing.T) {
 	var count atomic.Int32
-	d := newDebouncer(50*time.Millisecond, func() {
+	d := newDebouncer(newDebouncerOptions{delay: 50 * time.Millisecond, fire: func() {
 		count.Add(1)
-	})
+	}})
 
 	d.Trigger()
 	time.Sleep(100 * time.Millisecond)
@@ -22,9 +22,9 @@ func TestDebouncerSingleTrigger(t *testing.T) {
 
 func TestDebouncerRapidTriggersFireOnce(t *testing.T) {
 	var count atomic.Int32
-	d := newDebouncer(50*time.Millisecond, func() {
+	d := newDebouncer(newDebouncerOptions{delay: 50 * time.Millisecond, fire: func() {
 		count.Add(1)
-	})
+	}})
 
 	// Trigger 10 times rapidly — only the last should fire
 	for i := 0; i < 10; i++ {
@@ -42,9 +42,9 @@ func TestDebouncerRapidTriggersFireOnce(t *testing.T) {
 
 func TestDebouncerResetsTimer(t *testing.T) {
 	var count atomic.Int32
-	d := newDebouncer(50*time.Millisecond, func() {
+	d := newDebouncer(newDebouncerOptions{delay: 50 * time.Millisecond, fire: func() {
 		count.Add(1)
-	})
+	}})
 
 	d.Trigger()
 	time.Sleep(30 * time.Millisecond) // not yet fired

@@ -538,7 +538,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		a.render()
 
 	case EventToolResult:
-		debugLog("tool_result: err=%v result=%q", event.IsError, truncateForLog(event.ToolResult, 500))
+		debugLog("tool_result: err=%v result=%q", event.IsError, truncateForLog(truncateForLogOptions{s: event.ToolResult, max: 500}))
 		if a.toolTimer != nil {
 			a.toolTimer.Stop()
 			a.toolTimer = nil

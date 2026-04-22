@@ -9,7 +9,7 @@ import (
 
 func TestHistoryAddAndRetrieve(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("first")
 	h.Add("second")
@@ -36,7 +36,7 @@ func TestHistoryAddAndRetrieve(t *testing.T) {
 
 func TestHistoryDraftPreservation(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("cmd1")
 	h.Add("cmd2")
@@ -67,7 +67,7 @@ func TestHistoryDraftPreservation(t *testing.T) {
 
 func TestHistoryBoundsUp(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("a")
 	h.Add("b")
@@ -85,7 +85,7 @@ func TestHistoryBoundsUp(t *testing.T) {
 
 func TestHistoryBoundsDown(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("a")
 	h.Add("b")
@@ -99,7 +99,7 @@ func TestHistoryBoundsDown(t *testing.T) {
 
 func TestHistoryDedup(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("hello")
 	h.Add("hello") // consecutive duplicate
@@ -116,7 +116,7 @@ func TestHistoryDedup(t *testing.T) {
 
 func TestHistoryMaxSize(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 5)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 5})
 
 	for i := 1; i <= 8; i++ {
 		h.Add("cmd" + string(rune('0'+i)))
@@ -155,7 +155,7 @@ func TestHistoryMaxSize(t *testing.T) {
 
 func TestHistoryReset(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("a")
 	h.Add("b")
@@ -174,13 +174,13 @@ func TestHistoryReset(t *testing.T) {
 func TestHistoryPersistence(t *testing.T) {
 	dir := t.TempDir()
 
-	h1 := newHistory(dir, 100)
+	h1 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	h1.Add("alpha")
 	h1.Add("beta")
 	h1.Add("gamma")
 
 	// Create a new history instance at the same dir
-	h2 := newHistory(dir, 100)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	if err := h2.Load(); err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestHistoryPersistence(t *testing.T) {
 
 func TestHistoryEmptyFile(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	if err := h.Load(); err != nil {
 		t.Fatalf("Load() on non-existent file should not error, got: %v", err)
@@ -218,11 +218,11 @@ func TestHistoryEmptyFile(t *testing.T) {
 func TestHistoryMultilineRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
-	h1 := newHistory(dir, 100)
+	h1 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	multiline := "line1\nline2\nline3"
 	h1.Add(multiline)
 
-	h2 := newHistory(dir, 100)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	if err := h2.Load(); err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestHistoryMultilineRoundTrip(t *testing.T) {
 
 func TestHistoryCompaction(t *testing.T) {
 	dir := t.TempDir()
-	h1 := newHistory(dir, 5)
+	h1 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 5})
 
 	// Add 15 entries one by one; each appends a line to the file
 	for i := 1; i <= 15; i++ {
@@ -255,7 +255,7 @@ func TestHistoryCompaction(t *testing.T) {
 	}
 
 	// Create new history and Load -- this should trigger compaction (15 > 2*5)
-	h2 := newHistory(dir, 5)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 5})
 	if err := h2.Load(); err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -300,7 +300,7 @@ func itoa(n int) string {
 
 func TestHistoryAddWhitespace(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 
 	h.Add("")
 	h.Add("   ")
@@ -328,7 +328,7 @@ not json at all
 		t.Fatal(err)
 	}
 
-	h := newHistory(dir, 100)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	if err := h.Load(); err != nil {
 		t.Fatalf("Load() should not error on malformed lines, got: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestHistorySaveRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	// Add entries, then verify the file has exactly those entries
-	h1 := newHistory(dir, 100)
+	h1 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 100})
 	h1.Add("alpha")
 	h1.Add("beta")
 	h1.Add("gamma")
@@ -361,7 +361,7 @@ func TestHistorySaveRoundTrip(t *testing.T) {
 	}
 
 	// Load into a new instance with smaller maxSize to test trim-on-load
-	h2 := newHistory(dir, 2)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 2})
 	if err := h2.Load(); err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -383,7 +383,7 @@ func TestHistorySaveRoundTrip(t *testing.T) {
 
 func TestHistoryWriteErrorSilent(t *testing.T) {
 	// Use a path that doesn't exist and can't be created
-	h := newHistory("/nonexistent/deep/path/that/cannot/be/created", 100)
+	h := newHistory(newHistoryOptions{projectDir: "/nonexistent/deep/path/that/cannot/be/created", maxSize: 100})
 
 	// Add should not panic or error — it silently fails to write
 	h.Add("test entry")
@@ -402,13 +402,13 @@ func TestHistoryRewritePreservesContent(t *testing.T) {
 	dir := t.TempDir()
 
 	// Add enough entries to trigger compaction on Load
-	h1 := newHistory(dir, 3)
+	h1 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 3})
 	for i := 1; i <= 10; i++ {
 		h1.Add("entry" + itoa(i))
 	}
 
 	// File has 10 lines, maxSize is 3 → Load triggers compaction (10 > 2*3)
-	h2 := newHistory(dir, 3)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 3})
 	if err := h2.Load(); err != nil {
 		t.Fatalf("Load() error: %v", err)
 	}
@@ -421,7 +421,7 @@ func TestHistoryRewritePreservesContent(t *testing.T) {
 	}
 
 	// A third Load should still work correctly
-	h3 := newHistory(dir, 3)
+	h3 := newHistory(newHistoryOptions{projectDir: dir, maxSize: 3})
 	if err := h3.Load(); err != nil {
 		t.Fatalf("Load() error after rewrite: %v", err)
 	}
@@ -446,13 +446,13 @@ func TestHistoryRewritePreservesContent(t *testing.T) {
 
 func TestHistoryDefaultMaxSize(t *testing.T) {
 	dir := t.TempDir()
-	h := newHistory(dir, 0)
+	h := newHistory(newHistoryOptions{projectDir: dir, maxSize: 0})
 	// maxSize 0 should default to defaultMaxHistory (100)
 	if h.maxSize != defaultMaxHistory {
 		t.Fatalf("expected maxSize=%d for 0 input, got %d", defaultMaxHistory, h.maxSize)
 	}
 
-	h2 := newHistory(dir, -5)
+	h2 := newHistory(newHistoryOptions{projectDir: dir, maxSize: -5})
 	if h2.maxSize != defaultMaxHistory {
 		t.Fatalf("expected maxSize=%d for negative input, got %d", defaultMaxHistory, h2.maxSize)
 	}

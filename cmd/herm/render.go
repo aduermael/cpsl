@@ -535,7 +535,7 @@ func (a *App) buildInputRows() []string {
 		color := approvalGradientColor(t)
 		shortMsg := fmt.Sprintf("Allow %s? [y/n]", a.approvalSummary)
 		if visibleWidth(shortMsg) > a.width {
-			shortMsg = truncateVisual(shortMsg, a.width)
+			shortMsg = truncateVisual(truncateVisualOptions{s: shortMsg, maxCols: a.width})
 		}
 		shortPad := (a.width - visibleWidth(shortMsg)) / 2
 		if shortPad < 0 {
@@ -549,7 +549,7 @@ func (a *App) buildInputRows() []string {
 		approvalRows = append(approvalRows, fmt.Sprintf("%s%s%s[0m", color, strings.Repeat(" ", shortPad), shortMsg))
 		if detail != "" {
 			if visibleWidth(detail) > a.width {
-				detail = truncateVisual(detail, a.width)
+				detail = truncateVisual(truncateVisualOptions{s: detail, maxCols: a.width})
 			}
 			detailPad := (a.width - visibleWidth(detail)) / 2
 			if detailPad < 0 {
@@ -574,7 +574,7 @@ func (a *App) buildInputRows() []string {
 	if a.menuActive && len(a.menuLines) > 0 {
 		w := a.width
 		if a.menuHeader != "" {
-			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(a.menuHeader, w)))
+			rows = append(rows, fmt.Sprintf("\033[1m%s\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: a.menuHeader, maxLen: w})))
 		}
 		maxVisible := getTerminalHeight() * 60 / 100
 		if maxVisible < 1 {
@@ -588,18 +588,18 @@ func (a *App) buildInputRows() []string {
 		for i := a.menuScrollOffset; i < end; i++ {
 			line := a.menuLines[i]
 			if i == a.menuCursor {
-				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(line, w-2)))
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s ◆\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: line, maxLen: w - 2})))
 			} else {
-				rows = append(rows, truncateWithEllipsis(line, w))
+				rows = append(rows, truncateWithEllipsis(truncateWithEllipsisOptions{s: line, maxLen: w}))
 			}
 		}
 		first := a.menuScrollOffset + 1
 		last := end
 		indicator := fmt.Sprintf("(%d->%d / %d)", first, last, total)
-		rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(indicator, w)))
+		rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: indicator, maxLen: w})))
 		if a.menuModels != nil {
 			hints := "←/→ sort column  Tab flip order  Enter select  Esc close"
-			rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(hints, w)))
+			rows = append(rows, fmt.Sprintf("\033[2m%s\033[0m", truncateWithEllipsis(truncateWithEllipsisOptions{s: hints, maxLen: w})))
 		}
 		rows = append(rows, sep)
 		return rows

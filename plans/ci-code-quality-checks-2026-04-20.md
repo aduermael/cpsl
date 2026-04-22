@@ -262,7 +262,7 @@ constrained.
 - [x] 9b: `cmd/herm/content.go` (8) — `expandPastes`, `expandAttachments`,
   `isAgentStatusCheck`, `isSleepWaitCommand`, `isBackgroundAgentCall`,
   `toolCallSummary`, `approvalCmdDesc`, `approvalShortDesc`.
-- [ ] 9c: `cmd/herm/helpers.go` + `history.go` (5) — `truncateWithEllipsis`,
+- [x] 9c: `cmd/herm/helpers.go` + `history.go` (5) — `truncateWithEllipsis`,
   `truncateVisual`, `truncateForLog`, `newDebouncer`, `newHistory`.
 
 ## Phase 10: Refactor cmd/herm markdown/tree (6 violations)

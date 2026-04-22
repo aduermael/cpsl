@@ -238,7 +238,7 @@ func renderToolBox(opts renderToolBoxOptions) string {
 	// Truncate title if it doesn't fit within the capped inner width.
 	// The top border is "┌ title ─┐", so title needs innerWidth - 2 visible chars.
 	if maxTitleVW := innerWidth - 2; titleVW > maxTitleVW && maxTitleVW >= 0 {
-		title = truncateWithEllipsis(title, maxTitleVW)
+		title = truncateWithEllipsis(truncateWithEllipsisOptions{s: title, maxLen: maxTitleVW})
 		titleVW = visibleWidth(title)
 	}
 
@@ -288,7 +288,7 @@ func renderToolBox(opts renderToolBoxOptions) string {
 			}
 			b.WriteString(lineStyle)
 			if visibleWidth(line) > innerWidth {
-				line = truncateVisual(line, innerWidth)
+				line = truncateVisual(truncateVisualOptions{s: line, maxCols: innerWidth})
 			}
 			b.WriteString(line)
 			b.WriteString(reset)
@@ -411,7 +411,7 @@ func renderToolGroup(opts renderToolGroupOptions) string {
 		if j == 0 {
 			// Top border: ┌ summary ─────┐
 			if maxTitleVW := innerWidth - 2; visibleWidth(summary) > maxTitleVW && maxTitleVW >= 0 {
-				summary = truncateWithEllipsis(summary, maxTitleVW)
+				summary = truncateWithEllipsis(truncateWithEllipsisOptions{s: summary, maxLen: maxTitleVW})
 			}
 			pad := innerWidth - visibleWidth(summary) - 2
 			if pad < 0 {
@@ -423,7 +423,7 @@ func renderToolGroup(opts renderToolGroupOptions) string {
 		} else {
 			b.WriteByte('\n')
 			if visibleWidth(summary) > innerWidth {
-				summary = truncateWithEllipsis(summary, innerWidth)
+				summary = truncateWithEllipsis(truncateWithEllipsisOptions{s: summary, maxLen: innerWidth})
 			}
 			// Show live duration on the last ├ line when in-progress.
 			isLast := j == len(entries)-1
@@ -453,7 +453,7 @@ func renderToolGroup(opts renderToolGroupOptions) string {
 					}
 				}
 				if visibleWidth(line) > innerWidth {
-					line = truncateVisual(line, innerWidth)
+					line = truncateVisual(truncateVisualOptions{s: line, maxCols: innerWidth})
 				}
 				b.WriteString(borderStyle + "│ " + reset)
 				b.WriteString(ls + line + reset)
