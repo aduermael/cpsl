@@ -513,14 +513,14 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 			a.traceCollector.StartToolCall(StartToolCallOptions{agentID: event.AgentID, toolID: event.ToolID, toolName: event.ToolName, input: event.ToolInput})
 		}
 		// Suppress internal tool calls (agent status checks, sleep waits, background agent spawns) from the UI.
-		if isAgentStatusCheck(event.ToolName, event.ToolInput) || isSleepWaitCommand(event.ToolName, event.ToolInput) || isBackgroundAgentCall(event.ToolName, event.ToolInput) {
+		if isAgentStatusCheck(isAgentStatusCheckOptions{toolName: event.ToolName, input: event.ToolInput}) || isSleepWaitCommand(isSleepWaitCommandOptions{toolName: event.ToolName, input: event.ToolInput}) || isBackgroundAgentCall(isBackgroundAgentCallOptions{toolName: event.ToolName, input: event.ToolInput}) {
 			if a.suppressedToolIDs == nil {
 				a.suppressedToolIDs = make(map[string]bool)
 			}
 			a.suppressedToolIDs[event.ToolID] = true
 			break
 		}
-		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(event.ToolName, event.ToolInput), leadBlank: true, toolName: event.ToolName})
+		a.messages = append(a.messages, chatMessage{kind: msgToolCall, content: toolCallSummary(toolCallSummaryOptions{toolName: event.ToolName, input: event.ToolInput}), leadBlank: true, toolName: event.ToolName})
 		a.toolStartTime = time.Now()
 		if a.toolTimer != nil {
 			a.toolTimer.Stop()
@@ -625,7 +625,7 @@ func (a *App) handleAgentEvent(event AgentEvent) {
 		a.awaitingApproval = true
 		a.approvalPauseStart = time.Now()
 		a.approvalToolID = event.ToolID
-		a.approvalSummary = approvalShortDesc(event.ToolName, event.ToolInput)
+		a.approvalSummary = approvalShortDesc(approvalShortDescOptions{toolName: event.ToolName, input: event.ToolInput})
 		a.approvalDesc = event.ApprovalDesc
 		// Stop tool timer ticker so the tool box timer freezes during approval.
 		if a.toolTimer != nil {

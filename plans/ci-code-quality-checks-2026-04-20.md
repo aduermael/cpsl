@@ -259,7 +259,7 @@ constrained.
   `ollamaModelProvider`, `mergeConfigs`, `saveConfigTo`, `saveProjectConfig`,
   `openConfigModelPicker`, `doOpenConfigModelPicker`, `handleConfigByte`,
   `handleConfigEditByte`.
-- [ ] 9b: `cmd/herm/content.go` (8) — `expandPastes`, `expandAttachments`,
+- [x] 9b: `cmd/herm/content.go` (8) — `expandPastes`, `expandAttachments`,
   `isAgentStatusCheck`, `isSleepWaitCommand`, `isBackgroundAgentCall`,
   `toolCallSummary`, `approvalCmdDesc`, `approvalShortDesc`.
 - [ ] 9c: `cmd/herm/helpers.go` + `history.go` (5) — `truncateWithEllipsis`,

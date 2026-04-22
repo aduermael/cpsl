@@ -544,12 +544,12 @@ func TestBuildInputRows(t *testing.T) {
 }
 
 func TestToolCallSummary(t *testing.T) {
-	got := toolCallSummary("bash", []byte(`{"command":"ls -la"}`))
+	got := toolCallSummary(toolCallSummaryOptions{toolName: "bash", input: []byte(`{"command":"ls -la"}`)})
 	if !strings.Contains(got, "~ $") || !strings.Contains(got, "ls -la") {
 		t.Errorf("toolCallSummary(bash) = %q, want to contain '~ $' and 'ls -la'", got)
 	}
 
-	got = toolCallSummary("unknown_tool", nil)
+	got = toolCallSummary(toolCallSummaryOptions{toolName: "unknown_tool", input: nil})
 	if !strings.Contains(got, "unknown_tool") {
 		t.Errorf("toolCallSummary(unknown_tool) = %q, want to contain unknown_tool", got)
 	}
@@ -2565,7 +2565,7 @@ func TestIsSleepWaitCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := isSleepWaitCommand(tt.toolName, json.RawMessage(tt.input))
+			got := isSleepWaitCommand(isSleepWaitCommandOptions{toolName: tt.toolName, input: json.RawMessage(tt.input)})
 			if got != tt.want {
 				t.Errorf("isSleepWaitCommand(%q, %s) = %v, want %v", tt.toolName, tt.input, got, tt.want)
 			}

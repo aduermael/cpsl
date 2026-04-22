@@ -651,8 +651,8 @@ func (a *App) handleEnter() {
 		return
 	}
 
-	display := expandPastes(val, a.pasteStore)
-	content := expandAttachments(display, a.attachments)
+	display := expandPastes(expandPastesOptions{s: val, store: a.pasteStore})
+	content := expandAttachments(expandAttachmentsOptions{s: display, store: a.attachments})
 	a.resetInput()
 	a.pasteStore = nil
 	a.pasteCount = 0

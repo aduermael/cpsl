@@ -8,7 +8,7 @@ import (
 )
 
 func TestExpandAttachments_NoStore(t *testing.T) {
-	got := expandAttachments("hello world", nil)
+	got := expandAttachments(expandAttachmentsOptions{s: "hello world", store: nil})
 	if got != "hello world" {
 		t.Fatalf("expected passthrough, got %q", got)
 	}
@@ -16,7 +16,7 @@ func TestExpandAttachments_NoStore(t *testing.T) {
 
 func TestExpandAttachments_NoPlaceholders(t *testing.T) {
 	store := map[int]Attachment{1: {Data: "abc", MediaType: "image/png", IsImage: true}}
-	got := expandAttachments("hello world", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "hello world", store: store})
 	if got != "hello world" {
 		t.Fatalf("expected passthrough, got %q", got)
 	}
@@ -26,7 +26,7 @@ func TestExpandAttachments_SingleImage(t *testing.T) {
 	store := map[int]Attachment{
 		1: {Data: "AAAA", MediaType: "image/png", IsImage: true},
 	}
-	got := expandAttachments("Look at this: [Image #1] ok?", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "Look at this: [Image #1] ok?", store: store})
 
 	var blocks []map[string]string
 	if err := json.Unmarshal([]byte(got), &blocks); err != nil {
@@ -50,7 +50,7 @@ func TestExpandAttachments_SingleFile(t *testing.T) {
 	store := map[int]Attachment{
 		1: {Data: "BBBB", MediaType: "application/pdf", IsImage: false},
 	}
-	got := expandAttachments("[File #1]", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "[File #1]", store: store})
 
 	var blocks []map[string]string
 	if err := json.Unmarshal([]byte(got), &blocks); err != nil {
@@ -69,7 +69,7 @@ func TestExpandAttachments_Multiple(t *testing.T) {
 		1: {Data: "IMG1", MediaType: "image/png", IsImage: true},
 		2: {Data: "PDF1", MediaType: "application/pdf", IsImage: false},
 	}
-	got := expandAttachments("[Image #1] and [File #2]", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "[Image #1] and [File #2]", store: store})
 
 	var blocks []map[string]string
 	if err := json.Unmarshal([]byte(got), &blocks); err != nil {
@@ -94,7 +94,7 @@ func TestExpandAttachments_MissingID(t *testing.T) {
 		1: {Data: "IMG1", MediaType: "image/png", IsImage: true},
 	}
 	// [Image #99] not in store — should be kept as text
-	got := expandAttachments("hello [Image #99] world", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "hello [Image #99] world", store: store})
 
 	var blocks []map[string]string
 	if err := json.Unmarshal([]byte(got), &blocks); err != nil {
@@ -119,7 +119,7 @@ func TestExpandAttachments_TextOnly(t *testing.T) {
 		1: {Data: "IMG1", MediaType: "image/png", IsImage: true},
 	}
 	// Only text, no placeholders — but store is non-empty
-	got := expandAttachments("just text", store)
+	got := expandAttachments(expandAttachmentsOptions{s: "just text", store: store})
 	if got != "just text" {
 		t.Fatalf("expected passthrough, got %q", got)
 	}

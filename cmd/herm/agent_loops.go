@@ -637,7 +637,7 @@ func (a *Agent) runLoop(ctx context.Context, opts runLoopOptions) {
 					ToolName:     tc.Name,
 					ToolID:       tc.ID,
 					ToolInput:    tc.Input,
-					ApprovalDesc: approvalCmdDesc(tc.Name, tc.Input),
+					ApprovalDesc: approvalCmdDesc(approvalCmdDescOptions{toolName: tc.Name, input: tc.Input}),
 				})
 
 				// Wait for approval

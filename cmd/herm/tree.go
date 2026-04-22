@@ -253,7 +253,7 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 				title := "~ tool"
 				for i, tc := range pendingToolUses {
 					if tc.ID == r.ToolUseID {
-						title = toolCallSummary(tc.Name, tc.Input)
+						title = toolCallSummary(toolCallSummaryOptions{toolName: tc.Name, input: tc.Input})
 						matchedTC = &pendingToolUses[i]
 						break
 					}
@@ -279,7 +279,7 @@ func (a *App) rebuildChatMessages(nodes []*types.Node) []chatMessage {
 				}
 				skipNextToolResult = true
 			} else {
-				msgs = append(msgs, chatMessage{kind: msgToolCall, content: toolCallSummary(name, input), leadBlank: true})
+				msgs = append(msgs, chatMessage{kind: msgToolCall, content: toolCallSummary(toolCallSummaryOptions{toolName: name, input: input}), leadBlank: true})
 			}
 
 		case n.NodeType == types.NodeTypeToolResult:

@@ -30,7 +30,14 @@ var pasteplaceholderRe = regexp.MustCompile(`\[pasted #(\d+) \| \d+ chars\]`)
 // unicodeEscapeRe matches \u{XXXX} escapes emitted by some terminals (e.g. Zed).
 var unicodeEscapeRe = regexp.MustCompile(`\\u\{([0-9a-fA-F]+)\}`)
 
-func expandPastes(s string, store map[int]string) string {
+// expandPastesOptions is the parameter bundle for expandPastes.
+type expandPastesOptions struct {
+	s     string
+	store map[int]string
+}
+
+func expandPastes(opts expandPastesOptions) string {
+	s, store := opts.s, opts.store
 	return pasteplaceholderRe.ReplaceAllStringFunc(s, func(match string) string {
 		sub := pasteplaceholderRe.FindStringSubmatch(match)
 		if len(sub) < 2 {
@@ -146,7 +153,14 @@ var attachmentPlaceholderRe = regexp.MustCompile(`\[(Image|File) #(\d+)\]`)
 // attachments become {"type":"image"} blocks, and file attachments become
 // {"type":"document"} blocks. The returned JSON string is understood by
 // langdag's contentToRawMessage() which passes arrays through as-is.
-func expandAttachments(s string, store map[int]Attachment) string {
+// expandAttachmentsOptions is the parameter bundle for expandAttachments.
+type expandAttachmentsOptions struct {
+	s     string
+	store map[int]Attachment
+}
+
+func expandAttachments(opts expandAttachmentsOptions) string {
+	s, store := opts.s, opts.store
 	if len(store) == 0 {
 		return s
 	}
@@ -207,10 +221,17 @@ func expandAttachments(s string, store map[int]Attachment) string {
 
 // ─── Tool call suppression helpers ───
 
+// isAgentStatusCheckOptions is the parameter bundle for isAgentStatusCheck.
+type isAgentStatusCheckOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
 // isAgentStatusCheck returns true if the tool call is an "agent" tool
 // with task:"status" — these are internal polling calls whose info is
 // already shown in the sub-agent display and status line.
-func isAgentStatusCheck(toolName string, input json.RawMessage) bool {
+func isAgentStatusCheck(opts isAgentStatusCheckOptions) bool {
+	toolName, input := opts.toolName, opts.input
 	if toolName != "agent" {
 		return false
 	}
@@ -227,10 +248,17 @@ func isAgentStatusCheck(toolName string, input json.RawMessage) bool {
 // Examples: "sleep 15", "sleep 30 && echo done", "sleep 5 && echo \"done waiting\""
 var sleepWaitRe = regexp.MustCompile(`^\s*sleep\s+\d+\s*(&&\s*echo\s+.*)?\s*$`)
 
+// isSleepWaitCommandOptions is the parameter bundle for isSleepWaitCommand.
+type isSleepWaitCommandOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
 // isSleepWaitCommand returns true if the tool call is a "bash" command
 // containing only a sleep (optionally followed by echo). These are internal
 // polling waits whose purpose is already conveyed by the sub-agent display.
-func isSleepWaitCommand(toolName string, input json.RawMessage) bool {
+func isSleepWaitCommand(opts isSleepWaitCommandOptions) bool {
+	toolName, input := opts.toolName, opts.input
 	if toolName != "bash" {
 		return false
 	}
@@ -243,16 +271,29 @@ func isSleepWaitCommand(toolName string, input json.RawMessage) bool {
 	return sleepWaitRe.MatchString(in.Command)
 }
 
+// isBackgroundAgentCallOptions is the parameter bundle for isBackgroundAgentCall.
+type isBackgroundAgentCallOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
 // isBackgroundAgentCall returns true if the tool call is a background sub-agent
 // spawn. These are suppressed from the UI because the sub-agent group display
 // already shows all active/completed agents with richer information.
-func isBackgroundAgentCall(toolName string, input json.RawMessage) bool {
-	return toolName == "agent" && isBackgroundAgentInput(input)
+func isBackgroundAgentCall(opts isBackgroundAgentCallOptions) bool {
+	return opts.toolName == "agent" && isBackgroundAgentInput(opts.input)
 }
 
 // ─── Tool result helpers ───
 
-func toolCallSummary(toolName string, input json.RawMessage) string {
+// toolCallSummaryOptions is the parameter bundle for toolCallSummary.
+type toolCallSummaryOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
+func toolCallSummary(opts toolCallSummaryOptions) string {
+	toolName, input := opts.toolName, opts.input
 	switch toolName {
 	case "bash":
 		var in struct {
@@ -304,10 +345,17 @@ func toolCallSummary(toolName string, input json.RawMessage) string {
 	return fmt.Sprintf("~ %s", toolName)
 }
 
+// approvalCmdDescOptions is the parameter bundle for approvalCmdDesc.
+type approvalCmdDescOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
 // approvalCmdDesc formats a tool call as a terminal command string for the
 // approval detail line. For known tools (bash, git) it reconstructs the
 // command; for unknown tools it falls back to "name: {json}".
-func approvalCmdDesc(toolName string, input json.RawMessage) string {
+func approvalCmdDesc(opts approvalCmdDescOptions) string {
+	toolName, input := opts.toolName, opts.input
 	switch toolName {
 	case "bash":
 		var in struct {
@@ -337,9 +385,16 @@ func approvalCmdDesc(toolName string, input json.RawMessage) string {
 	return fmt.Sprintf("%s: %s", toolName, string(input))
 }
 
+// approvalShortDescOptions is the parameter bundle for approvalShortDesc.
+type approvalShortDescOptions struct {
+	toolName string
+	input    json.RawMessage
+}
+
 // approvalShortDesc creates a short summary of a tool call for approval prompts.
 // It extracts key info from the tool name and input (similar to toolCallSummary).
-func approvalShortDesc(toolName string, input json.RawMessage) string {
+func approvalShortDesc(opts approvalShortDescOptions) string {
+	toolName, input := opts.toolName, opts.input
 	switch toolName {
 	case "bash":
 		var in struct {
