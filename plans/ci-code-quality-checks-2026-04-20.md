@@ -272,7 +272,7 @@ constrained.
 
 ## Phase 11: Enforce positional-params rule
 
-- [ ] 11a: Flip the `positional-params` job in
+- [x] 11a: Flip the `positional-params` job in
   `.github/workflows/ci-checks.yml` from `continue-on-error: true` to a hard
   fail after confirming no remaining violations across `cmd/herm/` and
   `tools/`.

@@ -20,7 +20,7 @@ jobs:
           - rule: docstring
             continue-on-error: false
           - rule: positional-params
-            continue-on-error: true
+            continue-on-error: false
     steps:
       - uses: actions/checkout@v5
 
