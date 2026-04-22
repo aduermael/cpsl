@@ -190,7 +190,7 @@ func (t *SubAgentTool) cachedSnapshot() projectSnapshot {
 func (t *SubAgentTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "agent",
-		Description: getToolDescription("agent", "Spawn a sub-agent to handle a complex subtask. The sub-agent has its own context window and communicates only via its output — no shared memory."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "agent", fallback: "Spawn a sub-agent to handle a complex subtask. The sub-agent has its own context window and communicates only via its output — no shared memory."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -584,7 +584,13 @@ func (t *SubAgentTool) Execute(ctx context.Context, input json.RawMessage) (stri
 
 	// Build a lean sub-agent system prompt: skips communication, personality,
 	// skills, and uses a compact role section instead of the full orchestrator framing.
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap)
+	systemPrompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{
+		tools:          subTools,
+		serverTools:    t.serverTools,
+		workDir:        t.workDir,
+		containerImage: t.containerImage,
+		snap:           &snap,
+	})
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),
@@ -684,7 +690,13 @@ func (t *SubAgentTool) executeBackground(_ context.Context, in subAgentInput) (s
 	if in.Mode == ModeExplore {
 		snap.GitStatus = ""
 	}
-	systemPrompt := buildSubAgentSystemPrompt(subTools, t.serverTools, t.workDir, t.containerImage, &snap)
+	systemPrompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{
+		tools:          subTools,
+		serverTools:    t.serverTools,
+		workDir:        t.workDir,
+		containerImage: t.containerImage,
+		snap:           &snap,
+	})
 
 	agentOpts := []AgentOption{
 		WithMaxToolIterations(maxTurns + subAgentIterationBuffer),

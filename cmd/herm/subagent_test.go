@@ -507,7 +507,7 @@ func TestSubAgentToolExploreSystemPromptExcludesWriteTools(t *testing.T) {
 	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	exploreTools := tool.buildSubAgentTools("explore")
 
-	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{tools: exploreTools, serverTools: nil, workDir: "/workspace", containerImage: "alpine:latest", snap: nil})
 
 	// The system prompt HasEditFile/HasWriteFile/HasDevenv/HasGit flags should be false,
 	// meaning those tool sections are not included.
@@ -2553,7 +2553,7 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 
 	// Explore mode: no edit/write tools → should include exploration strategy.
 	exploreTools := tool.buildSubAgentTools("explore")
-	explorePrompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
+	explorePrompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{tools: exploreTools, serverTools: nil, workDir: "/workspace", containerImage: "alpine:latest", snap: nil})
 
 	for _, keyword := range []string{"Exploration strategy", "offset/limit", "Stop when you have enough"} {
 		if !strings.Contains(explorePrompt, keyword) {
@@ -2563,7 +2563,7 @@ func TestExplorePromptContainsExplorationStrategy(t *testing.T) {
 
 	// General mode: has edit/write tools → should NOT include exploration strategy.
 	generalTools := tool.buildSubAgentTools(ModeGeneral)
-	generalPrompt := buildSubAgentSystemPrompt(generalTools, nil, "/workspace", "alpine:latest", nil)
+	generalPrompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{tools: generalTools, serverTools: nil, workDir: "/workspace", containerImage: "alpine:latest", snap: nil})
 
 	if strings.Contains(generalPrompt, "Exploration strategy") {
 		t.Error("general prompt should NOT contain exploration strategy section")
@@ -3475,7 +3475,7 @@ func TestIntegrationSubAgentSystemPromptIncludesTurnBudget(t *testing.T) {
 	// Verify the loaded tool description for "agent" mentions the default turn budget.
 	// The tool's Definition().Description uses a fallback when the package-level
 	// toolDescriptions cache isn't initialized, so test the loader directly.
-	descs := loadToolDescriptions("alpine:latest", tmpDir, 0, 0)
+	descs := loadToolDescriptions(loadToolDescriptionsOptions{containerImage: "alpine:latest", workDir: tmpDir, exploreMaxTurns: 0, generalMaxTurns: 0})
 	agentDesc, ok := descs["agent"]
 	if !ok {
 		t.Fatal("loadToolDescriptions should include 'agent' tool")

@@ -76,7 +76,7 @@ func NewGlobTool(container *ContainerClient) *GlobTool {
 func (t *GlobTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "glob",
-		Description: getToolDescription("glob", "Find files by glob pattern. Returns matching paths sorted alphabetically, one per line. Respects .gitignore."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "glob", fallback: "Find files by glob pattern. Returns matching paths sorted alphabetically, one per line. Respects .gitignore."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -171,7 +171,7 @@ func NewGrepTool(container *ContainerClient) *GrepTool {
 func (t *GrepTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "grep",
-		Description: getToolDescription("grep", "Search file contents by regex pattern. Returns matching files, lines, or counts. Respects .gitignore."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "grep", fallback: "Search file contents by regex pattern. Returns matching files, lines, or counts. Respects .gitignore."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -316,7 +316,7 @@ func NewReadFileTool(container *ContainerClient) *ReadFileTool {
 func (t *ReadFileTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "read_file",
-		Description: getToolDescription("read_file", "Read file contents with line numbers. Supports reading specific line ranges to avoid loading entire large files."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "read_file", fallback: "Read file contents with line numbers. Supports reading specific line ranges to avoid loading entire large files."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -441,7 +441,7 @@ func NewEditFileTool(container *ContainerClient) *EditFileTool {
 func (t *EditFileTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "edit_file",
-		Description: getToolDescription("edit_file", "Replace a specific string in a file. old_string must appear exactly once unless replace_all is true. Returns a unified diff showing the change."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "edit_file", fallback: "Replace a specific string in a file. old_string must appear exactly once unless replace_all is true. Returns a unified diff showing the change."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -550,7 +550,7 @@ func NewWriteFileTool(container *ContainerClient) *WriteFileTool {
 func (t *WriteFileTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "write_file",
-		Description: getToolDescription("write_file", "Create a new file or overwrite an existing one. Returns a summary (line count, byte count) and a unified diff if overwriting."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "write_file", fallback: "Create a new file or overwrite an existing one. Returns a summary (line count, byte count) and a unified diff if overwriting."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -658,7 +658,7 @@ func NewOutlineTool(container *ContainerClient) *OutlineTool {
 func (t *OutlineTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "outline",
-		Description: getToolDescription("outline", "Extract function/type/class signatures from one or more files. Returns a compact outline with line numbers — much cheaper than reading the full file."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "outline", fallback: "Extract function/type/class signatures from one or more files. Returns a compact outline with line numbers — much cheaper than reading the full file."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {

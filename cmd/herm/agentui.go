@@ -13,12 +13,18 @@ import (
 	"langdag.com/langdag/types"
 )
 
+// formatToolDefinitionsOptions is the parameter bundle for formatToolDefinitions.
+type formatToolDefinitionsOptions struct {
+	tools       []Tool
+	serverTools []types.ToolDefinition
+}
+
 // formatToolDefinitions builds a compact display of all tool definitions
 // the LLM receives, including client tools and server tools.
-func formatToolDefinitions(tools []Tool, serverTools []types.ToolDefinition) string {
+func formatToolDefinitions(opts formatToolDefinitionsOptions) string {
 	var b strings.Builder
 	b.WriteString("── Tool Definitions ──\n")
-	for _, t := range tools {
+	for _, t := range opts.tools {
 		def := t.Definition()
 		b.WriteString("\n")
 		b.WriteString(def.Name)
@@ -43,7 +49,7 @@ func formatToolDefinitions(tools []Tool, serverTools []types.ToolDefinition) str
 		}
 		b.WriteString("\n")
 	}
-	for _, st := range serverTools {
+	for _, st := range opts.serverTools {
 		b.WriteString("\n")
 		b.WriteString(st.Name)
 		b.WriteString(": ")
@@ -213,7 +219,12 @@ func (a *App) startAgent(userMessage string) {
 	}
 
 	// Load tool descriptions from embedded markdown files, replacing dynamic placeholders.
-	toolDescriptions = loadToolDescriptions(containerImage, workDir, exploreMaxTurns, generalMaxTurns)
+	toolDescriptions = loadToolDescriptions(loadToolDescriptionsOptions{
+		containerImage:  containerImage,
+		workDir:         workDir,
+		exploreMaxTurns: exploreMaxTurns,
+		generalMaxTurns: generalMaxTurns,
+	})
 	maxDepth := a.config.MaxAgentDepth
 	if maxDepth <= 0 {
 		maxDepth = defaultMaxAgentDepth
@@ -242,7 +253,16 @@ func (a *App) startAgent(userMessage string) {
 	if a.worktreePath != "" {
 		wtBranch = worktreeBranch(a.worktreePath)
 	}
-	systemPrompt := buildSystemPrompt(tools, serverTools, skills, workDir, a.config.Personality, containerImage, wtBranch, a.projectSnap)
+	systemPrompt := buildSystemPrompt(buildSystemPromptOptions{
+		tools:          tools,
+		serverTools:    serverTools,
+		skills:         skills,
+		workDir:        workDir,
+		personality:    a.config.Personality,
+		containerImage: containerImage,
+		worktreeBranch: wtBranch,
+		snap:           a.projectSnap,
+	})
 
 	// Feed system prompt, tool definitions, and user message to trace collector.
 	if a.traceCollector != nil {

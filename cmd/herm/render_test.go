@@ -3576,7 +3576,7 @@ func TestIntegrationExplorePromptProgressiveDepth(t *testing.T) {
 	}
 	tool := NewSubAgentTool(SubAgentConfig{Tools: allTools, ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: "/workspace", ContainerImage: "alpine:latest"})
 	exploreTools := tool.buildSubAgentTools("explore")
-	prompt := buildSubAgentSystemPrompt(exploreTools, nil, "/workspace", "alpine:latest", nil)
+	prompt := buildSubAgentSystemPrompt(buildSubAgentSystemPromptOptions{tools: exploreTools, serverTools: nil, workDir: "/workspace", containerImage: "alpine:latest", snap: nil})
 
 	keywords := []string{"outline", "offset/limit", "Stop when you have enough"}
 	for _, kw := range keywords {

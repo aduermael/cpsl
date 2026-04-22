@@ -234,7 +234,7 @@ constrained.
 - [x] 7b: `cmd/herm/subagent.go` (7) — `forwardBlockingWithTimeout`,
   `saveNodeID`, `runBackground`, `gracefulSubAgentSynthesis`, `buildResult`,
   `formatSubAgentResult`, `writeOutputFile`.
-- [ ] 7c: `cmd/herm/systemprompt.go` + `tooldesc.go` + `agentui.go` (5) —
+- [x] 7c: `cmd/herm/systemprompt.go` + `tooldesc.go` + `agentui.go` (5) —
   `buildSystemPrompt`, `buildSubAgentSystemPrompt`, `loadToolDescriptions`,
   `getToolDescription`, `formatToolDefinitions`.
 

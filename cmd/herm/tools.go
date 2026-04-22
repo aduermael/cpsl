@@ -51,7 +51,7 @@ func NewBashTool(opts NewBashToolOptions) *BashTool {
 func (t *BashTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "bash",
-		Description: getToolDescription("bash", "Run a shell command in the dev container. Output is truncated to 80 lines / 12KB (head+tail)."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "bash", fallback: "Run a shell command in the dev container. Output is truncated to 80 lines / 12KB (head+tail)."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -182,7 +182,7 @@ func NewGitTool(opts NewGitToolOptions) *GitTool {
 func (t *GitTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "git",
-		Description: getToolDescription("git", "Run git commands on the host in the project worktree. Required for remote operations (push/pull/fetch) since only the host has SSH keys and credentials."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "git", fallback: "Run git commands on the host in the project worktree. Required for remote operations (push/pull/fetch) since only the host has SSH keys and credentials."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {
@@ -344,7 +344,7 @@ func NewDevEnvTool(opts NewDevEnvToolOptions) *DevEnvTool {
 func (t *DevEnvTool) Definition() types.ToolDefinition {
 	return types.ToolDefinition{
 		Name:        "devenv",
-		Description: getToolDescription("devenv", "Manage the single dev container Dockerfile at .herm/Dockerfile. The built image replaces the running container and persists across sessions."),
+		Description: getToolDescription(getToolDescriptionOptions{name: "devenv", fallback: "Manage the single dev container Dockerfile at .herm/Dockerfile. The built image replaces the running container and persists across sessions."}),
 		InputSchema: json.RawMessage(`{
 			"type": "object",
 			"properties": {

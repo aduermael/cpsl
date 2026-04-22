@@ -22,11 +22,21 @@ type ToolDesc struct {
 // Initialized by loadToolDescriptions() at startup.
 var toolDescriptions map[string]ToolDesc
 
+// loadToolDescriptionsOptions is the parameter bundle for loadToolDescriptions.
+type loadToolDescriptionsOptions struct {
+	containerImage  string
+	workDir         string
+	exploreMaxTurns int
+	generalMaxTurns int
+}
+
 // loadToolDescriptions reads all markdown files from the embedded prompts/tools/
 // directory and returns a map keyed by tool name. Dynamic placeholders
 // (__CONTAINER_IMAGE__, __WORK_DIR__, __EXPLORE_MAX_TURNS__, __GENERAL_MAX_TURNS__)
 // are replaced with the provided values.
-func loadToolDescriptions(containerImage, workDir string, exploreMaxTurns, generalMaxTurns int) map[string]ToolDesc {
+func loadToolDescriptions(opts loadToolDescriptionsOptions) map[string]ToolDesc {
+	exploreMaxTurns := opts.exploreMaxTurns
+	generalMaxTurns := opts.generalMaxTurns
 	if exploreMaxTurns <= 0 {
 		exploreMaxTurns = defaultExploreMaxTurns
 	}
@@ -56,13 +66,13 @@ func loadToolDescriptions(containerImage, workDir string, exploreMaxTurns, gener
 		}
 
 		// Replace dynamic placeholders.
-		if containerImage != "" {
-			td.Full = strings.ReplaceAll(td.Full, "__CONTAINER_IMAGE__", containerImage)
-			td.Brief = strings.ReplaceAll(td.Brief, "__CONTAINER_IMAGE__", containerImage)
+		if opts.containerImage != "" {
+			td.Full = strings.ReplaceAll(td.Full, "__CONTAINER_IMAGE__", opts.containerImage)
+			td.Brief = strings.ReplaceAll(td.Brief, "__CONTAINER_IMAGE__", opts.containerImage)
 		}
-		if workDir != "" {
-			td.Full = strings.ReplaceAll(td.Full, "__WORK_DIR__", workDir)
-			td.Brief = strings.ReplaceAll(td.Brief, "__WORK_DIR__", workDir)
+		if opts.workDir != "" {
+			td.Full = strings.ReplaceAll(td.Full, "__WORK_DIR__", opts.workDir)
+			td.Brief = strings.ReplaceAll(td.Brief, "__WORK_DIR__", opts.workDir)
 		}
 		// Per-mode budget placeholders.
 		exploreStr := fmt.Sprintf("%d", exploreMaxTurns)
@@ -147,14 +157,20 @@ func toolParamNames(schema json.RawMessage) []string {
 	return names
 }
 
+// getToolDescriptionOptions is the parameter bundle for getToolDescription.
+type getToolDescriptionOptions struct {
+	name     string
+	fallback string
+}
+
 // getToolDescription returns the full description for a named tool,
 // falling back to the provided default if not found in the loaded descriptions.
-func getToolDescription(name, fallback string) string {
+func getToolDescription(opts getToolDescriptionOptions) string {
 	if toolDescriptions == nil {
-		return fallback
+		return opts.fallback
 	}
-	if td, ok := toolDescriptions[name]; ok {
+	if td, ok := toolDescriptions[opts.name]; ok {
 		return td.Full
 	}
-	return fallback
+	return opts.fallback
 }

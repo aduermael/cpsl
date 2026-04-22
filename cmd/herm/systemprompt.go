@@ -52,21 +52,33 @@ type PromptData struct {
 	DefaultSubAgentMaxTurns int
 }
 
+// buildSystemPromptOptions is the parameter bundle for buildSystemPrompt.
+type buildSystemPromptOptions struct {
+	tools          []Tool
+	serverTools    []types.ToolDefinition
+	skills         []Skill
+	workDir        string
+	personality    string
+	containerImage string
+	worktreeBranch string
+	snap           *projectSnapshot
+}
+
 // buildSystemPrompt constructs the system prompt for the coding agent.
 // Tool-specific guidelines are included only when the corresponding tool is available.
 // serverTools are provider-side tools (e.g. web search) declared but not executed by the client.
 // Structured into: Environment, Role, Tools, Practices, Communication, Personality, Skills.
-func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills []Skill, workDir string, personality string, containerImage string, worktreeBranch string, snap *projectSnapshot) string {
+func buildSystemPrompt(opts buildSystemPromptOptions) string {
 	toolNames := make(map[string]bool)
 	var hostTools []string
-	for _, t := range tools {
+	for _, t := range opts.tools {
 		name := t.Definition().Name
 		toolNames[name] = true
 		if t.HostTool() {
 			hostTools = append(hostTools, name)
 		}
 	}
-	for _, st := range serverTools {
+	for _, st := range opts.serverTools {
 		toolNames[st.Name] = true
 	}
 
@@ -82,21 +94,21 @@ func buildSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, skills 
 		HasOutline:     toolNames["outline"],
 		HasEditFile:    toolNames["edit_file"],
 		HasWriteFile:   toolNames["write_file"],
-		ContainerImage:          containerImage,
-		WorkDir:                 workDir,
-		WorktreeBranch:          worktreeBranch,
+		ContainerImage:          opts.containerImage,
+		WorkDir:                 opts.workDir,
+		WorktreeBranch:          opts.worktreeBranch,
 		Date:                    time.Now().Format("2006-01-02 15:04 MST"),
-		Personality:             personality,
-		Skills:                  skills,
+		Personality:             opts.personality,
+		Skills:                  opts.skills,
 		DefaultSubAgentMaxTurns: defaultGeneralMaxTurns,
 	}
 
-	data.ContainerEnv = readContainerEnv(workDir)
+	data.ContainerEnv = readContainerEnv(opts.workDir)
 
-	if snap != nil {
-		data.TopLevelListing = snap.TopLevel
-		data.RecentCommits = snap.RecentCommits
-		data.GitStatus = snap.GitStatus
+	if opts.snap != nil {
+		data.TopLevelListing = opts.snap.TopLevel
+		data.RecentCommits = opts.snap.RecentCommits
+		data.GitStatus = opts.snap.GitStatus
 	}
 
 	var buf bytes.Buffer
@@ -125,21 +137,30 @@ func readContainerEnv(workDir string) string {
 	return strings.Join(lines, "\n")
 }
 
+// buildSubAgentSystemPromptOptions is the parameter bundle for buildSubAgentSystemPrompt.
+type buildSubAgentSystemPromptOptions struct {
+	tools          []Tool
+	serverTools    []types.ToolDefinition
+	workDir        string
+	containerImage string
+	snap           *projectSnapshot
+}
+
 // buildSubAgentSystemPrompt constructs a leaner system prompt for sub-agents.
 // It uses the "system_subagent" entry-point template which chains only
 // role, tools, practices, and environment — skipping communication,
 // personality, and skills to reduce token overhead.
-func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition, workDir string, containerImage string, snap *projectSnapshot) string {
+func buildSubAgentSystemPrompt(opts buildSubAgentSystemPromptOptions) string {
 	toolNames := make(map[string]bool)
 	var hostTools []string
-	for _, t := range tools {
+	for _, t := range opts.tools {
 		name := t.Definition().Name
 		toolNames[name] = true
 		if t.HostTool() {
 			hostTools = append(hostTools, name)
 		}
 	}
-	for _, st := range serverTools {
+	for _, st := range opts.serverTools {
 		toolNames[st.Name] = true
 	}
 
@@ -156,18 +177,18 @@ func buildSubAgentSystemPrompt(tools []Tool, serverTools []types.ToolDefinition,
 		HasEditFile:    toolNames["edit_file"],
 		HasWriteFile:   toolNames["write_file"],
 		IsSubAgent:              true,
-		ContainerImage:          containerImage,
-		ContainerEnv:            readContainerEnv(workDir),
-		WorkDir:                 workDir,
+		ContainerImage:          opts.containerImage,
+		ContainerEnv:            readContainerEnv(opts.workDir),
+		WorkDir:                 opts.workDir,
 		Date:                    time.Now().Format("2006-01-02 15:04 MST"),
 		DefaultSubAgentMaxTurns: defaultGeneralMaxTurns,
 		// Personality, Skills, WorktreeBranch intentionally omitted for sub-agents.
 	}
 
-	if snap != nil {
-		data.TopLevelListing = snap.TopLevel
-		data.RecentCommits = snap.RecentCommits
-		data.GitStatus = snap.GitStatus
+	if opts.snap != nil {
+		data.TopLevelListing = opts.snap.TopLevel
+		data.RecentCommits = opts.snap.RecentCommits
+		data.GitStatus = opts.snap.GitStatus
 	}
 
 	var buf bytes.Buffer
