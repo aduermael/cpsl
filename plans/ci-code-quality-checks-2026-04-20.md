@@ -286,5 +286,9 @@ constrained.
 - [x] 12a: Audit `.github/workflows/` — confirm `test.yml`, `ci-checks.yml`,
   `prompt-length.yml`, and release workflows are the full set. Remove any
   dead references to the old `source-file-length.yml`.
-- [ ] 12b: Smoke-test the full pipeline against `main` by opening a dry-run PR
-  or running the workflow locally; confirm green across all rules.
+- [x] 12b: Smoke-test the full pipeline against `main` by opening a dry-run PR
+  or running the workflow locally; confirm green across all rules. Local
+  smoke-test flagged two files that had drifted past the 1000-line cap
+  during Phase 4/7 option-struct refactors: `cmd/herm/input.go` (1013) split
+  into `input.go` + `input_keys.go`, and `cmd/herm/subagent.go` (1112) split
+  into `subagent.go` + `subagent_output.go`. All three rules now green.
