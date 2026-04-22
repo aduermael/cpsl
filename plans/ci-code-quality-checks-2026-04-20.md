@@ -255,7 +255,7 @@ constrained.
 
 **Parallel Tasks: 9a, 9b, 9c**
 
-- [ ] 9a: `cmd/herm/config.go` + `configeditor.go` (9) — `preferredDefault`,
+- [x] 9a: `cmd/herm/config.go` + `configeditor.go` (9) — `preferredDefault`,
   `ollamaModelProvider`, `mergeConfigs`, `saveConfigTo`, `saveProjectConfig`,
   `openConfigModelPicker`, `doOpenConfigModelPicker`, `handleConfigByte`,
   `handleConfigEditByte`.

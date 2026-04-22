@@ -295,7 +295,7 @@ func (a *App) refreshModelMenu() {
 	// Persist sort preferences (global-only)
 	a.globalConfig.ModelSortCol = sortColNames[a.menuSortCol]
 	a.globalConfig.ModelSortDirs = sortAscToMap(a.menuSortAsc)
-	a.config = mergeConfigs(a.globalConfig, a.projectConfig)
+	a.config = mergeConfigs(mergeConfigsOptions{global: a.globalConfig, project: a.projectConfig})
 	_ = saveConfig(a.globalConfig)
 }
 
@@ -783,7 +783,7 @@ func (a *App) handleResult(result any) {
 
 	case openPickerMsg:
 		if a.cfgActive {
-			a.doOpenConfigModelPicker(a.models, msg.getCurrentID, msg.onSelect)
+			a.doOpenConfigModelPicker(doOpenConfigModelPickerOptions{models: a.models, getCurrentID: msg.getCurrentID, onSelect: msg.onSelect})
 		}
 
 	case langdagReadyMsg:
@@ -815,7 +815,7 @@ func (a *App) handleResult(result any) {
 			a.repoRoot = msg.worktreePath
 		}
 		a.projectConfig = loadProjectConfig(a.repoRoot)
-		a.config = mergeConfigs(a.globalConfig, a.projectConfig)
+		a.config = mergeConfigs(mergeConfigsOptions{global: a.globalConfig, project: a.projectConfig})
 		a.configReady = true
 		a.initAppDebugLog()
 		a.history = newHistory(msg.worktreePath, a.config.effectiveMaxHistory())

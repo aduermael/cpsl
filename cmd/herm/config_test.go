@@ -40,7 +40,7 @@ func TestLoadConfigRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 
 	original := Config{PasteCollapseMinChars: 10}
-	if err := saveConfigTo(dir, original); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: dir, cfg: original}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 
@@ -58,7 +58,7 @@ func TestLoadConfigRoundTripWithOllamaURL(t *testing.T) {
 	dir := t.TempDir()
 
 	original := Config{OllamaBaseURL: "http://localhost:11434"}
-	if err := saveConfigTo(dir, original); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: dir, cfg: original}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 
@@ -142,7 +142,7 @@ func TestSortPrefsRoundTrip(t *testing.T) {
 			"name": true, "provider": true, "price": false, "context": true,
 		},
 	}
-	if err := saveConfigTo(dir, cfg); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: dir, cfg: cfg}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestSortPrefsDefaultsWhenMissing(t *testing.T) {
 	dir := t.TempDir()
 
 	cfg := Config{PasteCollapseMinChars: 200}
-	if err := saveConfigTo(dir, cfg); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: dir, cfg: cfg}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 
@@ -207,7 +207,7 @@ func TestSaveConfigCreatesDir(t *testing.T) {
 	subdir := filepath.Join(dir, "nested", "path")
 
 	cfg := Config{PasteCollapseMinChars: 3}
-	if err := saveConfigTo(subdir, cfg); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: subdir, cfg: cfg}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 
@@ -265,7 +265,7 @@ func TestProjectConfigRoundTrip(t *testing.T) {
 		Personality:      "concise",
 		SubAgentMaxTurns: 10,
 	}
-	if err := saveProjectConfig(dir, original); err != nil {
+	if err := saveProjectConfig(saveProjectConfigOptions{repoRoot: dir, pc: original}); err != nil {
 		t.Fatalf("saveProjectConfig: %v", err)
 	}
 	loaded := loadProjectConfig(dir)
@@ -278,7 +278,7 @@ func TestSaveProjectConfigCreatesDir(t *testing.T) {
 	dir := t.TempDir()
 	subdir := filepath.Join(dir, "nested", "repo")
 	pc := ProjectConfig{ActiveModel: "claude-3"}
-	if err := saveProjectConfig(subdir, pc); err != nil {
+	if err := saveProjectConfig(saveProjectConfigOptions{repoRoot: subdir, pc: pc}); err != nil {
 		t.Fatalf("saveProjectConfig: %v", err)
 	}
 	loaded := loadProjectConfig(subdir)
@@ -299,7 +299,7 @@ func TestMergeConfigsProjectOverrides(t *testing.T) {
 		ActiveModel:      "project-model",
 		SubAgentMaxTurns: 5,
 	}
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 
 	// Overridden fields
 	if merged.ActiveModel != "project-model" {
@@ -328,7 +328,7 @@ func TestMergeConfigsEmptyProject(t *testing.T) {
 		Personality:           "friendly",
 		SubAgentMaxTurns:      15,
 	}
-	merged := mergeConfigs(global, ProjectConfig{})
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: ProjectConfig{}})
 	if !reflect.DeepEqual(merged, global) {
 		t.Errorf("merged = %+v, want %+v (unchanged global)", merged, global)
 	}
@@ -345,7 +345,7 @@ func TestMergeConfigsAllOverridden(t *testing.T) {
 		Personality:      "terse",
 		SubAgentMaxTurns: 3,
 	}
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.ActiveModel != "proj-model" {
 		t.Errorf("ActiveModel = %q, want %q", merged.ActiveModel, "proj-model")
 	}
@@ -605,7 +605,7 @@ func TestExitConfigModeSavesBothConfigs(t *testing.T) {
 	// uses the real home dir. Instead test that saveProjectConfig is called
 	// by verifying the project config is saved to repoRoot.
 	a.projectConfig = a.cfgProjectDraft
-	if err := saveProjectConfig(a.repoRoot, a.projectConfig); err != nil {
+	if err := saveProjectConfig(saveProjectConfigOptions{repoRoot: a.repoRoot, pc: a.projectConfig}); err != nil {
 		t.Fatalf("saveProjectConfig: %v", err)
 	}
 
@@ -618,7 +618,7 @@ func TestExitConfigModeSavesBothConfigs(t *testing.T) {
 	}
 
 	// Also verify global config can be saved independently
-	if err := saveConfigTo(globalDir, a.cfgDraft); err != nil {
+	if err := saveConfigTo(saveConfigToOptions{dir: globalDir, cfg: a.cfgDraft}); err != nil {
 		t.Fatalf("saveConfigTo: %v", err)
 	}
 	globalLoaded, err := loadConfigFrom(globalDir)
@@ -697,7 +697,7 @@ func TestMergeConfigsExplorationModel(t *testing.T) {
 	project := ProjectConfig{
 		ExplorationModel: "gpt-4o",
 	}
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.ExplorationModel != "gpt-4o" {
 		t.Errorf("merged ExplorationModel = %q, want %q", merged.ExplorationModel, "gpt-4o")
 	}
@@ -708,7 +708,7 @@ func TestMergeConfigsExplorationModelEmpty(t *testing.T) {
 		ExplorationModel: "claude-haiku",
 	}
 	project := ProjectConfig{} // empty — should not override
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.ExplorationModel != "claude-haiku" {
 		t.Errorf("merged ExplorationModel = %q, want %q (empty project should not override)", merged.ExplorationModel, "claude-haiku")
 	}
@@ -875,7 +875,7 @@ func TestOllamaModelProvider_InLiveList(t *testing.T) {
 		{Provider: ProviderOllama, ID: testOllamaActiveModel},
 		{Provider: ProviderOllama, ID: testOllamaOtherModel},
 	}
-	got := ollamaModelProvider(testOllamaActiveModel, models, testOllamaURL)
+	got := ollamaModelProvider(ollamaModelProviderOptions{modelID: testOllamaActiveModel, models: models, ollamaURL: testOllamaURL})
 	if got != ProviderOllama {
 		t.Errorf("ollamaModelProvider = %q, want %q", got, ProviderOllama)
 	}
@@ -883,7 +883,7 @@ func TestOllamaModelProvider_InLiveList(t *testing.T) {
 
 func TestOllamaModelProvider_NotInListWithURL(t *testing.T) {
 	// Model not in live list but Ollama URL is set — assume Ollama.
-	got := ollamaModelProvider(testOllamaActiveModel, nil, testOllamaURL)
+	got := ollamaModelProvider(ollamaModelProviderOptions{modelID: testOllamaActiveModel, models: nil, ollamaURL: testOllamaURL})
 	if got != ProviderOllama {
 		t.Errorf("ollamaModelProvider = %q, want %q", got, ProviderOllama)
 	}
@@ -891,7 +891,7 @@ func TestOllamaModelProvider_NotInListWithURL(t *testing.T) {
 
 func TestOllamaModelProvider_NotInListNoURL(t *testing.T) {
 	// No Ollama URL — unknown model returns empty provider.
-	got := ollamaModelProvider(testOllamaActiveModel, nil, "")
+	got := ollamaModelProvider(ollamaModelProviderOptions{modelID: testOllamaActiveModel, models: nil, ollamaURL: ""})
 	if got != "" {
 		t.Errorf("ollamaModelProvider = %q, want empty string", got)
 	}
@@ -956,11 +956,11 @@ func TestPickerStubHasCleanID(t *testing.T) {
 	}
 
 	var selected string
-	a.doOpenConfigModelPicker(
-		[]ModelDef{},
-		func() string { return testOllamaActiveModel },
-		func(id string) { selected = id },
-	)
+	a.doOpenConfigModelPicker(doOpenConfigModelPickerOptions{
+		models:       []ModelDef{},
+		getCurrentID: func() string { return testOllamaActiveModel },
+		onSelect:     func(id string) { selected = id },
+	})
 
 	// Find the stub in menuModels
 	var stub *ModelDef
@@ -1017,7 +1017,7 @@ func TestMergeConfigsThinking(t *testing.T) {
 	// nil → no override
 	global := Config{}
 	project := ProjectConfig{}
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.Thinking != nil {
 		t.Error("nil project Thinking should not override global")
 	}
@@ -1025,7 +1025,7 @@ func TestMergeConfigsThinking(t *testing.T) {
 	// Explicit true overrides nil global
 	trueVal := true
 	project.Thinking = &trueVal
-	merged = mergeConfigs(global, project)
+	merged = mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.Thinking == nil || !*merged.Thinking {
 		t.Error("project Thinking=true should override global nil")
 	}
@@ -1034,7 +1034,7 @@ func TestMergeConfigsThinking(t *testing.T) {
 	global.Thinking = &trueVal
 	falseVal := false
 	project.Thinking = &falseVal
-	merged = mergeConfigs(global, project)
+	merged = mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.Thinking == nil || *merged.Thinking {
 		t.Error("project Thinking=false should override global true")
 	}

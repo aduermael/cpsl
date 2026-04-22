@@ -619,7 +619,7 @@ func TestPerModeTurnBudgetConfigPrecedence(t *testing.T) {
 func TestMergeConfigsPerModeTurns(t *testing.T) {
 	global := Config{SubAgentMaxTurns: 25, ExploreMaxTurns: 10, GeneralMaxTurns: 20}
 	project := ProjectConfig{ExploreMaxTurns: 12}
-	merged := mergeConfigs(global, project)
+	merged := mergeConfigs(mergeConfigsOptions{global: global, project: project})
 	if merged.ExploreMaxTurns != 12 {
 		t.Errorf("merged ExploreMaxTurns = %d, want 12", merged.ExploreMaxTurns)
 	}

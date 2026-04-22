@@ -288,7 +288,7 @@ func (a *App) handleByte(opts handleByteOptions) bool {
 	ch, stdinCh, readByte := opts.ch, opts.stdinCh, opts.readByte
 	// Config editor mode intercept (unless a model picker menu is active)
 	if a.cfgActive && !a.menuActive {
-		a.handleConfigByte(ch, stdinCh, readByte)
+		a.handleConfigByte(handleConfigByteOptions{ch: ch, stdinCh: stdinCh, readByte: readByte})
 		return false
 	}
 
