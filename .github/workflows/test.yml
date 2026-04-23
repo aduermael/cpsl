@@ -20,6 +20,8 @@ jobs:
         run: go test ./...
 
       - name: Run tests (tools modules)
+        env:
+          GOWORK: "off"
         run: |
           for mod in tools/*/go.mod; do
             dir=$(dirname "$mod")
