@@ -1,0 +1,3 @@
+[submodule "external/langdag"]
+	path = external/langdag
+	url = https://github.com/fundamental-research-labs/langdag.git

@@ -14,7 +14,4 @@ cmd/simple-chat/simple-chat
 
 # OS
 .DS_Store
-external-deps-workspace/
-go.work
-go.work.sum
 .claude/worktrees/
