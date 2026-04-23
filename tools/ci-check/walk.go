@@ -13,6 +13,7 @@ import (
 )
 
 var skipDirNames = []string{
+	"external",
 	"external-deps-workspace",
 	"vendor",
 	"node_modules",
