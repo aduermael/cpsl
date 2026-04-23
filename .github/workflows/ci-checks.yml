@@ -10,17 +10,10 @@ jobs:
   check:
     name: ${{ matrix.rule }}
     runs-on: ubuntu-latest
-    continue-on-error: ${{ matrix.continue-on-error }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - rule: file-length
-            continue-on-error: false
-          - rule: docstring
-            continue-on-error: false
-          - rule: positional-params
-            continue-on-error: false
+        rule: [file-length, docstring, positional-params]
     steps:
       - uses: actions/checkout@v5
 

@@ -16,5 +16,14 @@ jobs:
         with:
           go-version: "1.24"
 
-      - name: Run tests
+      - name: Run tests (root module)
         run: go test ./...
+
+      - name: Run tests (tools modules)
+        run: |
+          for mod in tools/*/go.mod; do
+            dir=$(dirname "$mod")
+            echo "::group::$dir"
+            (cd "$dir" && go test ./...)
+            echo "::endgroup::"
+          done
