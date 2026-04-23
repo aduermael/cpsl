@@ -2452,6 +2452,52 @@ func TestWaitForBackgroundAgents_Timeout(t *testing.T) {
 	}
 }
 
+func TestCancelAllFiresStoredCancels(t *testing.T) {
+	tool := NewSubAgentTool(SubAgentConfig{MainModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
+
+	ctx1, cancel1 := context.WithCancel(context.Background())
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	tool.mu.Lock()
+	tool.bgAgents["a1"] = &bgAgentState{task: "t1", cancel: cancel1, started: time.Now()}
+	tool.bgAgents["a2"] = &bgAgentState{task: "t2", cancel: cancel2, started: time.Now()}
+	tool.mu.Unlock()
+
+	tool.CancelAll()
+
+	for _, ctx := range []context.Context{ctx1, ctx2} {
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Second):
+			t.Fatal("CancelAll did not cancel bg agent context within 1s")
+		}
+	}
+}
+
+func TestAgentCancelPropagatesToBackgroundSubAgents(t *testing.T) {
+	client := newTestClient("ok")
+	tool := NewSubAgentTool(SubAgentConfig{Client: client, MainModel: "m", ExplorationModel: "m", ExploreMaxTurns: 10, GeneralMaxTurns: 10, MaxDepth: 1, WorkDir: t.TempDir()})
+
+	bgCtx, bgCancel := context.WithCancel(context.Background())
+	tool.mu.Lock()
+	tool.bgAgents["bg1"] = &bgAgentState{task: "blocking", cancel: bgCancel, started: time.Now()}
+	tool.mu.Unlock()
+
+	agent := NewAgent(NewAgentOptions{
+		Client:       client,
+		Tools:        []Tool{tool},
+		SystemPrompt: "sys",
+		Model:        "m",
+	})
+
+	agent.Cancel()
+
+	select {
+	case <-bgCtx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("Agent.Cancel did not propagate to background sub-agent within 1s")
+	}
+}
+
 func TestSubAgentResumeInheritsMode(t *testing.T) {
 	client := newTestClient("resumed output")
 	tmpDir := t.TempDir()

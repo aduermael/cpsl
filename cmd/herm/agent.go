@@ -141,6 +141,14 @@ type BackgroundWaiter interface {
 	DrainGoroutines(timeout time.Duration) bool
 }
 
+// BackgroundCanceller is an optional interface for tools that can signal all
+// managed background work to stop. Invoked by Agent.Cancel() so an ESC-twice
+// interrupt reaches background sub-agents whose contexts are not derived from
+// the main agent's cancellable context.
+type BackgroundCanceller interface {
+	CancelAll()
+}
+
 // AgentEventType identifies the kind of agent event.
 type AgentEventType int
 
@@ -429,12 +437,23 @@ func (a *Agent) findBackgroundWaiter() BackgroundWaiter {
 }
 
 
-// Cancel stops the running agent loop.
+// Cancel stops the running agent loop and signals every background sub-agent
+// to stop. Background sub-agents run on detached contexts, so their cancel
+// funcs must be invoked explicitly here — otherwise ESC-twice would only stop
+// the main loop and foreground sub-agents while background work keeps running.
 func (a *Agent) Cancel() {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.cancelFn != nil {
-		a.cancelFn()
+	cancelFn := a.cancelFn
+	tools := a.tools
+	a.mu.Unlock()
+
+	if cancelFn != nil {
+		cancelFn()
+	}
+	for _, tool := range tools {
+		if bc, ok := tool.(BackgroundCanceller); ok {
+			bc.CancelAll()
+		}
 	}
 }
 

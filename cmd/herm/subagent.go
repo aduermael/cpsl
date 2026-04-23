@@ -362,6 +362,24 @@ func (t *SubAgentTool) bgAgentStatus(agentID string) (string, error) {
 	return fmt.Sprintf("[agent_id: %s] [status: running] Task: %s (elapsed: %s)", agentID, state.task, elapsed), nil
 }
 
+// CancelAll signals every running background sub-agent to stop by invoking
+// its stored cancel function. Safe to call multiple times; cancel funcs are
+// idempotent. Called from Agent.Cancel() so ESC-twice propagates to detached
+// background agents that do not inherit the parent agent's context.
+func (t *SubAgentTool) CancelAll() {
+	t.mu.Lock()
+	cancels := make([]context.CancelFunc, 0, len(t.bgAgents))
+	for _, st := range t.bgAgents {
+		if st.cancel != nil {
+			cancels = append(cancels, st.cancel)
+		}
+	}
+	t.mu.Unlock()
+	for _, c := range cancels {
+		c()
+	}
+}
+
 // HasPendingBackgroundAgents returns true if any background sub-agent has not
 // yet completed. Thread-safe; non-blocking.
 func (t *SubAgentTool) HasPendingBackgroundAgents() bool {
