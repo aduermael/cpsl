@@ -533,6 +533,8 @@ func (a *App) buildConfigRows() []string {
 	// Help line
 	if a.cfgEditing {
 		rows = append(rows, "\033[2mEnter=confirm  Esc=cancel\033[0m")
+	} else if a.cfgTab == 2 {
+		rows = append(rows, "\033[2m←/→=tab  ↑/↓=select  Enter=edit  Backspace=unset  Esc=close  Ctrl+S=save & close\033[0m")
 	} else {
 		rows = append(rows, "\033[2m←/→=tab  ↑/↓=select  Enter=edit  Esc=close  Ctrl+S=save & close\033[0m")
 	}
@@ -656,6 +658,18 @@ func (a *App) handleConfigByte(opts handleConfigByteOptions) {
 			}
 		}
 		a.renderInput()
+
+	case ch == 127 || ch == 0x08: // Backspace - clear current project field (unset → fall back to global)
+		if a.cfgTab == 2 && a.repoRoot != "" {
+			fields := a.cfgCurrentFields()
+			if len(fields) > 0 && a.cfgCursor < len(fields) {
+				f := fields[a.cfgCursor]
+				if f.set != nil && f.get(a.cfgDraft) != "" {
+					f.set(&a.cfgDraft, "")
+					a.renderInput()
+				}
+			}
+		}
 
 	case ch == 0x13: // Ctrl+S - save and close
 		a.exitConfigMode(true)
