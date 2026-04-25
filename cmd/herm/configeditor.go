@@ -517,13 +517,13 @@ func (a *App) buildConfigRows() []string {
 					if hint == "" {
 						hint = "not set"
 					}
-					val = fmt.Sprintf("(global: %s)", hint)
+					val = fmt.Sprintf("\033[2m(global: %s)\033[0m", hint)
 				} else {
 					val = "(not set)"
 				}
 			}
 			if i == a.cfgCursor {
-				rows = append(rows, fmt.Sprintf("\033[36;1m%s: %s ◆\033[0m", f.label, val))
+				rows = append(rows, fmt.Sprintf("\033[36;1m%s: %s\033[36;1m ◆\033[0m", f.label, val))
 			} else {
 				rows = append(rows, fmt.Sprintf("%s: %s", f.label, val))
 			}
