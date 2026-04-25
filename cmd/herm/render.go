@@ -783,6 +783,7 @@ func (a *App) render() {
 	}
 
 	var buf strings.Builder
+	buf.WriteString("\033[?2026h") // begin synchronized update (atomic frame)
 
 	if newScrollShift > 0 && a.scrollShift > 0 && newScrollShift >= a.scrollShift {
 		// Content overflows and grew or stayed same: write only visible portion.
@@ -809,6 +810,7 @@ func (a *App) render() {
 	a.scrollShift = newScrollShift
 
 	a.positionCursor(&buf)
+	buf.WriteString("\033[?2026l") // end synchronized update
 	os.Stdout.WriteString(buf.String())
 }
 
@@ -850,6 +852,7 @@ func (a *App) renderInput() {
 	}
 
 	var buf strings.Builder
+	buf.WriteString("\033[?2026h") // begin synchronized update (atomic frame)
 	writeRows(writeRowsOptions{buf: &buf, rows: inputRows, from: screenSepRow})
 	buf.WriteString("\033[0m\033[J") // clear remaining lines
 
@@ -857,5 +860,6 @@ func (a *App) renderInput() {
 	a.prevRowCount = totalRows
 
 	a.positionCursor(&buf)
+	buf.WriteString("\033[?2026l") // end synchronized update
 	os.Stdout.WriteString(buf.String())
 }
