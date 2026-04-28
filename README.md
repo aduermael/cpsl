@@ -123,7 +123,7 @@ herm is built on top of [langdag](https://langdag.com), a Go library for managin
 
 ## Community
 
-Join the [Discord](https://discord.gg/xMEF646A) to chat, ask questions, or share feedback.
+Join the [Discord](https://discord.gg/WFjcymwtZU) to chat, ask questions, or share feedback.
 
 ## License
 
